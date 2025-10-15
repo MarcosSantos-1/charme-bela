@@ -1,0 +1,104 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String             @id @default(cuid())
+  name               String
+  email              String             @unique
+  firebaseUid        String             @unique // Ainda usaremos o Firebase para Auth no frontend
+  profileImageUrl    String?
+  role               Role               @default(CLIENT)
+  stripeCustomerId   String?            @unique
+  anamnesisForm      AnamnesisForm?
+  appointments       Appointment[]
+  activeSubscription Subscription?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+}
+
+model Service {
+  id           String        @id @default(cuid())
+  name         String
+  description  String
+  duration     Int // Duração em minutos
+  price        Float // Preço avulso
+  isActive     Boolean       @default(true)
+  plans        SubscriptionPlan[] @relation("ServicesOnPlans")
+  appointments Appointment[]
+}
+
+model SubscriptionPlan {
+  id          String    @id @default(cuid())
+  name        String
+  description String
+  stripePriceId String    @unique
+  price       Float
+  services    Service[] @relation("ServicesOnPlans")
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  user      User      @relation(fields: [userId], references: [id])
+  planId    String
+  plan      SubscriptionPlan @relation(fields: [planId], references: [id])
+  stripeSubscriptionId String @unique
+  status    String // e.g., 'active', 'canceled', 'past_due'
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Appointment {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  serviceId String
+  service   Service  @relation(fields: [serviceId], references: [id])
+  startTime DateTime
+  endTime   DateTime
+  status    String   // e.g., 'scheduled', 'completed', 'canceled'
+  origin    String   // 'subscription', 'single_purchase', 'package'
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([serviceId])
+}
+
+model AnamnesisForm {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  facialData   Json
+  corporalData Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ManagerSchedule {
+    id            String @id @default(cuid())
+    dayOfWeek     Int // 0 (Sunday) to 6 (Saturday)
+    availableSlots Json // Ex: [{ start: "09:00", end: "12:00" }, { start: "14:00", end: "18:00" }]
+}
+
+model ScheduleOverride {
+    id            String @id @default(cuid())
+    date          DateTime @db.Date
+    isAvailable   Boolean
+    availableSlots Json? // Opcional para sobrescrever os horários do dia
+}
+
+enum Role {
+  CLIENT
+  MANAGER
+}

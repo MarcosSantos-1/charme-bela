@@ -1,0 +1,35 @@
+import { initializeApp, getApps } from 'firebase/app'
+import { getAuth } from 'firebase/auth'
+import { getFirestore } from 'firebase/firestore'
+import { getAnalytics, isSupported } from 'firebase/analytics'
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA1CKTLfGcmt5Xf68wvQhMD92J_vP_6F90",
+  authDomain: "charme-bela-33906.firebaseapp.com",
+  projectId: "charme-bela-33906",
+  storageBucket: "charme-bela-33906.firebasestorage.app",
+  messagingSenderId: "690927382095",
+  appId: "1:690927382095:web:2db390a82624c20c3ac43a",
+  measurementId: "G-E4R62L9TGE"
+}
+
+// Initialize Firebase (singleton pattern)
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
+
+// Initialize services
+export const auth = getAuth(app)
+export const db = getFirestore(app)
+
+// Initialize Analytics (only in browser)
+let analytics: ReturnType<typeof getAnalytics> | null = null
+if (typeof window !== 'undefined') {
+  isSupported().then((supported) => {
+    if (supported) {
+      analytics = getAnalytics(app)
+    }
+  })
+}
+
+export { analytics }
+export default app
+

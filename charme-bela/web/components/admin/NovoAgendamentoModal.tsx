@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Modal } from '../Modal'
 import { Input } from '../Input'
 import { Button } from '../Button'
-import { Calendar, Clock, User, Scissors } from 'lucide-react'
+import { Calendar, Clock, User, Scissors, CheckCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface NovoAgendamentoModalProps {

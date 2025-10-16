@@ -26,7 +26,7 @@ export default function ConfiguracoesPage() {
       </div>
 
       {/* Horários de Funcionamento */}
-      <div id="horarios" className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-center mb-6">
           <Clock className="w-6 h-6 text-pink-600 mr-3" />
           <h3 className="text-lg font-semibold text-gray-900">

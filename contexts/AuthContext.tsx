@@ -9,9 +9,12 @@ import {
   OAuthProvider,
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile as firebaseUpdateProfile,
+  sendEmailVerification
 } from 'firebase/auth'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
 import { User } from '@/types'
 import toast from 'react-hot-toast'
@@ -27,6 +30,8 @@ interface AuthContextType {
   signInWithApple: () => Promise<void>
   signUp: (email: string, password: string, name: string) => Promise<void>
   signOut: () => Promise<void>
+  resetPassword: (email: string) => Promise<void>
+  sendVerificationEmail: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -154,11 +159,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithGoogle = async () => {
     try {
       const provider = new GoogleAuthProvider()
-      await signInWithPopup(auth, provider)
+      provider.addScope('email')
+      provider.addScope('profile')
+      
+      const result = await signInWithPopup(auth, provider)
+      console.log('✅ Login com Google realizado:', result.user.email)
       toast.success('Login com Google realizado!')
-    } catch (error) {
-      console.error('Erro ao fazer login com Google:', error)
-      toast.error('Erro ao fazer login com Google')
+    } catch (error: any) {
+      console.error('❌ Erro ao fazer login com Google:', error)
+      
+      if (error.code === 'auth/popup-closed-by-user') {
+        toast.error('Login cancelado.')
+      } else if (error.code === 'auth/popup-blocked') {
+        toast.error('Popup bloqueado. Permita popups para este site.')
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        // Usuário fechou o popup, não mostrar erro
+        return
+      } else {
+        toast.error('Erro ao fazer login com Google. Tente novamente.')
+      }
       throw error
     }
   }
@@ -166,11 +185,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithApple = async () => {
     try {
       const provider = new OAuthProvider('apple.com')
-      await signInWithPopup(auth, provider)
+      provider.addScope('email')
+      provider.addScope('name')
+      
+      const result = await signInWithPopup(auth, provider)
+      console.log('✅ Login com Apple realizado:', result.user.email)
       toast.success('Login com Apple realizado!')
-    } catch (error) {
-      console.error('Erro ao fazer login com Apple:', error)
-      toast.error('Erro ao fazer login com Apple')
+    } catch (error: any) {
+      console.error('❌ Erro ao fazer login com Apple:', error)
+      
+      if (error.code === 'auth/operation-not-allowed') {
+        toast.error('Login com Apple não está ativado. Entre em contato com o suporte.')
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        toast.error('Login cancelado.')
+      } else if (error.code === 'auth/popup-blocked') {
+        toast.error('Popup bloqueado. Permita popups para este site.')
+      } else if (error.code === 'auth/unauthorized-domain') {
+        toast.error('Domínio não autorizado. Configure o Firebase primeiro.')
+      } else {
+        toast.error('Login com Apple temporariamente indisponível. Tente login com Google ou email.')
+      }
       throw error
     }
   }
@@ -179,8 +213,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password)
       
+      // Atualizar perfil do Firebase Auth
+      await firebaseUpdateProfile(userCredential.user, {
+        displayName: name
+      })
+      
       // Criar perfil no Firestore
-      const newUser: User = {
+      const newUser: any = {
         id: userCredential.user.uid,
         email: email,
         name: name,
@@ -189,13 +228,89 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       await setDoc(doc(db, 'users', userCredential.user.uid), newUser)
-      toast.success('Conta criada com sucesso!')
+      
+      // Enviar email de verificação
+      try {
+        const actionCodeSettings = {
+          url: `${window.location.origin}/cliente`,
+          handleCodeInApp: false
+        }
+        await sendEmailVerification(userCredential.user, actionCodeSettings)
+        console.log('✅ Email de verificação enviado automaticamente')
+        toast.success('Conta criada! Verifique seu email para confirmar. 🎉📧')
+      } catch (verifyError) {
+        console.error('⚠️ Erro ao enviar email de verificação:', verifyError)
+        toast.success('Conta criada com sucesso! 🎉')
+      }
     } catch (error: any) {
       console.error('Erro ao criar conta:', error)
       if (error.code === 'auth/email-already-in-use') {
-        toast.error('Este email já está em uso')
+        toast.error('Este email já está em uso. Tente fazer login.')
+      } else if (error.code === 'auth/weak-password') {
+        toast.error('A senha deve ter pelo menos 6 caracteres')
+      } else if (error.code === 'auth/invalid-email') {
+        toast.error('Email inválido')
       } else {
-        toast.error('Erro ao criar conta')
+        toast.error('Erro ao criar conta. Tente novamente.')
+      }
+      throw error
+    }
+  }
+
+  const resetPassword = async (email: string) => {
+    try {
+      // Configurações para o email de recuperação em português
+      const actionCodeSettings = {
+        url: `${window.location.origin}/login`,
+        handleCodeInApp: false
+      }
+      
+      await sendPasswordResetEmail(auth, email, actionCodeSettings)
+      console.log('✅ Email de recuperação enviado para:', email)
+      toast.success('Email de recuperação enviado! Verifique sua caixa de entrada. 📧')
+    } catch (error: any) {
+      console.error('❌ Erro ao enviar email de recuperação:', error)
+      if (error.code === 'auth/user-not-found') {
+        toast.error('Email não encontrado. Verifique o endereço digitado.')
+      } else if (error.code === 'auth/invalid-email') {
+        toast.error('Email inválido. Digite um email válido.')
+      } else if (error.code === 'auth/too-many-requests') {
+        toast.error('Muitas tentativas. Aguarde alguns minutos e tente novamente.')
+      } else {
+        toast.error('Erro ao enviar email. Tente novamente.')
+      }
+      throw error
+    }
+  }
+
+  const sendVerificationEmail = async () => {
+    try {
+      const currentUser = auth.currentUser
+      
+      if (!currentUser) {
+        toast.error('Você precisa estar logado para enviar email de verificação')
+        throw new Error('Usuário não autenticado')
+      }
+
+      if (currentUser.emailVerified) {
+        toast.success('Seu email já está verificado! ✅')
+        return
+      }
+
+      const actionCodeSettings = {
+        url: `${window.location.origin}/cliente`,
+        handleCodeInApp: false
+      }
+
+      await sendEmailVerification(currentUser, actionCodeSettings)
+      console.log('✅ Email de verificação enviado para:', currentUser.email)
+      toast.success('Email de verificação enviado! Verifique sua caixa de entrada. 📧')
+    } catch (error: any) {
+      console.error('❌ Erro ao enviar email de verificação:', error)
+      if (error.code === 'auth/too-many-requests') {
+        toast.error('Muitas tentativas. Aguarde alguns minutos e tente novamente.')
+      } else {
+        toast.error('Erro ao enviar email de verificação. Tente novamente.')
       }
       throw error
     }
@@ -223,7 +338,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithGoogle,
         signInWithApple,
         signUp,
-        signOut
+        signOut,
+        resetPassword,
+        sendVerificationEmail
       }}
     >
       {children}

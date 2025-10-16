@@ -5,13 +5,12 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/Button'
 import { Input } from '@/components/Input'
-import { User, Lock, Chrome, Apple, X, ArrowLeft } from 'lucide-react'
+import { X, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { getSavedAccounts, removeAccount, SavedAccount } from '@/lib/accountStorage'
-import { signInWithEmailAndPassword } from 'firebase/auth'
-import { auth } from '@/lib/firebase'
 import toast from 'react-hot-toast'
+import { Avatar } from '@/components/Avatar'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -19,7 +18,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([])
   const [showAccountSelector, setShowAccountSelector] = useState(true)
-  const { signIn, signInWithGoogle, signInWithApple } = useAuth()
+  const { signIn, signInWithGoogle } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
@@ -45,15 +44,6 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     try {
       await signInWithGoogle()
-      router.push('/cliente')
-    } catch (error) {
-      console.error(error)
-    }
-  }
-
-  const handleAppleLogin = async () => {
-    try {
-      await signInWithApple()
       router.push('/cliente')
     } catch (error) {
       console.error(error)
@@ -102,19 +92,12 @@ export default function LoginPage() {
                 onClick={() => handleQuickLogin(account)}
                 className="group w-full flex items-center space-x-4 p-4 bg-white rounded-xl border-2 border-gray-200 hover:border-pink-300 hover:shadow-lg transition-all relative"
               >
-                {account.photoURL ? (
-                  <Image
-                    src={account.photoURL}
-                    alt={account.name}
-                    width={48}
-                    height={48}
-                    className="rounded-full"
-                  />
-                ) : (
-                  <div className="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <User className="w-6 h-6 text-pink-600" />
-                  </div>
-                )}
+                <Avatar 
+                  name={account.name}
+                  photoURL={account.photoURL}
+                  size="md"
+                  className="flex-shrink-0"
+                />
                 
                 <div className="flex-1 text-left">
                   <div className="font-medium text-gray-900">{account.name}</div>
@@ -207,9 +190,15 @@ export default function LoginPage() {
 
           {/* Header */}
           <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">
-              Bem-vinda de volta! 👋
-            </h2>
+            <div className="flex justify-center mb-6">
+              <Image
+                src="/images/logo.png"
+                alt="Charme & Bela"
+                width={180}
+                height={60}
+                className="object-contain"
+              />
+            </div>
             <p className="text-gray-600">
               Entre com sua conta para continuar
             </p>
@@ -217,25 +206,52 @@ export default function LoginPage() {
 
           {/* Social Login */}
           <div className="space-y-3">
-            <Button
+            <button
               type="button"
-              variant="outline"
-              className="w-full"
               onClick={handleGoogleLogin}
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-white border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-md transition-all group"
             >
-              <Chrome className="w-5 h-5 mr-2" />
-              Continuar com Google
-            </Button>
+              <svg className="w-5 h-5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              <span className="font-medium text-gray-700 group-hover:text-gray-900">
+                Continuar com Google
+              </span>
+            </button>
 
-            <Button
+            {/* 
+              BOTÕES DESABILITADOS - Precisam de configuração externa
+              
+              🍎 Apple Sign-In:
+              - Requer Apple Developer Account ($99/ano)
+              - Configurar Service ID em https://developer.apple.com
+              - Adicionar callback: https://charme-bela-33906.firebaseapp.com/__/auth/handler
+              
+              📘 Facebook Login:
+              - Criar app em https://developers.facebook.com
+              - Pegar App ID e App Secret
+              - Adicionar redirect URI: https://charme-bela-33906.firebaseapp.com/__/auth/handler
+              
+              Para ativar: descomente o código abaixo e configure as contas
+            */}
+            
+            {/* 
+            <button
               type="button"
-              variant="outline"
-              className="w-full"
               onClick={handleAppleLogin}
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-black border-2 border-black rounded-xl hover:bg-gray-900 hover:shadow-md transition-all group"
             >
-              <Apple className="w-5 h-5 mr-2" />
-              Continuar com Apple
-            </Button>
+              <svg className="w-5 h-5 fill-white" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+              </svg>
+              <span className="font-medium text-white">
+                Continuar com Apple
+              </span>
+            </button>
+            */}
           </div>
 
           {/* Divider */}

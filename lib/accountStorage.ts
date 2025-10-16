@@ -51,3 +51,4 @@ export function getLastAccount(): SavedAccount | null {
   return accounts.length > 0 ? accounts[0] : null
 }
 
+

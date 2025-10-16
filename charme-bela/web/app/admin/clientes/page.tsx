@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { Search, Filter, Plus, Mail, Phone, Calendar, MoreVertical, Sparkles, Gift } from 'lucide-react'
 import { Button } from '@/components/Button'
+import { AdicionarClienteModal } from '@/components/admin/AdicionarClienteModal'
+import { DarVoucherModal } from '@/components/admin/DarVoucherModal'
 
 interface Client {
   id: string
@@ -18,6 +20,8 @@ interface Client {
 
 export default function ClientesPage() {
   const [searchTerm, setSearchTerm] = useState('')
+  const [isAdicionarClienteOpen, setIsAdicionarClienteOpen] = useState(false)
+  const [isDarVoucherOpen, setIsDarVoucherOpen] = useState(false)
 
   // Mock data
   const clients: Client[] = [
@@ -71,7 +75,10 @@ export default function ClientesPage() {
           <p className="text-gray-600 mt-1">Gerencie seus clientes e acessos</p>
         </div>
 
-        <Button variant="primary">
+        <Button 
+          variant="primary"
+          onClick={() => setIsAdicionarClienteOpen(true)}
+        >
           <Plus className="w-5 h-5 mr-2" />
           Novo Cliente
         </Button>
@@ -95,7 +102,10 @@ export default function ClientesPage() {
           Filtros
         </Button>
 
-        <Button variant="secondary">
+        <Button 
+          variant="secondary"
+          onClick={() => setIsDarVoucherOpen(true)}
+        >
           <Gift className="w-5 h-5 mr-2" />
           Dar Voucher
         </Button>
@@ -239,6 +249,17 @@ export default function ClientesPage() {
           </div>
         </div>
       </div>
+
+      {/* Modais */}
+      <AdicionarClienteModal 
+        isOpen={isAdicionarClienteOpen}
+        onClose={() => setIsAdicionarClienteOpen(false)}
+      />
+      
+      <DarVoucherModal 
+        isOpen={isDarVoucherOpen}
+        onClose={() => setIsDarVoucherOpen(false)}
+      />
     </div>
   )
 }

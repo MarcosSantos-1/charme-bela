@@ -4,11 +4,13 @@ import { useEffect, useState } from 'react'
 import { Plus, Search, Edit, Trash2, Clock, DollarSign } from 'lucide-react'
 import { Button } from '@/components/Button'
 import { getServices, Service } from '@/lib/api'
+import { NovoServicoModal } from '@/components/admin/NovoServicoModal'
 
 export default function ServicosPage() {
   const [services, setServices] = useState<Service[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [isNovoServicoOpen, setIsNovoServicoOpen] = useState(false)
 
   useEffect(() => {
     async function loadServices() {
@@ -38,7 +40,10 @@ export default function ServicosPage() {
           <p className="text-gray-600 mt-1">Gerencie os tratamentos oferecidos</p>
         </div>
 
-        <Button variant="primary">
+        <Button 
+          variant="primary"
+          onClick={() => setIsNovoServicoOpen(true)}
+        >
           <Plus className="w-5 h-5 mr-2" />
           Novo Serviço
         </Button>
@@ -125,6 +130,12 @@ export default function ServicosPage() {
           <p className="text-gray-600">Nenhum serviço encontrado</p>
         </div>
       )}
+
+      {/* Modais */}
+      <NovoServicoModal 
+        isOpen={isNovoServicoOpen}
+        onClose={() => setIsNovoServicoOpen(false)}
+      />
     </div>
   )
 }

@@ -1,11 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, FileText, Eye, Download } from 'lucide-react'
+import { Search, FileText, Eye, Download, Plus } from 'lucide-react'
 import { Button } from '@/components/Button'
+import { CriarAnamneseModal } from '@/components/admin/CriarAnamneseModal'
 
 export default function AnamnesesPage() {
   const [searchTerm, setSearchTerm] = useState('')
+  const [isCriarAnamneseOpen, setIsCriarAnamneseOpen] = useState(false)
 
   // Mock data
   const anamneses = [
@@ -32,9 +34,18 @@ export default function AnamnesesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Anamneses</h2>
-        <p className="text-gray-600 mt-1">Visualize e gerencie as fichas de anamnese dos clientes</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Anamneses</h2>
+          <p className="text-gray-600 mt-1">Visualize e gerencie as fichas de anamnese dos clientes</p>
+        </div>
+        <Button 
+          variant="primary"
+          onClick={() => setIsCriarAnamneseOpen(true)}
+        >
+          <Plus className="w-5 h-5 mr-2" />
+          Nova Anamnese
+        </Button>
       </div>
 
       {/* Search */}
@@ -108,6 +119,12 @@ export default function AnamnesesPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Modais */}
+      <CriarAnamneseModal 
+        isOpen={isCriarAnamneseOpen}
+        onClose={() => setIsCriarAnamneseOpen(false)}
+      />
     </div>
   )
 }

@@ -11,6 +11,7 @@ import Image from 'next/image'
 import { getSavedAccounts, removeAccount, SavedAccount } from '@/lib/accountStorage'
 import toast from 'react-hot-toast'
 import { Avatar } from '@/components/Avatar'
+import { auth } from '@/lib/firebase'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -18,8 +19,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([])
   const [showAccountSelector, setShowAccountSelector] = useState(true)
-  const { signIn, signInWithGoogle } = useAuth()
+  const { signIn, signInWithGoogle, user, firebaseUser } = useAuth()
   const router = useRouter()
+
+  // Redirecionar se já estiver logado
+  useEffect(() => {
+    if (user && firebaseUser) {
+      console.log('✅ Usuário já logado, redirecionando...')
+      router.push('/cliente')
+    }
+  }, [user, firebaseUser, router])
 
   useEffect(() => {
     const accounts = getSavedAccounts()
@@ -52,12 +61,42 @@ export default function LoginPage() {
 
   const handleQuickLogin = async (account: SavedAccount) => {
     setLoading(true)
+    
     try {
-      // Apenas redireciona para área do cliente (o Firebase já mantém sessão)
-      router.push('/cliente')
+      console.log('🔄 Tentando login rápido para:', account.email)
+      
+      // Aguardar um pouco para o AuthContext carregar (caso esteja inicializando)
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // Verificar se o Firebase tem sessão ativa
+      const currentUser = auth.currentUser
+      
+      if (currentUser) {
+        if (currentUser.uid === account.uid) {
+          // Sessão correta e ativa
+          console.log('✅ Sessão ativa! Redirecionando...')
+          toast.success(`Bem-vinda de volta, ${account.name}!`)
+          router.push('/cliente')
+        } else {
+          // Sessão de outro usuário
+          console.log('⚠️ Sessão de outro usuário detectada')
+          toast.error('Por favor, faça logout da conta atual primeiro.')
+          setShowAccountSelector(false)
+        }
+      } else {
+        // Não há sessão ativa - precisa fazer login novamente
+        console.log('❌ Nenhuma sessão ativa. Solicitando login manual...')
+        toast.error('Sua sessão expirou. Por favor, faça login novamente.')
+        
+        // Preencher o email automaticamente para facilitar
+        setEmail(account.email)
+        setShowAccountSelector(false)
+      }
     } catch (error) {
-      console.error(error)
-      toast.error('Erro ao acessar conta')
+      console.error('❌ Erro ao verificar sessão:', error)
+      toast.error('Erro ao acessar conta. Tente fazer login novamente.')
+      setEmail(account.email)
+      setShowAccountSelector(false)
     } finally {
       setLoading(false)
     }
@@ -90,7 +129,8 @@ export default function LoginPage() {
               <button
                 key={account.uid}
                 onClick={() => handleQuickLogin(account)}
-                className="group w-full flex items-center space-x-4 p-4 bg-white rounded-xl border-2 border-gray-200 hover:border-pink-300 hover:shadow-lg transition-all relative"
+                disabled={loading}
+                className="group w-full flex items-center space-x-4 p-4 bg-white rounded-xl border-2 border-gray-200 hover:border-pink-300 hover:shadow-lg transition-all relative disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Avatar 
                   name={account.name}
@@ -102,6 +142,12 @@ export default function LoginPage() {
                 <div className="flex-1 text-left">
                   <div className="font-medium text-gray-900">{account.name}</div>
                   <div className="text-sm text-gray-500">{account.email}</div>
+                  {auth.currentUser?.uid === account.uid && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span className="text-xs text-green-600">Sessão ativa</span>
+                    </div>
+                  )}
                 </div>
 
                 <button

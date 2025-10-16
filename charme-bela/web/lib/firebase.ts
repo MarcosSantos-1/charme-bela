@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 import { getAnalytics, isSupported } from 'firebase/analytics'
 
@@ -19,6 +19,13 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0
 // Initialize services
 export const auth = getAuth(app)
 export const db = getFirestore(app)
+
+// Configurar persistência local (mantém login mesmo após fechar navegador)
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch((error) => {
+    console.error('Erro ao configurar persistência:', error)
+  })
+}
 
 // Initialize Analytics (only in browser)
 let analytics: ReturnType<typeof getAnalytics> | null = null

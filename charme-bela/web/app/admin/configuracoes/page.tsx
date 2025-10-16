@@ -4,9 +4,11 @@ import { useState } from 'react'
 import { Button } from '@/components/Button'
 import { Input } from '@/components/Input'
 import { Clock, Calendar, MapPin, Phone, Mail, Instagram, Save } from 'lucide-react'
+import { DefinirHorariosModal } from '@/components/admin/DefinirHorariosModal'
 
 export default function ConfiguracoesPage() {
   const [saving, setSaving] = useState(false)
+  const [isDefinirHorariosOpen, setIsDefinirHorariosOpen] = useState(false)
 
   const handleSave = () => {
     setSaving(true)
@@ -27,11 +29,20 @@ export default function ConfiguracoesPage() {
 
       {/* Horários de Funcionamento */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center mb-6">
-          <Clock className="w-6 h-6 text-pink-600 mr-3" />
-          <h3 className="text-lg font-semibold text-gray-900">
-            Horários de Funcionamento
-          </h3>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center">
+            <Clock className="w-6 h-6 text-pink-600 mr-3" />
+            <h3 className="text-lg font-semibold text-gray-900">
+              Horários de Funcionamento
+            </h3>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setIsDefinirHorariosOpen(true)}
+          >
+            Definir Horários
+          </Button>
         </div>
 
         <div className="space-y-4">
@@ -200,6 +211,12 @@ export default function ConfiguracoesPage() {
           Salvar Configurações
         </Button>
       </div>
+
+      {/* Modais */}
+      <DefinirHorariosModal 
+        isOpen={isDefinirHorariosOpen}
+        onClose={() => setIsDefinirHorariosOpen(false)}
+      />
     </div>
   )
 }

@@ -4,6 +4,11 @@ import { useEffect, useState } from 'react'
 import { Calendar, Users, DollarSign, TrendingUp, Clock, Sparkles, Bell, CheckCircle, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { NovoAgendamentoModal } from '@/components/admin/NovoAgendamentoModal'
+import { AdicionarClienteModal } from '@/components/admin/AdicionarClienteModal'
+import { ReagendarCancelarModal } from '@/components/admin/ReagendarCancelarModal'
+import { DefinirHorariosModal } from '@/components/admin/DefinirHorariosModal'
+import { NovoServicoModal } from '@/components/admin/NovoServicoModal'
 
 interface Stats {
   totalClients: number
@@ -27,6 +32,13 @@ export default function AdminDashboard() {
     monthRevenue: 45600,
     activeSubscriptions: 42
   })
+
+  // Estados dos modais
+  const [isNovoAgendamentoOpen, setIsNovoAgendamentoOpen] = useState(false)
+  const [isAdicionarClienteOpen, setIsAdicionarClienteOpen] = useState(false)
+  const [isReagendarOpen, setIsReagendarOpen] = useState(false)
+  const [isDefinirHorariosOpen, setIsDefinirHorariosOpen] = useState(false)
+  const [isNovoServicoOpen, setIsNovoServicoOpen] = useState(false)
 
   const todayDate = format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR })
 
@@ -54,16 +66,33 @@ export default function AdminDashboard() {
   const handleReschedule = (id: string) => {
     const appointment = todayAppointments.find(apt => apt.id === id)
     if (appointment) {
-      alert(`Reagendar: ${appointment.clientName} - ${appointment.service}`)
-      // Aqui você pode abrir um modal ou redirecionar
+      // Converter para formato do modal
+      setSelectedAppointment({
+        id: appointment.id,
+        cliente: appointment.clientName,
+        servico: appointment.service,
+        data: format(new Date(), 'dd/MM/yyyy'),
+        hora: appointment.time
+      })
+      setIsReagendarOpen(true)
     }
   }
 
   const handleCancel = (id: string) => {
-    if (confirm('Tem certeza que deseja cancelar este agendamento?')) {
-      setTodayAppointments(todayAppointments.filter(apt => apt.id !== id))
+    const appointment = todayAppointments.find(apt => apt.id === id)
+    if (appointment) {
+      setSelectedAppointment({
+        id: appointment.id,
+        cliente: appointment.clientName,
+        servico: appointment.service,
+        data: format(new Date(), 'dd/MM/yyyy'),
+        hora: appointment.time
+      })
+      setIsReagendarOpen(true)
     }
   }
+
+  const [selectedAppointment, setSelectedAppointment] = useState<any>()
 
   const statsCards = [
     {
@@ -131,84 +160,86 @@ export default function AdminDashboard() {
             {todayAppointments.map((appointment) => (
               <div
                 key={appointment.id}
-                className={`flex items-center justify-between p-4 rounded-lg border-2 transition-all ${
+                className={`rounded-xl border-2 transition-all overflow-hidden ${
                   appointment.status === 'completed'
-                    ? 'bg-gray-50 border-gray-200 opacity-60'
+                    ? 'bg-gray-50 border-gray-200'
                     : appointment.status === 'confirmed'
-                    ? 'bg-green-50 border-green-200'
-                    : 'bg-yellow-50 border-yellow-200'
+                    ? 'bg-green-50 border-green-300'
+                    : 'bg-yellow-50 border-yellow-300'
                 }`}
               >
-                <div className="flex items-center space-x-4">
-                  <div className={`flex flex-col items-center justify-center w-16 h-16 rounded-lg border-2 ${
-                    appointment.status === 'completed'
-                      ? 'bg-gray-100 border-gray-300'
-                      : 'bg-white border-pink-300'
-                  }`}>
-                    <span className="text-lg font-bold text-gray-900">
-                      {appointment.time.split(':')[0]}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {appointment.time.split(':')[1]}
-                    </span>
+                {/* Header do Card */}
+                <div className="flex items-center justify-between p-4 bg-white border-b border-gray-200">
+                  <div className="flex items-center gap-3">
+                    <div className={`flex flex-col items-center justify-center w-14 h-14 rounded-lg ${
+                      appointment.status === 'completed'
+                        ? 'bg-gray-100 text-gray-600'
+                        : 'bg-pink-600 text-white'
+                    }`}>
+                      <span className="text-lg font-bold">
+                        {appointment.time.split(':')[0]}
+                      </span>
+                      <span className="text-xs">
+                        {appointment.time.split(':')[1]}
+                      </span>
+                    </div>
+
+                    <div>
+                      <h4 className="font-bold text-gray-900 text-base">
+                        {appointment.clientName}
+                      </h4>
+                      <p className="text-sm text-gray-600">
+                        {appointment.service}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-gray-900">
-                      {appointment.clientName}
-                    </h4>
-                    <p className="text-sm text-gray-600">
-                      {appointment.service}
-                    </p>
+                  {/* Status Badge */}
+                  <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+                    appointment.status === 'completed'
+                      ? 'bg-gray-200 text-gray-700'
+                      : appointment.status === 'confirmed'
+                      ? 'bg-green-500 text-white'
+                      : 'bg-yellow-400 text-gray-900'
+                  }`}>
+                    {appointment.status === 'completed' ? 'Concluído' : 
+                     appointment.status === 'confirmed' ? 'Confirmado' : 'Pendente'}
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                  {appointment.status === 'completed' ? (
-                    <span className="flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
-                      <CheckCircle className="w-3 h-3 mr-1" />
-                      Concluído
-                    </span>
-                  ) : appointment.status === 'confirmed' ? (
-                    <div className="flex items-center space-x-2">
-                      <span className="flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Confirmado
-                      </span>
+                {/* Ações - Mobile First */}
+                {appointment.status !== 'completed' && (
+                  <div className="p-3 bg-white">
+                    {appointment.status === 'confirmed' ? (
                       <button
                         onClick={() => handleComplete(appointment.id)}
-                        className="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors"
+                        className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                       >
-                        Concluir
+                        <CheckCircle className="w-5 h-5" />
+                        Marcar como Concluído
                       </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center space-x-2">
-                      <span className="flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
-                        <AlertCircle className="w-3 h-3 mr-1" />
-                        Pendente
-                      </span>
-                      <button
-                        onClick={() => handleConfirm(appointment.id)}
-                        className="px-3 py-1 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 transition-colors"
-                      >
-                        Confirmar
-                      </button>
-                      <button
-                        onClick={() => handleReschedule(appointment.id)}
-                        className="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors"
-                      >
-                        Reagendar
-                      </button>
-                      <button
-                        onClick={() => handleCancel(appointment.id)}
-                        className="px-2 py-1 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 transition-colors"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
-                </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => handleConfirm(appointment.id)}
+                          className="py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                        >
+                          <CheckCircle className="w-5 h-5" />
+                          <span className="hidden sm:inline">Confirmar</span>
+                          <span className="sm:hidden">✓</span>
+                        </button>
+                        <button
+                          onClick={() => handleReschedule(appointment.id)}
+                          className="py-3 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Calendar className="w-5 h-5" />
+                          <span className="hidden sm:inline">Reagendar</span>
+                          <span className="sm:hidden">📅</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -228,25 +259,31 @@ export default function AdminDashboard() {
               Ações Rápidas
             </h2>
             <div className="space-y-3">
-              <button className="w-full flex items-center justify-center px-4 py-3 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors">
+              <button 
+                onClick={() => setIsNovoAgendamentoOpen(true)}
+                className="w-full flex items-center justify-center px-4 py-3 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors"
+              >
                 <Calendar className="w-5 h-5 mr-2" />
                 Novo Agendamento
               </button>
-              <button className="w-full flex items-center justify-center px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+              <button 
+                onClick={() => setIsAdicionarClienteOpen(true)}
+                className="w-full flex items-center justify-center px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+              >
                 <Users className="w-5 h-5 mr-2" />
                 Adicionar Cliente
               </button>
-              <button className="w-full flex items-center justify-center px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
-                <Calendar className="w-5 h-5 mr-2" />
-                Reagendar/Cancelar
+              <button 
+                onClick={() => setIsDefinirHorariosOpen(true)}
+                className="w-full flex items-center justify-center px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                <Clock className="w-5 h-5 mr-2" />
+                Definir Horários
               </button>
-              <a href="/admin/configuracoes#horarios" className="block">
-                <button className="w-full flex items-center justify-center px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
-                  <Clock className="w-5 h-5 mr-2" />
-                  Definir Horários
-                </button>
-              </a>
-              <button className="w-full flex items-center justify-center px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+              <button 
+                onClick={() => setIsNovoServicoOpen(true)}
+                className="w-full flex items-center justify-center px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+              >
                 <Sparkles className="w-5 h-5 mr-2" />
                 Novo Serviço
               </button>
@@ -347,6 +384,32 @@ export default function AdminDashboard() {
           </div>
         ))}
       </div>
+
+      {/* Modais */}
+      <NovoAgendamentoModal 
+        isOpen={isNovoAgendamentoOpen}
+        onClose={() => setIsNovoAgendamentoOpen(false)}
+      />
+      
+      <AdicionarClienteModal 
+        isOpen={isAdicionarClienteOpen}
+        onClose={() => setIsAdicionarClienteOpen(false)}
+      />
+      
+      <ReagendarCancelarModal 
+        isOpen={isReagendarOpen}
+        onClose={() => setIsReagendarOpen(false)}
+      />
+      
+      <DefinirHorariosModal 
+        isOpen={isDefinirHorariosOpen}
+        onClose={() => setIsDefinirHorariosOpen(false)}
+      />
+      
+      <NovoServicoModal 
+        isOpen={isNovoServicoOpen}
+        onClose={() => setIsNovoServicoOpen(false)}
+      />
     </div>
   )
 }

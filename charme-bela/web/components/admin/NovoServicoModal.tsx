@@ -17,7 +17,9 @@ export function NovoServicoModal({ isOpen, onClose }: NovoServicoModalProps) {
     categoria: '',
     preco: '',
     duracao: '',
-    descricao: ''
+    descricao: '',
+    incluirPlano: false,
+    planosDisponiveis: [] as string[]
   })
 
   const categorias = [
@@ -25,8 +27,24 @@ export function NovoServicoModal({ isOpen, onClose }: NovoServicoModalProps) {
     'Tratamentos Corporais',
     'Depilação',
     'Pós-operatório',
-    'Injetáveis'
+    'Injetáveis',
+    'Massagens'
   ]
+
+  const planos = [
+    { id: 'essencial', nome: 'Essencial Beauty (Bronze)', valor: 'R$ 149,90' },
+    { id: 'plus', nome: 'Plus Care (Prata)', valor: 'R$ 249,90' },
+    { id: 'premium', nome: 'Premium Experience (Ouro)', valor: 'R$ 399,90' }
+  ]
+
+  const togglePlano = (planoId: string) => {
+    const planos = formData.planosDisponiveis
+    if (planos.includes(planoId)) {
+      setFormData({ ...formData, planosDisponiveis: planos.filter(p => p !== planoId) })
+    } else {
+      setFormData({ ...formData, planosDisponiveis: [...planos, planoId] })
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -120,8 +138,48 @@ export function NovoServicoModal({ isOpen, onClose }: NovoServicoModalProps) {
             onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
             placeholder="Descreva o serviço..."
             rows={3}
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
+            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none text-gray-900 placeholder:text-gray-400"
           />
+        </div>
+
+        {/* Incluir em Planos */}
+        <div className="border-t border-gray-200 pt-4">
+          <label className="flex items-center gap-2 cursor-pointer mb-3">
+            <input
+              type="checkbox"
+              checked={formData.incluirPlano}
+              onChange={(e) => setFormData({ ...formData, incluirPlano: e.target.checked })}
+              className="w-5 h-5 text-pink-600 rounded focus:ring-pink-500"
+            />
+            <span className="font-semibold text-gray-900">
+              Incluir em planos de assinatura
+            </span>
+          </label>
+
+          {formData.incluirPlano && (
+            <div className="bg-pink-50 border border-pink-200 rounded-xl p-4 space-y-2">
+              <p className="text-sm text-gray-700 mb-3">
+                Selecione em quais planos este serviço estará disponível:
+              </p>
+              {planos.map(plano => (
+                <label
+                  key={plano.id}
+                  className="flex items-center gap-3 p-3 bg-white border-2 border-gray-200 rounded-lg hover:border-pink-300 cursor-pointer transition-all"
+                >
+                  <input
+                    type="checkbox"
+                    checked={formData.planosDisponiveis.includes(plano.id)}
+                    onChange={() => togglePlano(plano.id)}
+                    className="w-5 h-5 text-pink-600 rounded focus:ring-pink-500"
+                  />
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-900">{plano.nome}</div>
+                    <div className="text-xs text-gray-500">{plano.valor}/mês</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">

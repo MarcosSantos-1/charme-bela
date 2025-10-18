@@ -16,7 +16,8 @@ import {
   Menu,
   X,
   ClipboardList,
-  HomeIcon
+  HomeIcon,
+  CreditCard
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -24,6 +25,7 @@ const navigation = [
   { name: 'Home', href: '/admin', icon: HomeIcon },
   { name: 'Agendamentos', href: '/admin/agendamentos', icon: Calendar },
   { name: 'Clientes', href: '/admin/clientes', icon: Users },
+  { name: 'Planos', href: '/admin/planos', icon: CreditCard },
   { name: 'Serviços', href: '/admin/servicos', icon: Sparkles },
   { name: 'Anamneses', href: '/admin/anamneses', icon: ClipboardList },
   { name: 'Configurações', href: '/admin/configuracoes', icon: Settings },

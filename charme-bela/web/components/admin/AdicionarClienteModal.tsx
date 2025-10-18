@@ -1,27 +1,54 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
-import { User, Mail, Phone, MapPin } from 'lucide-react'
+import { PhoneInput } from '../PhoneInput'
+import { User, Mail, Phone, MapPin, Calendar } from 'lucide-react'
 import toast from 'react-hot-toast'
+import DatePicker from '../DatePicker'
+import * as api from '@/lib/api'
 
 interface AdicionarClienteModalProps {
   isOpen: boolean
   onClose: () => void
+  editingClient?: {
+    id: string
+    name: string
+    email: string
+    phone: string
+  } | null
 }
 
-export function AdicionarClienteModal({ isOpen, onClose }: AdicionarClienteModalProps) {
+export function AdicionarClienteModal({ isOpen, onClose, editingClient }: AdicionarClienteModalProps) {
   const [formData, setFormData] = useState({
     nome: '',
     email: '',
     telefone: '',
     endereco: '',
-    dataNascimento: '',
+    dataNascimento: undefined as Date | undefined,
     observacoes: ''
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false)
+  
+  // Preencher dados ao editar
+  useEffect(() => {
+    if (isOpen && editingClient) {
+      setFormData({
+        nome: editingClient.name,
+        email: editingClient.email,
+        telefone: editingClient.phone,
+        endereco: '',
+        dataNascimento: undefined,
+        observacoes: ''
+      })
+    } else if (!isOpen) {
+      resetForm()
+    }
+  }, [isOpen, editingClient])
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!formData.nome || !formData.telefone) {
@@ -29,13 +56,63 @@ export function AdicionarClienteModal({ isOpen, onClose }: AdicionarClienteModal
       return
     }
 
-    toast.success('Cliente adicionado com sucesso!')
-    onClose()
-    setFormData({ nome: '', email: '', telefone: '', endereco: '', dataNascimento: '', observacoes: '' })
+    setLoading(true)
+    try {
+      if (editingClient) {
+        // Editar cliente existente
+        const updateData: any = {
+          name: formData.nome,
+          phone: formData.telefone
+        }
+        
+        if (formData.email && formData.email !== editingClient.email) {
+          updateData.email = formData.email
+        }
+
+        await api.updateUser(editingClient.id, updateData)
+        toast.success('Cliente atualizado com sucesso!')
+      } else {
+        // Criar novo cliente
+        const userData: any = {
+          name: formData.nome,
+          email: formData.email || `${formData.telefone.replace(/\D/g, '')}@temp.com`,
+          phone: formData.telefone,
+          role: 'CLIENT',
+          isActive: true
+        }
+
+        await api.createUser(userData)
+        toast.success('Cliente adicionado com sucesso!')
+      }
+      
+      onClose()
+      resetForm()
+    } catch (error: any) {
+      console.error('Erro ao salvar cliente:', error)
+      toast.error(error.message || 'Erro ao salvar cliente')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const resetForm = () => {
+    setFormData({ 
+      nome: '', 
+      email: '', 
+      telefone: '', 
+      endereco: '', 
+      dataNascimento: undefined, 
+      observacoes: '' 
+    })
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Adicionar Novo Cliente" size="lg">
+    <Modal 
+      isOpen={isOpen} 
+      onClose={onClose} 
+      title={editingClient ? "Editar Cliente" : "Adicionar Novo Cliente"} 
+      size="lg"
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Nome e Email */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -76,25 +153,25 @@ export function AdicionarClienteModal({ isOpen, onClose }: AdicionarClienteModal
               <Phone className="w-4 h-4 inline mr-1" />
               Telefone *
             </label>
-            <input
-              type="tel"
+            <PhoneInput
               value={formData.telefone}
-              onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+              onChange={(value) => setFormData({ ...formData, telefone: value })}
               placeholder="(11) 99999-9999"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 placeholder:text-gray-400"
               required
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Calendar className="w-4 h-4 inline mr-1" />
               Data de Nascimento
             </label>
-            <input
-              type="date"
+            <DatePicker
               value={formData.dataNascimento}
-              onChange={(e) => setFormData({ ...formData, dataNascimento: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 placeholder:text-gray-400"
+              onChange={(date) => setFormData({ ...formData, dataNascimento: date })}
+              maxDate={new Date()}
+              showYearPicker={true}
+              placeholder="Selecione a data de nascimento"
             />
           </div>
         </div>
@@ -142,8 +219,9 @@ export function AdicionarClienteModal({ isOpen, onClose }: AdicionarClienteModal
             type="submit"
             variant="primary"
             className="flex-1"
+            isLoading={loading}
           >
-            Adicionar Cliente
+            {editingClient ? 'Salvar Alterações' : 'Adicionar Cliente'}
           </Button>
         </div>
       </form>

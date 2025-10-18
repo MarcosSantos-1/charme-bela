@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/Button'
 import { Target, Sparkles } from 'lucide-react'
 
@@ -19,6 +19,19 @@ export default function Step4Objetivos({ data, onNext, onPrevious }: Props) {
     previousTreatments: data.previousTreatments || 'no',
     previousTreatmentsDetails: data.previousTreatmentsDetails || ''
   })
+
+  // Atualizar quando data mudar
+  useEffect(() => {
+    console.log('📝 Step4: Atualizando com dados carregados:', data)
+    setFormData({
+      mainGoal: data.mainGoal || '',
+      faceIssues: data.faceIssues || [],
+      bodyIssues: data.bodyIssues || [],
+      bodyIssuesArea: data.bodyIssuesArea || '',
+      previousTreatments: data.previousTreatments || 'no',
+      previousTreatmentsDetails: data.previousTreatmentsDetails || ''
+    })
+  }, [data])
 
   const faceIssuesList = [
     { id: 'acne', label: 'Acne/Cravos' },

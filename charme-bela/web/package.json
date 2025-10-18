@@ -9,15 +9,18 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@types/react-datepicker": "^6.2.0",
     "date-fns": "^4.1.0",
     "firebase": "^12.4.0",
     "lucide-react": "^0.545.0",
     "next": "15.5.5",
     "postcss": "^8.5.6",
     "react": "19.1.0",
+    "react-datepicker": "^8.8.0",
     "react-day-picker": "^9.11.1",
     "react-dom": "19.1.0",
-    "react-hot-toast": "^2.6.0"
+    "react-hot-toast": "^2.6.0",
+    "react-input-mask": "^2.0.4"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

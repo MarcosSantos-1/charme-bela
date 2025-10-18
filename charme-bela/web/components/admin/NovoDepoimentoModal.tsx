@@ -9,17 +9,19 @@ import toast from 'react-hot-toast'
 interface NovoDepoimentoModalProps {
   isOpen: boolean
   onClose: () => void
+  onSuccess: () => void
 }
 
-export function NovoDepoimentoModal({ isOpen, onClose }: NovoDepoimentoModalProps) {
+export function NovoDepoimentoModal({ isOpen, onClose, onSuccess }: NovoDepoimentoModalProps) {
   const [formData, setFormData] = useState({
     nome: '',
-    servico: '',
+    plano: '',
     avaliacao: 5,
     depoimento: ''
   })
+  const [saving, setSaving] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!formData.nome || !formData.depoimento) {
@@ -27,9 +29,27 @@ export function NovoDepoimentoModal({ isOpen, onClose }: NovoDepoimentoModalProp
       return
     }
 
-    toast.success('Depoimento adicionado com sucesso! ⭐')
-    onClose()
-    setFormData({ nome: '', servico: '', avaliacao: 5, depoimento: '' })
+    setSaving(true)
+    try {
+      const { createTestimonial } = await import('@/lib/api')
+      
+      await createTestimonial({
+        name: formData.nome,
+        role: formData.plano || 'Cliente',
+        avatar: formData.nome.charAt(0).toUpperCase(),
+        text: formData.depoimento,
+        rating: formData.avaliacao
+      })
+      
+      toast.success('Depoimento adicionado com sucesso! ⭐')
+      setFormData({ nome: '', plano: '', avaliacao: 5, depoimento: '' })
+      onSuccess()
+    } catch (error) {
+      console.error('Erro ao criar depoimento:', error)
+      toast.error('Erro ao criar depoimento')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -52,13 +72,13 @@ export function NovoDepoimentoModal({ isOpen, onClose }: NovoDepoimentoModalProp
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Serviço Realizado
+            Plano/Cargo
           </label>
           <input
             type="text"
-            value={formData.servico}
-            onChange={(e) => setFormData({ ...formData, servico: e.target.value })}
-            placeholder="Ex: Limpeza de Pele"
+            value={formData.plano}
+            onChange={(e) => setFormData({ ...formData, plano: e.target.value })}
+            placeholder="Ex: Assinante Plano Ouro"
             className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 placeholder:text-gray-400"
           />
         </div>
@@ -104,10 +124,10 @@ export function NovoDepoimentoModal({ isOpen, onClose }: NovoDepoimentoModalProp
         </div>
 
         <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
-          <Button type="button" variant="outline" onClick={onClose} className="flex-1">
+          <Button type="button" variant="outline" onClick={onClose} className="flex-1" disabled={saving}>
             Cancelar
           </Button>
-          <Button type="submit" variant="primary" className="flex-1">
+          <Button type="submit" variant="primary" className="flex-1" isLoading={saving}>
             Adicionar Depoimento
           </Button>
         </div>

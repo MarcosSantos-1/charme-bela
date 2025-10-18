@@ -7,13 +7,14 @@ import toast from 'react-hot-toast'
 
 interface Props {
   data: any
-  onSubmit: () => void
+  onSubmit: (data: any) => void
   onPrevious: () => void
+  submitting?: boolean
 }
 
-export default function Step5Termo({ data, onSubmit, onPrevious }: Props) {
-  const [agreed, setAgreed] = useState(false)
-  const [signature, setSignature] = useState('')
+export default function Step5Termo({ data, onSubmit, onPrevious, submitting = false }: Props) {
+  const [agreed, setAgreed] = useState(data.termsAccepted || false)
+  const [signature, setSignature] = useState(data.signature || '')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,7 +25,13 @@ export default function Step5Termo({ data, onSubmit, onPrevious }: Props) {
       })
       return
     }
-    onSubmit()
+    
+    // IMPORTANTE: Passar termsAccepted: true para o onSubmit
+    onSubmit({
+      termsAccepted: true,
+      signature: signature,
+      termsAcceptedAt: new Date().toISOString()
+    })
   }
 
   return (
@@ -164,16 +171,29 @@ export default function Step5Termo({ data, onSubmit, onPrevious }: Props) {
 
       {/* Navigation Buttons */}
       <div className="flex space-x-4">
-        <Button type="button" variant="outline" className="flex-1 py-4" onClick={onPrevious}>
+        <Button 
+          type="button" 
+          variant="outline" 
+          className="flex-1 py-4" 
+          onClick={onPrevious}
+          disabled={submitting}
+        >
           ← Voltar
         </Button>
         <Button
           type="submit"
           variant="primary"
           className="flex-1 py-4"
-          disabled={!agreed || !signature}
+          disabled={!agreed || !signature || submitting}
         >
-          Finalizar e Enviar Ficha ✓
+          {submitting ? (
+            <>
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+              Enviando...
+            </>
+          ) : (
+            'Finalizar e Enviar Ficha ✓'
+          )}
         </Button>
       </div>
     </form>

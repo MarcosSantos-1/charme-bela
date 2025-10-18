@@ -1,11 +1,14 @@
 'use client'
 
 import { ProtectedRoute } from '@/components/ProtectedRoute'
-import { useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
+import { useState, useEffect } from 'react'
 import { ArrowLeft, ArrowRight, Check, Sparkles } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/Button'
 import toast from 'react-hot-toast'
+import * as api from '@/lib/api'
+import { frontendToBackend, FrontendAnamnesisData } from '@/lib/adapters/anamnesisAdapter'
 
 // Steps Components
 import Step1DadosPessoais from './steps/Step1DadosPessoais'
@@ -16,10 +19,53 @@ import Step5Termo from './steps/Step5Termo'
 
 export default function AnamnesePage() {
   const router = useRouter()
+  const { user } = useAuth()
   const [currentStep, setCurrentStep] = useState(1)
-  const [formData, setFormData] = useState<any>({})
+  const [formData, setFormData] = useState<FrontendAnamnesisData>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [loadingExisting, setLoadingExisting] = useState(true)
 
   const totalSteps = 5
+
+  // Carregar anamnese existente
+  useEffect(() => {
+    const loadExistingAnamnesis = async () => {
+      if (!user?.id) {
+        setLoadingExisting(false)
+        return
+      }
+
+      try {
+        const existingAnamnesis = await api.getAnamnesisByUserId(user.id)
+        
+        console.log('📋 Carregando anamnese existente:', existingAnamnesis)
+        
+        // Usar o adapter para converter corretamente
+        const { backendToFrontend } = await import('@/lib/adapters/anamnesisAdapter')
+        const frontendData = backendToFrontend(existingAnamnesis)
+        
+        console.log('✅ Dados convertidos via adapter:', frontendData)
+        setFormData(frontendData)
+        
+      } catch (error: any) {
+        // Se não tem anamnese, preencher dados básicos do usuário
+        if (error.message?.includes('não encontrada')) {
+          console.log('ℹ️ Nova anamnese, preenchendo dados do usuário')
+          setFormData({
+            fullName: user.name || '',
+            email: user.email || '',
+            phone: user.phone || ''
+          })
+        } else {
+          console.error('Erro ao carregar anamnese:', error)
+        }
+      } finally {
+        setLoadingExisting(false)
+      }
+    }
+
+    loadExistingAnamnesis()
+  }, [user?.id, user?.name, user?.email, user?.phone])
 
   const handleNext = () => {
     if (currentStep < totalSteps) {
@@ -36,33 +82,74 @@ export default function AnamnesePage() {
   }
 
   const handleStepData = (data: any) => {
-    setFormData({ ...formData, ...data })
+    console.log('📥 handleStepData recebeu:', data)
+    const newFormData = { ...formData, ...data }
+    console.log('📦 Novo formData será:', newFormData)
+    setFormData(newFormData)
   }
 
-  const handleSubmit = async () => {
-    console.log('Anamnese completa:', formData)
-    // Salvar no localStorage que completou a anamnese
-    localStorage.setItem('hasCompletedAnamnese', 'true')
-    localStorage.setItem('anamneseData', JSON.stringify(formData))
+  const handleSubmitWithData = async (finalFormData: FrontendAnamnesisData) => {
+    if (!user?.id) {
+      toast.error('Usuário não autenticado')
+      return
+    }
+
+    setSubmitting(true)
     
-    toast.success('Ficha de anamnese enviada com sucesso! ✅', {
-      duration: 4000,
-      style: {
-        background: '#10b981',
-        color: '#fff',
-        fontWeight: '600',
-        padding: '16px',
-        borderRadius: '12px',
-      },
-      iconTheme: {
-        primary: '#fff',
-        secondary: '#10b981',
-      },
-    })
-    
-    setTimeout(() => {
-      router.push('/cliente')
-    }, 1000)
+    try {
+      console.log('📝 Enviando anamnese ao backend...', finalFormData)
+      console.log('🔍 CRÍTICO - termsAccepted no formData:', finalFormData.termsAccepted)
+      
+      // Converte dados do frontend para o formato do backend
+      const backendData = frontendToBackend(finalFormData, user.id)
+      
+      console.log('🔄 Dados convertidos:', backendData)
+      console.log('🔍 CRÍTICO - termsAccepted no backendData:', backendData.termsAccepted)
+      
+      // Verificar se já existe anamnese
+      let response
+      try {
+        const existingAnamnesis = await api.getAnamnesisByUserId(user.id)
+        
+        // Se existe, ATUALIZA (PUT)
+        console.log('🔄 Anamnese já existe, atualizando...')
+        response = await api.updateAnamnesis(user.id, backendData)
+        console.log('✅ Anamnese atualizada:', response)
+      } catch (error: any) {
+        // Se não existe (404), CRIA (POST)
+        if (error.message?.includes('não encontrada')) {
+          console.log('➕ Anamnese não existe, criando nova...')
+          response = await api.createAnamnesis(backendData)
+          console.log('✅ Anamnese criada:', response)
+        } else {
+          throw error
+        }
+      }
+      
+      toast.success('Ficha de anamnese salva com sucesso! ✅', {
+        duration: 4000,
+        style: {
+          background: '#10b981',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+        iconTheme: {
+          primary: '#fff',
+          secondary: '#10b981',
+        },
+      })
+      
+      setTimeout(() => {
+        router.push('/cliente')
+      }, 1500)
+    } catch (error: any) {
+      console.error('❌ Erro ao enviar anamnese:', error)
+      toast.error(error.message || 'Erro ao enviar ficha de anamnese')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const renderStep = () => {
@@ -76,7 +163,17 @@ export default function AnamnesePage() {
       case 4:
         return <Step4Objetivos data={formData} onNext={(data) => { handleStepData(data); handleNext() }} onPrevious={handlePrevious} />
       case 5:
-        return <Step5Termo data={formData} onSubmit={handleSubmit} onPrevious={handlePrevious} />
+        return <Step5Termo 
+          data={formData} 
+          onSubmit={(termsData) => { 
+            // Merge direto e passa para handleSubmit
+            const finalData = { ...formData, ...termsData }
+            console.log('🎯 Dados finais com termos:', finalData)
+            handleSubmitWithData(finalData)
+          }} 
+          onPrevious={handlePrevious} 
+          submitting={submitting} 
+        />
       default:
         return null
     }

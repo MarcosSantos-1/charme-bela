@@ -25,45 +25,28 @@ export default function ServicosPage() {
     loadServices()
   }, [])
 
-  const categories = ['all', 'facial', 'corporal', 'depilacao', 'pos-operatorio', 'injetaveis']
+  // Categorias agora vêm do backend: FACIAL, CORPORAL, MASSAGEM
+  const categories = ['all', 'FACIAL', 'CORPORAL', 'MASSAGEM']
   const categoryNames: Record<string, string> = {
-    all: 'Todos',
-    facial: 'Faciais',
-    corporal: 'Corporais',
-    depilacao: 'Depilação',
-    'pos-operatorio': 'Pós-Operatório',
-    injetaveis: 'Injetáveis'
+    all: 'Todos os Tratamentos',
+    FACIAL: '💆 Faciais',
+    CORPORAL: '🧘 Corporais',
+    MASSAGEM: '💆‍♀️ Massagens'
   }
 
-  // Função para categorizar serviços baseado no nome
-  const categorizeService = (serviceName: string): string => {
-    const nameLower = serviceName.toLowerCase()
-    
-    if (nameLower.includes('depilação') || nameLower.includes('laser')) {
-      return 'depilacao'
-    }
-    if (nameLower.includes('pós-operatór') || nameLower.includes('pos-operator')) {
-      return 'pos-operatorio'
-    }
-    if (nameLower.includes('botox') || nameLower.includes('preenchimento') || 
-        nameLower.includes('injetá') || nameLower.includes('enzima') || 
-        nameLower.includes('bioestimulador') || nameLower.includes('skinbooster')) {
-      return 'injetaveis'
-    }
-    if (nameLower.includes('limpeza') || nameLower.includes('peeling') || 
-        nameLower.includes('facial') || nameLower.includes('microagulhamento') || 
-        nameLower.includes('máscara') || nameLower.includes('hidratação facial') || 
-        nameLower.includes('acne') || nameLower.includes('led')) {
-      return 'facial'
-    }
-    // Default para corporal
-    return 'corporal'
-  }
-
-  // Filtrar serviços baseado na categoria selecionada
+  // Filtrar serviços baseado na categoria do backend
   const filteredServices = selectedCategory === 'all' 
     ? services 
-    : services.filter(service => categorizeService(service.name) === selectedCategory)
+    : services.filter(service => service.category === selectedCategory)
+
+  // Agrupar por categoria para exibição
+  const servicesByCategory = services.reduce((acc, service) => {
+    if (!acc[service.category]) {
+      acc[service.category] = []
+    }
+    acc[service.category].push(service)
+    return acc
+  }, {} as Record<string, Service[]>)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -108,19 +91,30 @@ export default function ServicosPage() {
       <section className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-wrap gap-3 justify-center">
-            {categories.map((category) => (
-              <button
-                key={category}
-                onClick={() => setSelectedCategory(category)}
-                className={`px-6 py-2 rounded-full font-medium transition-colors ${
-                  selectedCategory === category
-                    ? 'bg-pink-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {categoryNames[category]}
-              </button>
-            ))}
+            {categories.map((category) => {
+              const count = category === 'all' 
+                ? services.length 
+                : servicesByCategory[category]?.length || 0
+              
+              return (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(category)}
+                  className={`px-6 py-2 rounded-full font-medium transition-colors ${
+                    selectedCategory === category
+                      ? 'bg-pink-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {categoryNames[category]}
+                  <span className={`ml-2 text-xs ${
+                    selectedCategory === category ? 'text-pink-200' : 'text-gray-500'
+                  }`}>
+                    ({count})
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </div>
       </section>
@@ -147,6 +141,17 @@ export default function ServicosPage() {
 
                   {/* Service Content */}
                   <div className="p-6">
+                    {/* Category Badge */}
+                    <div className="mb-3">
+                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
+                        service.category === 'FACIAL' ? 'bg-pink-100 text-pink-700' :
+                        service.category === 'MASSAGEM' ? 'bg-purple-100 text-purple-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {categoryNames[service.category]}
+                      </span>
+                    </div>
+
                     <h3 className="text-2xl font-bold text-gray-900 mb-3">
                       {service.name}
                     </h3>

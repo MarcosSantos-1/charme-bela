@@ -41,6 +41,9 @@ export default function LoginPage() {
     setLoading(true)
     
     try {
+      // Limpar qualquer sessão admin antes de logar
+      localStorage.removeItem('adminSession')
+      
       await signIn(email, password)
       router.push('/cliente')
     } catch (error) {
@@ -52,11 +55,21 @@ export default function LoginPage() {
 
   const handleGoogleLogin = async () => {
     try {
+      // Limpar qualquer sessão admin antes de logar com Google
+      localStorage.removeItem('adminSession')
+      
       await signInWithGoogle()
       router.push('/cliente')
     } catch (error) {
       console.error(error)
     }
+  }
+
+  const handleClearSessions = () => {
+    localStorage.clear()
+    sessionStorage.clear()
+    toast.success('Todas as sessões foram limpas! Tente fazer login novamente.')
+    window.location.reload()
   }
 
   const handleQuickLogin = async (account: SavedAccount) => {
@@ -126,20 +139,25 @@ export default function LoginPage() {
 
           <div className="space-y-3 mb-6">
             {savedAccounts.map((account) => (
-              <button
+              <div
                 key={account.uid}
-                onClick={() => handleQuickLogin(account)}
-                disabled={loading}
-                className="group w-full flex items-center space-x-4 p-4 bg-white rounded-xl border-2 border-gray-200 hover:border-pink-300 hover:shadow-lg transition-all relative disabled:opacity-50 disabled:cursor-not-allowed"
+                className="group relative w-full flex items-center space-x-4 p-4 bg-white rounded-xl border-2 border-gray-200 hover:border-pink-300 hover:shadow-lg transition-all"
               >
+                <button
+                  onClick={() => handleQuickLogin(account)}
+                  disabled={loading}
+                  className="absolute inset-0 w-full h-full disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label={`Login como ${account.name}`}
+                />
+                
                 <Avatar 
                   name={account.name}
                   photoURL={account.photoURL}
                   size="md"
-                  className="flex-shrink-0"
+                  className="flex-shrink-0 relative z-10 pointer-events-none"
                 />
                 
-                <div className="flex-1 text-left">
+                <div className="flex-1 text-left relative z-10 pointer-events-none">
                   <div className="font-medium text-gray-900">{account.name}</div>
                   <div className="text-sm text-gray-500">{account.email}</div>
                   {auth.currentUser?.uid === account.uid && (
@@ -152,12 +170,12 @@ export default function LoginPage() {
 
                 <button
                   onClick={(e) => handleRemoveAccount(account.uid, e)}
-                  className="opacity-0 group-hover:opacity-100 p-2 hover:bg-red-50 rounded-lg transition-all"
+                  className="relative z-10 opacity-0 group-hover:opacity-100 p-2 hover:bg-red-50 rounded-lg transition-all"
                   title="Remover"
                 >
                   <X className="w-4 h-4 text-red-600" />
                 </button>
-              </button>
+              </div>
             ))}
           </div>
 
@@ -375,6 +393,16 @@ export default function LoginPage() {
               Criar conta
             </Link>
           </p>
+
+          {/* Clear sessions button (debug) */}
+          <div className="text-center pt-4 border-t border-gray-200">
+            <button
+              onClick={handleClearSessions}
+              className="text-xs text-gray-500 hover:text-gray-700 underline"
+            >
+              Problemas ao entrar? Clique aqui para limpar sessões
+            </button>
+          </div>
         </div>
       </div>
     </div>

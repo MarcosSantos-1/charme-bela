@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/Button'
 import { Heart, AlertCircle } from 'lucide-react'
 
@@ -26,6 +26,26 @@ export default function Step3Saude({ data, onNext, onPrevious }: Props) {
     birthControl: data.birthControl || 'no',
     birthControlType: data.birthControlType || ''
   })
+
+  // Atualizar quando data mudar
+  useEffect(() => {
+    console.log('📝 Step3: Atualizando com dados carregados:', data)
+    setFormData({
+      allergies: data.allergies || 'no',
+      allergiesDetails: data.allergiesDetails || '',
+      healthConditions: data.healthConditions || [],
+      diabetesDetails: data.diabetesDetails || '',
+      cancerDetails: data.cancerDetails || '',
+      medications: data.medications || 'no',
+      medicationsDetails: data.medicationsDetails || '',
+      pacemaker: data.pacemaker || false,
+      metalImplant: data.metalImplant || false,
+      pregnant: data.pregnant || 'no',
+      breastfeeding: data.breastfeeding || 'no',
+      birthControl: data.birthControl || 'no',
+      birthControlType: data.birthControlType || ''
+    })
+  }, [data])
 
   const healthConditionsList = [
     { id: 'hypertension', label: 'Hipertensão (Pressão Alta)' },

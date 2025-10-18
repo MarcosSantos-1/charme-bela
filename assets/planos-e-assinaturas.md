@@ -26,10 +26,9 @@ A lógica é criar 3 níveis de planos, cada um com acesso a uma gama de tratame
 
 * **Preço Sugerido:** R$ 149,90 / mês
 
-**Tratamentos Inclusos (o cliente escolhe 1 por semana):**
+**Tratamentos Inclusos (o cliente escolxFaciais:** (poderia ser limitada a 1 por mês para não sobrecarregar a pele)
 
-* **Faciais:** (poderia ser limitada a 1 por mês para não sobrecarregar a pele)
-  * Limpeza de pele
+* * Limpeza de pele
   * Máscara de LED
   * Peeling de diamante
   * Peeling Ultrassonico
@@ -122,7 +121,6 @@ A principio, o cliente pode agendar somente por horário (15h, 16h,17h... no fro
 Tem uma regra que na pagina admin que conforme o input do horário, o cliente não pode reagendar. No caso eu vou deixar 8h mas pode ser ajustável. Se eu marcar uma consulta para amanhã, as 09h da manhã, eu não posso reagendar as 6h da manhã, se eu como cliente for cancelar nesse período, perco um dos 4 ou 6 tratamentos do mês!
 
 Outra coisa importante. Caso o admin cancele o dia ou horário, o cliente que tiver seu horário perdido deve ser alertado na mensagem e uma forma de alerta-los. Por isso será muito importante ter todos os feriados já marcados no calendário e o papel do admin vizualizando e marcando certinho os clientes e tals.
-
 
 # Fluxos da Aplicação
 

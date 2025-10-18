@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/Button'
 import { Activity, Coffee, Cigarette, Wine, Droplet, Sun, Sparkles } from 'lucide-react'
 
@@ -24,6 +24,24 @@ export default function Step2EstiloVida({ data, onNext, onPrevious }: Props) {
     cosmetics: data.cosmetics || 'no',
     cosmeticsType: data.cosmeticsType || ''
   })
+
+  // Atualizar quando data mudar
+  useEffect(() => {
+    console.log('📝 Step2: Atualizando com dados carregados:', data)
+    setFormData({
+      exerciseActivity: data.exerciseActivity || 'no',
+      exerciseType: data.exerciseType || '',
+      stressLevel: data.stressLevel || '3',
+      smoking: data.smoking || 'no',
+      smokingAmount: data.smokingAmount || '',
+      alcohol: data.alcohol || 'no',
+      intestine: data.intestine || 'regular',
+      waterIntake: data.waterIntake || 'between1and2',
+      sunscreen: data.sunscreen || 'no',
+      cosmetics: data.cosmetics || 'no',
+      cosmeticsType: data.cosmeticsType || ''
+    })
+  }, [data])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })

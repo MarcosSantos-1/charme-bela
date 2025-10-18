@@ -1,257 +1,413 @@
 'use client'
 
 import { ProtectedRoute } from '@/components/ProtectedRoute'
-import { useRouter } from 'next/navigation'
-import { ArrowLeft, FileCheck, User, Heart, Activity, Target, Calendar } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import toast from 'react-hot-toast'
+import { ClientLayout } from '@/components/ClientLayout'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAnamnesis } from '@/lib/hooks/useAnamnesis'
+import { backendToFrontend } from '@/lib/adapters/anamnesisAdapter'
+import { FileText, User, Heart, Target, CheckCircle2, AlertCircle } from 'lucide-react'
+
+// Funções para traduzir valores
+const translateYesNo = (value: string | undefined): string => {
+  if (value === 'yes') return 'Sim'
+  if (value === 'no') return 'Não'
+  return '-'
+}
+
+const translateHowKnew = (value: string | undefined): string => {
+  const map: any = {
+    'indicacao': 'Indicação',
+    'instagram': 'Instagram',
+    'google': 'Google',
+    'outro': 'Outro'
+  }
+  return map[value || ''] || '-'
+}
+
+const translateWaterIntake = (value: string | undefined): string => {
+  const map: any = {
+    'lessThan1': 'Menos de 1 litro',
+    'between1and2': '1-2 litros',
+    'moreThan2': 'Mais de 2 litros'
+  }
+  return map[value || ''] || '-'
+}
+
+const translateIntestine = (value: string | undefined): string => {
+  const map: any = {
+    'regular': 'Regular',
+    'constipated': 'Preso',
+    'loose': 'Solto'
+  }
+  return map[value || ''] || '-'
+}
+
+const translateHealthCondition = (value: string): string => {
+  const map: any = {
+    'hypertension': 'Hipertensão',
+    'hypotension': 'Hipotensão',
+    'diabetes': 'Diabetes',
+    'circulatory': 'Distúrbios circulatórios',
+    'skinDisease': 'Doença de pele',
+    'hormonal': 'Alterações hormonais',
+    'epilepsy': 'Epilepsia',
+    'cancer': 'Câncer'
+  }
+  return map[value] || value
+}
+
+const translateFaceIssue = (value: string): string => {
+  const map: any = {
+    'acne': 'Acne/Cravos',
+    'spots': 'Manchas/Melasma',
+    'wrinkles': 'Rugas/Linhas de Expressão',
+    'sagging': 'Flacidez',
+    'darkCircles': 'Olheiras'
+  }
+  return map[value] || value
+}
+
+const translateBodyIssue = (value: string): string => {
+  const map: any = {
+    'localizedFat': 'Gordura Localizada',
+    'cellulite': 'Celulite',
+    'stretchMarks': 'Estrias',
+    'bodySagging': 'Flacidez',
+    'hair': 'Pelos'
+  }
+  return map[value] || value
+}
 
 export default function VisualizarAnamnesePage() {
-  const router = useRouter()
-  const [anamneseData, setAnamneseData] = useState<any>(null)
+  const { user } = useAuth()
+  const { anamnesis, hasAnamnesis, loading, error } = useAnamnesis(user?.id)
 
-  useEffect(() => {
-    const data = localStorage.getItem('anamneseData')
-    if (data) {
-      setAnamneseData(JSON.parse(data))
-    } else {
-      toast.error('Você ainda não preencheu a ficha de anamnese.', {
-        duration: 3000,
-        icon: '⚠️'
-      })
-      router.push('/cliente/perfil')
-    }
-  }, [router])
-
-  if (!anamneseData) {
-    return <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p>Carregando...</p>
-    </div>
+  if (loading) {
+    return (
+      <ProtectedRoute requiredRole="CLIENT">
+        <ClientLayout title="Minha Anamnese">
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600"></div>
+          </div>
+        </ClientLayout>
+      </ProtectedRoute>
+    )
   }
+
+  if (!hasAnamnesis || error) {
+    return (
+      <ProtectedRoute requiredRole="CLIENT">
+        <ClientLayout title="Minha Anamnese">
+          <div className="max-w-2xl mx-auto px-4 py-6">
+            <div className="bg-yellow-50 border-l-4 border-yellow-500 rounded-xl p-6">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-6 h-6 text-yellow-600 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-yellow-900 mb-1">Anamnese não encontrada</h3>
+                  <p className="text-sm text-yellow-800">
+                    Você ainda não preencheu sua ficha de anamnese.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </ClientLayout>
+      </ProtectedRoute>
+    )
+  }
+
+  const data = backendToFrontend(anamnesis)
 
   return (
     <ProtectedRoute requiredRole="CLIENT">
-      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-white pb-20">
-        {/* Header */}
-        <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-sm border-b border-gray-200">
-          <div className="max-w-2xl mx-auto px-4 py-4">
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={() => router.back()}
-                className="p-2 hover:bg-gray-100 rounded-full"
-              >
-                <ArrowLeft className="w-5 h-5 text-gray-900" />
-              </button>
+      <ClientLayout title="Minha Anamnese">
+        <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-pink-500 to-purple-500 rounded-2xl text-white p-6">
+            <div className="flex items-center gap-3 mb-3">
+              <FileText className="w-8 h-8" />
               <div>
-                <h1 className="text-lg font-bold text-gray-900">Minha Ficha de Anamnese</h1>
-                <p className="text-xs text-gray-600">Visualização completa</p>
+                <h1 className="text-2xl font-bold">Ficha de Anamnese</h1>
+                <p className="text-pink-100 text-sm">
+                  Preenchida em {anamnesis.createdAt && new Date(anamnesis.createdAt).toLocaleDateString('pt-BR')}
+                </p>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-          {/* Header Card */}
-          <div className="bg-white rounded-2xl p-6 text-center border-2 border-green-200">
-            <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FileCheck className="w-8 h-8 text-white" />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Ficha Completa ✓</h2>
-            <p className="text-gray-600">
-              Sua ficha de anamnese foi preenchida com sucesso
-            </p>
           </div>
 
           {/* Dados Pessoais */}
-          <div className="bg-white rounded-2xl p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="w-10 h-10 bg-pink-100 rounded-full flex items-center justify-center">
-                <User className="w-5 h-5 text-pink-600" />
-              </div>
-              <h3 className="font-semibold text-gray-900">Dados Pessoais</h3>
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+              <User className="w-5 h-5 text-pink-600" />
+              <h2 className="font-semibold text-gray-900">Dados Pessoais</h2>
             </div>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Nome Completo:</span>
-                <span className="font-medium text-gray-900">{anamneseData.fullName}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-gray-600">Nome Completo</p>
+                <p className="font-medium text-gray-900">{data.fullName || '-'}</p>
               </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Data de Nascimento:</span>
-                <span className="font-medium text-gray-900">{anamneseData.birthDate}</span>
+              <div>
+                <p className="text-sm text-gray-600">Data de Nascimento</p>
+                <p className="font-medium text-gray-900">
+                  {data.birthDate ? data.birthDate.toLocaleDateString('pt-BR') : '-'}
+                </p>
               </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Telefone:</span>
-                <span className="font-medium text-gray-900">{anamneseData.phone}</span>
+              <div>
+                <p className="text-sm text-gray-600">Telefone</p>
+                <p className="font-medium text-gray-900">{data.phone || '-'}</p>
               </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">E-mail:</span>
-                <span className="font-medium text-gray-900">{anamneseData.email}</span>
+              <div>
+                <p className="text-sm text-gray-600">E-mail</p>
+                <p className="font-medium text-gray-900">{data.email || '-'}</p>
               </div>
-              <div className="flex justify-between py-2">
-                <span className="text-gray-600">Como nos conheceu:</span>
-                <span className="font-medium text-gray-900">{anamneseData.howKnew || 'Não informado'}</span>
+              <div className="md:col-span-2">
+                <p className="text-sm text-gray-600">Endereço</p>
+                <p className="font-medium text-gray-900">
+                  {data.street}, {data.number} {data.complement && ` - ${data.complement}`}<br />
+                  {data.neighborhood} - {data.city}/{data.state}<br />
+                  CEP: {data.cep}
+                </p>
+              </div>
+              <div className="md:col-span-2">
+                <p className="text-sm text-gray-600">Como nos conheceu?</p>
+                <p className="font-medium text-gray-900">{translateHowKnew(data.howKnew)}</p>
               </div>
             </div>
           </div>
 
           {/* Estilo de Vida */}
-          <div className="bg-white rounded-2xl p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                <Activity className="w-5 h-5 text-purple-600" />
-              </div>
-              <h3 className="font-semibold text-gray-900">Estilo de Vida</h3>
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+              <Heart className="w-5 h-5 text-pink-600" />
+              <h2 className="font-semibold text-gray-900">Estilo de Vida</h2>
             </div>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Atividade Física:</span>
-                <span className="font-medium text-gray-900">{anamneseData.exerciseActivity === 'yes' ? 'Sim' : 'Não'}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-gray-600">Pratica Exercícios</p>
+                <p className="font-medium text-gray-900">{translateYesNo(data.exerciseActivity)}</p>
               </div>
-              {anamneseData.exerciseActivity === 'yes' && (
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-600">Tipo:</span>
-                  <span className="font-medium text-gray-900">{anamneseData.exerciseType}</span>
+              {data.exerciseType && (
+                <div>
+                  <p className="text-sm text-gray-600">Tipo de Exercício</p>
+                  <p className="font-medium text-gray-900">{data.exerciseType}</p>
                 </div>
               )}
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Nível de Estresse:</span>
-                <span className="font-medium text-gray-900">{anamneseData.stressLevel}/5</span>
+              <div>
+                <p className="text-sm text-gray-600">Nível de Estresse</p>
+                <p className="font-medium text-gray-900">{data.stressLevel ? `${data.stressLevel}/10` : '-'}</p>
               </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Fuma:</span>
-                <span className="font-medium text-gray-900">{anamneseData.smoking === 'yes' ? 'Sim' : 'Não'}</span>
+              <div>
+                <p className="text-sm text-gray-600">Fumante</p>
+                <p className="font-medium text-gray-900">
+                  {data.smoking === 'yes' && data.smokingAmount 
+                    ? `Sim (${data.smokingAmount})`
+                    : translateYesNo(data.smoking)}
+                </p>
               </div>
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Ingestão de Água:</span>
-                <span className="font-medium text-gray-900">
-                  {anamneseData.waterIntake === 'lessThan1' ? 'Menos de 1L' : 
-                   anamneseData.waterIntake === 'between1and2' ? '1-2L' : 'Mais de 2L'}
-                </span>
+              <div>
+                <p className="text-sm text-gray-600">Consumo de Álcool</p>
+                <p className="font-medium text-gray-900">{translateYesNo(data.alcohol)}</p>
               </div>
-              <div className="flex justify-between py-2">
-                <span className="text-gray-600">Protetor Solar:</span>
-                <span className="font-medium text-gray-900">{anamneseData.sunscreen === 'yes' ? 'Sim' : 'Não'}</span>
+              <div>
+                <p className="text-sm text-gray-600">Ingestão de Água</p>
+                <p className="font-medium text-gray-900">{translateWaterIntake(data.waterIntake)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Função Intestinal</p>
+                <p className="font-medium text-gray-900">{translateIntestine(data.intestine)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Usa Protetor Solar</p>
+                <p className="font-medium text-gray-900">{translateYesNo(data.sunscreen)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Usa Cosméticos</p>
+                <p className="font-medium text-gray-900">
+                  {data.cosmetics === 'yes' && data.cosmeticsType
+                    ? `Sim (${data.cosmeticsType})`
+                    : translateYesNo(data.cosmetics)}
+                </p>
               </div>
             </div>
           </div>
 
           {/* Saúde */}
-          <div className="bg-white rounded-2xl p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                <Heart className="w-5 h-5 text-red-600" />
-              </div>
-              <h3 className="font-semibold text-gray-900">Histórico de Saúde</h3>
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+              <Heart className="w-5 h-5 text-pink-600" />
+              <h2 className="font-semibold text-gray-900">Informações de Saúde</h2>
             </div>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Alergias:</span>
-                <span className="font-medium text-gray-900">{anamneseData.allergies === 'yes' ? 'Sim' : 'Não'}</span>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600">Possui alergias?</p>
+                <p className="font-medium text-gray-900">{translateYesNo(data.allergies)}</p>
+                {data.allergiesDetails && (
+                  <p className="text-sm text-gray-700 mt-1 pl-4 border-l-2 border-pink-300">
+                    {data.allergiesDetails}
+                  </p>
+                )}
               </div>
-              {anamneseData.allergies === 'yes' && (
-                <div className="py-2 border-b border-gray-100">
-                  <span className="text-gray-600 block mb-1">Detalhes:</span>
-                  <span className="font-medium text-gray-900">{anamneseData.allergiesDetails}</span>
-                </div>
-              )}
-              <div className="flex justify-between py-2 border-b border-gray-100">
-                <span className="text-gray-600">Medicamentos Contínuos:</span>
-                <span className="font-medium text-gray-900">{anamneseData.medications === 'yes' ? 'Sim' : 'Não'}</span>
+              
+              <div>
+                <p className="text-sm text-gray-600">Faz uso de medicamentos?</p>
+                <p className="font-medium text-gray-900">{translateYesNo(data.medications)}</p>
+                {data.medicationsDetails && (
+                  <p className="text-sm text-gray-700 mt-1 pl-4 border-l-2 border-pink-300">
+                    {data.medicationsDetails}
+                  </p>
+                )}
               </div>
-              {anamneseData.healthConditions && anamneseData.healthConditions.length > 0 && (
-                <div className="py-2">
-                  <span className="text-gray-600 block mb-2">Condições de Saúde:</span>
+              
+              {data.healthConditions && data.healthConditions.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Condições de Saúde</p>
                   <div className="flex flex-wrap gap-2">
-                    {anamneseData.healthConditions.map((condition: string, index: number) => (
-                      <span key={index} className="px-3 py-1 bg-red-50 text-red-700 rounded-full text-xs">
-                        {condition}
+                    {data.healthConditions.map((condition, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-pink-100 text-pink-700 rounded-full text-sm font-medium"
+                      >
+                        {translateHealthCondition(condition)}
                       </span>
                     ))}
                   </div>
                 </div>
               )}
+
+              {(data.pacemaker || data.metalImplant) && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Implantes</p>
+                  <div className="flex flex-wrap gap-2">
+                    {data.pacemaker && (
+                      <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">
+                        Marcapasso
+                      </span>
+                    )}
+                    {data.metalImplant && (
+                      <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">
+                        Implante Metálico
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              <div>
+                <p className="text-sm text-gray-600">Gestante</p>
+                <p className="font-medium text-gray-900">{translateYesNo(data.pregnant)}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-600">Amamentando</p>
+                <p className="font-medium text-gray-900">{translateYesNo(data.breastfeeding)}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-600">Usa Anticoncepcional</p>
+                <p className="font-medium text-gray-900">
+                  {data.birthControl === 'yes' && data.birthControlType
+                    ? `Sim (${data.birthControlType})`
+                    : translateYesNo(data.birthControl)}
+                </p>
+              </div>
             </div>
           </div>
 
           {/* Objetivos */}
-          <div className="bg-white rounded-2xl p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                <Target className="w-5 h-5 text-blue-600" />
-              </div>
-              <h3 className="font-semibold text-gray-900">Objetivos</h3>
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+              <Target className="w-5 h-5 text-pink-600" />
+              <h2 className="font-semibold text-gray-900">Objetivos e Expectativas</h2>
             </div>
-            <div className="space-y-3 text-sm">
-              {anamneseData.mainGoal && (
-                <div className="py-2 border-b border-gray-100">
-                  <span className="text-gray-600 block mb-1">Objetivo Principal:</span>
-                  <span className="font-medium text-gray-900">{anamneseData.mainGoal}</span>
+            <div className="space-y-4">
+              {data.mainGoal && (
+                <div>
+                  <p className="text-sm text-gray-600">Objetivo Principal</p>
+                  <p className="font-medium text-gray-900">{data.mainGoal}</p>
                 </div>
               )}
-              {anamneseData.faceIssues && anamneseData.faceIssues.length > 0 && (
-                <div className="py-2 border-b border-gray-100">
-                  <span className="text-gray-600 block mb-2">Preocupações Faciais:</span>
+
+              {data.faceIssues && data.faceIssues.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Preocupações Faciais</p>
                   <div className="flex flex-wrap gap-2">
-                    {anamneseData.faceIssues.map((issue: string, index: number) => (
-                      <span key={index} className="px-3 py-1 bg-pink-50 text-pink-700 rounded-full text-xs">
-                        {issue}
+                    {data.faceIssues.map((issue, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-pink-100 text-pink-700 rounded-full text-sm font-medium"
+                      >
+                        {translateFaceIssue(issue)}
                       </span>
                     ))}
                   </div>
                 </div>
               )}
-              {anamneseData.bodyIssues && anamneseData.bodyIssues.length > 0 && (
-                <div className="py-2">
-                  <span className="text-gray-600 block mb-2">Preocupações Corporais:</span>
+
+              {data.bodyIssues && data.bodyIssues.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Preocupações Corporais</p>
                   <div className="flex flex-wrap gap-2">
-                    {anamneseData.bodyIssues.map((issue: string, index: number) => (
-                      <span key={index} className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-xs">
-                        {issue}
+                    {data.bodyIssues.map((issue, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium"
+                      >
+                        {translateBodyIssue(issue)}
                       </span>
                     ))}
                   </div>
                 </div>
               )}
-            </div>
-          </div>
 
-          {/* Termo */}
-          <div className="bg-white rounded-2xl p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                <Calendar className="w-5 h-5 text-green-600" />
+              {data.bodyIssuesArea && (
+                <div>
+                  <p className="text-sm text-gray-600">Área Específica de Preocupação</p>
+                  <p className="font-medium text-gray-900">{data.bodyIssuesArea}</p>
+                </div>
+              )}
+              
+              <div>
+                <p className="text-sm text-gray-600">Já fez tratamentos estéticos anteriormente?</p>
+                <p className="font-medium text-gray-900">{translateYesNo(data.previousTreatments)}</p>
+                {data.previousTreatmentsDetails && (
+                  <p className="text-sm text-gray-700 mt-1 pl-4 border-l-2 border-pink-300">
+                    {data.previousTreatmentsDetails}
+                  </p>
+                )}
               </div>
-              <h3 className="font-semibold text-gray-900">Termo de Responsabilidade</h3>
-            </div>
-            <div className="p-4 bg-green-50 rounded-xl">
-              <p className="text-sm text-green-900">
-                ✓ Termo de responsabilidade aceito e assinado digitalmente
-              </p>
-              <p className="text-xs text-green-700 mt-2">
-                Data: {new Date().toLocaleDateString('pt-BR')}
-              </p>
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex space-x-3">
-            <button
-              onClick={() => router.push('/cliente/anamnese')}
-              className="flex-1 px-6 py-3 border-2 border-pink-600 text-pink-600 rounded-xl font-medium hover:bg-pink-50 transition-colors"
-            >
-              Atualizar Ficha
-            </button>
-            <button
-              onClick={() => router.push('/cliente/perfil')}
-              className="flex-1 px-6 py-3 bg-pink-600 text-white rounded-xl font-medium hover:bg-pink-700 transition-colors"
-            >
-              Voltar ao Perfil
-            </button>
+          {/* Termo Aceito */}
+          <div className={`border-l-4 rounded-xl p-6 ${
+            data.termsAccepted 
+              ? 'bg-green-50 border-green-500'
+              : 'bg-orange-50 border-orange-500'
+          }`}>
+            <div className="flex items-start gap-3">
+              {data.termsAccepted ? (
+                <CheckCircle2 className="w-6 h-6 text-green-600 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-6 h-6 text-orange-600 mt-0.5" />
+              )}
+              <div>
+                <h3 className={`font-semibold mb-1 ${
+                  data.termsAccepted ? 'text-green-900' : 'text-orange-900'
+                }`}>
+                  Termo de Consentimento
+                </h3>
+                <p className={`text-sm ${
+                  data.termsAccepted ? 'text-green-800' : 'text-orange-800'
+                }`}>
+                  {data.termsAccepted 
+                    ? 'Você leu e aceitou o termo de responsabilidade e consentimento informado.'
+                    : 'Termo não aceito'}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </ClientLayout>
     </ProtectedRoute>
   )
 }
-

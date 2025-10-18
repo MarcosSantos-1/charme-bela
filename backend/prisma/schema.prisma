@@ -10,95 +10,420 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================
+// USUÁRIOS E AUTENTICAÇÃO
+// ============================================
+
 model User {
   id                 String             @id @default(cuid())
   name               String
   email              String             @unique
-  firebaseUid        String             @unique // Ainda usaremos o Firebase para Auth no frontend
+  phone              String?            // Telefone do cliente
+  firebaseUid        String?            @unique // Firebase Auth (pode ser null para clientes criados pelo admin)
   profileImageUrl    String?
   role               Role               @default(CLIENT)
-  stripeCustomerId   String?            @unique
+  stripeCustomerId   String?            @unique // ID do cliente no Stripe
+  
+  // Relacionamentos
   anamnesisForm      AnamnesisForm?
   appointments       Appointment[]
-  activeSubscription Subscription?
+  subscription       Subscription?
+  vouchers           Voucher[]
+  monthlyUsage       MonthlyUsage[]
+  
+  // Controle
+  isActive           Boolean            @default(true) // Admin pode desativar um cliente
+  createdBy          String?            // ID do admin que criou (se aplicável)
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
+
+  @@index([email])
+  @@index([role])
 }
+
+// ============================================
+// SERVIÇOS E TRATAMENTOS
+// ============================================
 
 model Service {
-  id           String        @id @default(cuid())
+  id           String            @id @default(cuid())
   name         String
-  description  String
-  duration     Int // Duração em minutos
-  price        Float // Preço avulso
-  isActive     Boolean       @default(true)
+  description  String            @db.Text
+  category     ServiceCategory   @default(CORPORAL) // Facial, Corporal, Massagem - TEMPORÁRIO: depois ajustamos
+  duration     Int               // Duração em minutos
+  price        Float             // Preço avulso
+  isActive     Boolean           @default(true)
+  
+  // Relacionamentos
   plans        SubscriptionPlan[] @relation("ServicesOnPlans")
   appointments Appointment[]
+  
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @default(now()) @updatedAt
+
+  @@index([category])
+  @@index([isActive])
 }
 
+// ============================================
+// PLANOS DE ASSINATURA
+// ============================================
+
 model SubscriptionPlan {
-  id          String    @id @default(cuid())
-  name        String
-  description String
-  stripePriceId String    @unique
-  price       Float
-  services    Service[] @relation("ServicesOnPlans")
-  subscriptions Subscription[]
+  id                      String              @id @default(cuid())
+  name                    String              // "Essencial Beauty", "Plus Care", "Premium Experience"
+  tier                    PlanTier            // BRONZE, SILVER, GOLD
+  description             String              @db.Text
+  price                   Float               // Valor mensal
+  stripePriceId           String?             @unique // ID do preço no Stripe (null para mock)
+  
+  // REGRAS DE LIMITE
+  maxTreatmentsPerMonth   Int                 // 4 ou 6 tratamentos por mês
+  maxTreatmentsPerWeek    Int                 // 1 para Bronze/Prata, 2+ para Ouro
+  maxFacialPerMonth       Int?                // Limite de faciais por mês (ex: 1)
+  
+  // Relacionamentos
+  services                Service[]           @relation("ServicesOnPlans")
+  subscriptions           Subscription[]
+  
+  isActive                Boolean             @default(true)
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@index([tier])
+  @@index([isActive])
 }
 
 model Subscription {
-  id        String    @id @default(cuid())
-  userId    String    @unique
-  user      User      @relation(fields: [userId], references: [id])
-  planId    String
-  plan      SubscriptionPlan @relation(fields: [planId], references: [id])
-  stripeSubscriptionId String @unique
-  status    String // e.g., 'active', 'canceled', 'past_due'
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id                    String              @id @default(cuid())
+  userId                String              @unique
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId                String
+  plan                  SubscriptionPlan    @relation(fields: [planId], references: [id])
+  
+  // Stripe
+  stripeSubscriptionId  String?             @unique // Null para mock/teste
+  
+  // Status e datas
+  status                SubscriptionStatus  @default(ACTIVE)
+  startDate             DateTime            @default(now())
+  endDate               DateTime?           // Data de cancelamento agendado
+  minimumCommitmentEnd  DateTime?           // Data mínima de compromisso (3 meses)
+  
+  // Controle
+  canceledAt            DateTime?
+  cancelReason          String?
+  
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([userId])
+  @@index([status])
 }
 
+// ============================================
+// CONTROLE DE USO MENSAL
+// ============================================
+
+// Rastreia quantos tratamentos o cliente usou em cada mês
+model MonthlyUsage {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  month                 Int      // 1-12
+  year                  Int      // 2024, 2025...
+  
+  // Contadores
+  totalTreatments       Int      @default(0) // Total de tratamentos usados no mês
+  facialTreatments      Int      @default(0) // Total de faciais usados (para limite)
+  
+  // Controle semanal (semanas do mês: 1, 2, 3, 4, 5)
+  weeklyUsage           Json     // Ex: { "1": 1, "2": 0, "3": 1, "4": 1 } - tratamentos por semana
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([userId, month, year])
+  @@index([userId, year, month])
+}
+
+// ============================================
+// AGENDAMENTOS
+// ============================================
+
 model Appointment {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  serviceId String
-  service   Service  @relation(fields: [serviceId], references: [id])
-  startTime DateTime
-  endTime   DateTime
-  status    String   // e.g., 'scheduled', 'completed', 'canceled'
-  origin    String   // 'subscription', 'single_purchase', 'package'
-  notes     String?
-  createdAt DateTime @default(now())
+  id              String            @id @default(cuid())
+  userId          String
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceId       String
+  service         Service           @relation(fields: [serviceId], references: [id])
+  
+  // Data e hora
+  startTime       DateTime
+  endTime         DateTime
+  
+  // Status e origem
+  status          AppointmentStatus @default(PENDING)
+  origin          AppointmentOrigin // De onde veio o agendamento
+  
+  // Pagamento (para tratamentos avulsos)
+  paymentStatus   PaymentStatus?    // Null se for de assinatura/voucher
+  paymentMethod   String?           // "pix", "credit_card", "debit_card"
+  paymentAmount   Float?
+  
+  // Voucher (se aplicável)
+  voucherId       String?
+  voucher         Voucher?          @relation(fields: [voucherId], references: [id])
+  
+  // Controle
+  confirmedByAdmin Boolean          @default(false)
+  canceledBy       String?          // "client" ou "admin"
+  canceledAt       DateTime?
+  cancelReason     String?
+  
+  // Observações
+  notes            String?          @db.Text
+  adminNotes       String?          @db.Text // Observações privadas do admin
+  
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   @@index([userId])
   @@index([serviceId])
+  @@index([startTime])
+  @@index([status])
 }
+
+// ============================================
+// VOUCHERS E PRESENTES
+// ============================================
+
+model Voucher {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type            VoucherType   // FREE_TREATMENT, FREE_MONTH, DISCOUNT
+  description     String        // "Presente de aniversário", "Cortesia"
+  
+  // Para tratamento gratuito
+  serviceId       String?       // Se for tratamento específico
+  anyService      Boolean       @default(false) // Cliente pode escolher qualquer tratamento
+  
+  // Para desconto
+  discountPercent Float?        // 50 = 50% de desconto
+  discountAmount  Float?        // R$ 50 de desconto
+  
+  // Para mês grátis de plano
+  planId          String?       // Se for mês grátis de um plano específico
+  
+  // Status
+  isUsed          Boolean       @default(false)
+  usedAt          DateTime?
+  expiresAt       DateTime?     // Data de expiração
+  
+  // Relacionamentos
+  appointments    Appointment[]
+  
+  // Observações
+  grantedBy       String        // ID do admin que concedeu
+  grantedReason   String?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([isUsed])
+}
+
+// ============================================
+// FICHA DE ANAMNESE
+// ============================================
 
 model AnamnesisForm {
   id           String   @id @default(cuid())
   userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id])
-  facialData   Json
-  corporalData Json
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Dados pessoais (Step 1)
+  personalData Json     // Nome completo, data nascimento, endereço, etc
+  
+  // Estilo de vida (Step 2)
+  lifestyleData Json    // Alimentação, exercícios, sono, etc
+  
+  // Saúde (Step 3)
+  healthData   Json     // Alergias, medicamentos, doenças, etc
+  
+  // Objetivos (Step 4)
+  objectivesData Json   // O que espera dos tratamentos
+  
+  // Termo (Step 5)
+  termsAccepted Boolean @default(false)
+  termsAcceptedAt DateTime?
+  
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([userId])
 }
+
+// ============================================
+// HORÁRIOS DE FUNCIONAMENTO
+// ============================================
 
 model ManagerSchedule {
-    id            String @id @default(cuid())
-    dayOfWeek     Int // 0 (Sunday) to 6 (Saturday)
-    availableSlots Json // Ex: [{ start: "09:00", end: "12:00" }, { start: "14:00", end: "18:00" }]
+  id              String   @id @default(cuid())
+  dayOfWeek       Int      // 0 (Domingo) a 6 (Sábado)
+  isAvailable     Boolean  @default(true)
+  availableSlots  Json     // Ex: [{ start: "09:00", end: "12:00" }, { start: "14:00", end: "18:00" }]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([dayOfWeek])
 }
 
+// Exceções de horário (feriados, dias específicos)
 model ScheduleOverride {
-    id            String @id @default(cuid())
-    date          DateTime @db.Date
-    isAvailable   Boolean
-    availableSlots Json? // Opcional para sobrescrever os horários do dia
+  id              String   @id @default(cuid())
+  date            DateTime @db.Date
+  isAvailable     Boolean  // False para feriados/folgas
+  availableSlots  Json?    // Horários específicos deste dia (se disponível)
+  reason          String?  // "Feriado", "Folga", "Hora extra"
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([date])
+  @@index([date])
 }
+
+// ============================================
+// DEPOIMENTOS / TESTEMUNHOS
+// ============================================
+
+model Testimonial {
+  id          String   @id @default(cuid())
+  name        String
+  role        String   // Ex: "Assinante Plus Care"
+  avatar      String   // Letra inicial para avatar
+  text        String   @db.Text
+  rating      Int      @default(5)
+  photoUrl    String?  // URL da foto (opcional)
+  isActive    Boolean  @default(true)
+  order       Int      @default(0) // Ordem de exibição
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// CONFIGURAÇÕES DO SISTEMA
+// ============================================
+
+model SystemConfig {
+  id                          String   @id @default(cuid())
+  
+  // Regras de agendamento
+  minCancellationHours        Int      @default(8)  // Mínimo de horas para cancelamento sem perda
+  minRescheduleHours          Int      @default(8)  // Mínimo de horas para reagendamento
+  
+  // Horários padrão
+  defaultStartTime            String   @default("09:00")
+  defaultEndTime              String   @default("18:00")
+  slotDuration                Int      @default(60) // Duração padrão dos slots em minutos
+  
+  // Regras de assinatura
+  minimumCommitmentMonths     Int      @default(3)  // Fidelidade mínima
+  
+  // Notificações
+  enableEmailNotifications    Boolean  @default(true)
+  enableSmsNotifications      Boolean  @default(false)
+  
+  // Manutenção
+  maintenanceMode             Boolean  @default(false)
+  maintenanceMessage          String?
+  
+  // Informações de Contato
+  phone                       String?
+  whatsapp                    String?
+  email                       String?
+  instagram                   String?
+  
+  // Endereço
+  addressCep                  String?
+  addressStreet               String?
+  addressNumber               String?
+  addressComplement           String?
+  addressNeighborhood         String?
+  addressCity                 String?
+  addressState                String?
+  
+  // Política de Cancelamento
+  cancellationPolicy          String?
+  
+  // Preços dos Planos (para controle centralizado)
+  priceBronze                 Float?   @default(119.90)
+  priceSilver                 Float?   @default(139.90)
+  priceGold                   Float?   @default(169.90)
+  
+  updatedAt                   DateTime @updatedAt
+  updatedBy                   String?  // ID do admin que atualizou
+}
+
+// ============================================
+// ENUMS
+// ============================================
 
 enum Role {
   CLIENT
   MANAGER
+}
+
+enum ServiceCategory {
+  COMBO
+  FACIAL
+  CORPORAL
+  MASSAGEM
+}
+
+enum PlanTier {
+  BRONZE   // Essencial Beauty
+  SILVER   // Plus Care
+  GOLD     // Premium Experience
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  PAUSED
+}
+
+enum AppointmentStatus {
+  PENDING       // Aguardando confirmação do admin
+  CONFIRMED     // Confirmado pelo admin
+  COMPLETED     // Finalizado
+  CANCELED      // Cancelado
+  NO_SHOW       // Cliente não compareceu
+}
+
+enum AppointmentOrigin {
+  SUBSCRIPTION  // Veio da assinatura
+  SINGLE        // Tratamento avulso
+  VOUCHER       // Voucher/presente
+  ADMIN_CREATED // Criado pelo admin
+}
+
+enum PaymentStatus {
+  PENDING       // Aguardando pagamento
+  PAID          // Pago
+  FAILED        // Falhou
+  REFUNDED      // Estornado
+}
+
+enum VoucherType {
+  FREE_TREATMENT  // Tratamento gratuito
+  FREE_MONTH      // Mês grátis de assinatura
+  DISCOUNT        // Desconto em tratamento
 }

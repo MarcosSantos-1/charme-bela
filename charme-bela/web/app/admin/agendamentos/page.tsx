@@ -1,13 +1,15 @@
 'use client'
 
-import { useState } from 'react'
-import { Calendar, Clock, Plus, Search, Filter, ChevronLeft, ChevronRight, Grid3x3, List } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Calendar, Clock, Plus, Search, Filter, ChevronLeft, ChevronRight, Grid3x3, List, Loader2 } from 'lucide-react'
 import { Button } from '@/components/Button'
 import { format, addDays, startOfWeek, addWeeks, subWeeks, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { NovoAgendamentoModal } from '@/components/admin/NovoAgendamentoModal'
 import { ReagendarCancelarModal } from '@/components/admin/ReagendarCancelarModal'
 import { isFeriado, getFeriadosDoMes } from '@/lib/feriados'
+import * as api from '@/lib/api'
+import toast from 'react-hot-toast'
 
 interface Appointment {
   id: string
@@ -17,6 +19,24 @@ interface Appointment {
   endTime: Date
   status: 'scheduled' | 'completed' | 'canceled'
   notes?: string
+  paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
+  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED'
+}
+
+// Função helper para converter UTC string para Date local (sem conversão de timezone)
+// Exemplo: "2025-10-18T14:00:00.000Z" -> Date local com 14:00
+function parseUTCasLocal(utcString: string): Date {
+  const parts = utcString.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+  if (!parts) return new Date()
+  
+  const [_, year, month, day, hours, minutes] = parts
+  return new Date(
+    parseInt(year),
+    parseInt(month) - 1,
+    parseInt(day),
+    parseInt(hours),
+    parseInt(minutes)
+  )
 }
 
 export default function AgendamentosPage() {
@@ -34,33 +54,75 @@ export default function AgendamentosPage() {
     hora: string
   } | undefined>()
 
-  // Mock data - substituir por dados reais da API
-  const appointments: Appointment[] = [
-    {
-      id: '1',
-      clientName: 'Maria Silva',
-      service: 'Limpeza de Pele',
-      startTime: new Date(2025, 9, 14, 9, 0),
-      endTime: new Date(2025, 9, 14, 10, 0),
-      status: 'scheduled'
-    },
-    {
-      id: '2',
-      clientName: 'Ana Santos',
-      service: 'Massagem Modeladora',
-      startTime: new Date(2025, 9, 14, 10, 30),
-      endTime: new Date(2025, 9, 14, 11, 30),
-      status: 'scheduled'
-    },
-    {
-      id: '3',
-      clientName: 'Julia Oliveira',
-      service: 'Drenagem Linfática',
-      startTime: new Date(2025, 9, 14, 14, 0),
-      endTime: new Date(2025, 9, 14, 15, 0),
-      status: 'scheduled'
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState('')
+
+  // Buscar agendamentos do backend
+  useEffect(() => {
+    loadAppointments()
+  }, [currentWeek, currentMonth, viewMode])
+
+  const loadAppointments = async () => {
+    setLoading(true)
+    try {
+      // Definir range de datas baseado no modo de visualização
+      let startDate: Date
+      let endDate: Date
+
+      if (viewMode === 'week') {
+        startDate = startOfWeek(currentWeek, { weekStartsOn: 0 })
+        endDate = addDays(startDate, 6)
+        endDate.setHours(23, 59, 59)
+      } else {
+        startDate = startOfMonth(currentMonth)
+        endDate = endOfMonth(currentMonth)
+        endDate.setHours(23, 59, 59)
+      }
+
+      const appts = await api.getAppointments({
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString()
+      })
+
+      // Filtrar agendamentos cancelados
+      const activeAppts = appts.filter(apt => apt.status !== 'CANCELED' && apt.status !== 'NO_SHOW')
+
+      const parsedAppointments = activeAppts.map(apt => {
+        const startLocal = parseUTCasLocal(apt.startTime)
+        const endLocal = parseUTCasLocal(apt.endTime)
+        
+        console.log(`📅 Agendamento ${apt.id}:`, {
+          cliente: apt.user?.name,
+          utcString: apt.startTime,
+          localDate: startLocal.toLocaleString('pt-BR'),
+          hora: format(startLocal, 'HH:mm'),
+          origin: apt.origin,
+          paymentStatus: apt.paymentStatus,
+          isAdminPending: apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
+        })
+        
+        return {
+          id: apt.id,
+          clientName: apt.user?.name || 'Cliente',
+          service: apt.service?.name || 'Serviço',
+          startTime: startLocal,
+          endTime: endLocal,
+          status: apt.status === 'COMPLETED' ? 'completed' as const : 'scheduled' as const,
+          notes: apt.notes,
+          paymentStatus: apt.paymentStatus,
+          origin: apt.origin
+        }
+      })
+      
+      setAppointments(parsedAppointments)
+    } catch (error) {
+      console.error('Erro ao carregar agendamentos:', error)
+      toast.error('Erro ao carregar agendamentos')
+    } finally {
+      setLoading(false)
     }
-  ]
+  }
 
   const weekStart = startOfWeek(currentWeek, { weekStartsOn: 0 })
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
@@ -69,20 +131,54 @@ export default function AgendamentosPage() {
   const monthEnd = endOfMonth(currentMonth)
   const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd })
 
-  const hours = Array.from({ length: 11 }, (_, i) => i + 8) // 8h às 18h
+  // Calcular horários dinamicamente baseado nos agendamentos
+  const getHoursRange = () => {
+    if (appointments.length === 0) {
+      return Array.from({ length: 11 }, (_, i) => i + 8) // 8h às 18h (padrão)
+    }
+    
+    // Encontrar hora mínima e máxima dos agendamentos
+    let minHour = 24
+    let maxHour = 0
+    
+    appointments.forEach(apt => {
+      const hour = apt.startTime.getHours()
+      if (hour < minHour) minHour = hour
+      if (hour > maxHour) maxHour = hour
+    })
+    
+    // Adicionar margem de 1 hora antes e depois
+    minHour = Math.max(7, minHour - 1)
+    maxHour = Math.min(20, maxHour + 2)
+    
+    const hoursCount = maxHour - minHour
+    return Array.from({ length: hoursCount }, (_, i) => i + minHour)
+  }
+  
+  const hours = getHoursRange()
+
+  // Filtrar agendamentos por busca
+  const filteredAppointments = appointments.filter(apt => 
+    searchTerm === '' || 
+    apt.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    apt.service.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   const getAppointmentsForDateTime = (date: Date, hour: number) => {
-    return appointments.filter(apt => {
+    return filteredAppointments.filter(apt => {
       const aptHour = apt.startTime.getHours()
       return isSameDay(apt.startTime, date) && aptHour === hour
     })
   }
 
   const getAppointmentsForDate = (date: Date) => {
-    return appointments.filter(apt => isSameDay(apt.startTime, date))
+    return filteredAppointments.filter(apt => isSameDay(apt.startTime, date))
   }
 
-  const feriadosDoMes = getFeriadosDoMes(currentMonth.getFullYear(), currentMonth.getMonth())
+  // Buscar feriados baseado no modo de visualização
+  const feriadosDoMes = viewMode === 'month' 
+    ? getFeriadosDoMes(currentMonth.getFullYear(), currentMonth.getMonth())
+    : getFeriadosDoMes(currentWeek.getFullYear(), currentWeek.getMonth())
 
   return (
     <div className="space-y-6">
@@ -167,8 +263,10 @@ export default function AgendamentosPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Buscar agendamento..."
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar cliente ou serviço..."
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
             />
           </div>
 
@@ -190,8 +288,18 @@ export default function AgendamentosPage() {
         </div>
       </div>
 
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center py-12 bg-white rounded-xl border border-gray-200">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin text-pink-600 mx-auto mb-2" />
+            <p className="text-gray-600 text-sm">Carregando agendamentos...</p>
+          </div>
+        </div>
+      )}
+
       {/* Feriados do Mês */}
-      {feriadosDoMes.length > 0 && (
+      {!loading && feriadosDoMes.length > 0 && (
         <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-xl p-4">
           <h3 className="font-bold text-gray-900 mb-2 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-red-600" />
@@ -216,7 +324,7 @@ export default function AgendamentosPage() {
       )}
 
       {/* Calendar Grid - Mobile Optimized */}
-      {viewMode === 'week' ? (
+      {!loading && (viewMode === 'week' ? (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {/* Week header */}
         <div className="hidden md:grid md:grid-cols-8 border-b border-gray-200 bg-gray-50">
@@ -245,10 +353,9 @@ export default function AgendamentosPage() {
         <div className="hidden md:block overflow-x-auto scrollbar-hide">
           <div className="grid grid-cols-8 divide-y divide-gray-200">
             {hours.map((hour) => (
-              <>
+              <React.Fragment key={`hour-${hour}`}>
                 {/* Hour label */}
                 <div
-                  key={`hour-${hour}`}
                   className="p-4 text-sm font-medium text-gray-500 bg-gray-50 border-r border-gray-200"
                 >
                   {hour.toString().padStart(2, '0')}:00
@@ -266,7 +373,39 @@ export default function AgendamentosPage() {
                         isCurrentDay ? 'bg-pink-50/30' : ''
                       }`}
                     >
-                      {dayAppointments.map((apt) => (
+                      {dayAppointments.map((apt) => {
+                        // ADMIN_CREATED sem paymentStatus = PENDING por padrão (fallback para registros antigos)
+                        const isAdminPending = apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
+                        const isSubscription = apt.origin === 'SUBSCRIPTION'
+                        const isClientSingle = apt.origin === 'SINGLE'
+                        
+                        let bgColor = 'bg-pink-100'
+                        let borderColor = 'border-pink-600'
+                        let textColor = 'text-pink-900'
+                        let textSecondary = 'text-pink-700'
+                        let badge = ''
+                        
+                        if (isAdminPending) {
+                          bgColor = 'bg-yellow-100'
+                          borderColor = 'border-yellow-600'
+                          textColor = 'text-yellow-900'
+                          textSecondary = 'text-yellow-700'
+                          badge = '💰'
+                        } else if (isSubscription) {
+                          bgColor = 'bg-purple-100'
+                          borderColor = 'border-purple-600'
+                          textColor = 'text-purple-900'
+                          textSecondary = 'text-purple-700'
+                          badge = '✨'
+                        } else if (isClientSingle) {
+                          bgColor = 'bg-blue-100'
+                          borderColor = 'border-blue-600'
+                          textColor = 'text-blue-900'
+                          textSecondary = 'text-blue-700'
+                          badge = '💳'
+                        }
+                        
+                        return (
                         <button
                           key={apt.id}
                           onClick={() => {
@@ -279,27 +418,42 @@ export default function AgendamentosPage() {
                             })
                             setIsReagendarOpen(true)
                           }}
-                          className="w-full mb-1 p-2 bg-pink-100 border-l-2 border-pink-600 rounded text-xs hover:bg-pink-200 transition-colors text-left"
-                        >
-                          <div className="font-medium text-pink-900">
+                            className={`w-full mb-1 p-2 border-l-2 rounded text-xs hover:opacity-80 transition-colors text-left ${bgColor} ${borderColor}`}
+                          >
+                            <div className={`font-medium ${textColor}`}>
                             {format(apt.startTime, 'HH:mm')} - {apt.clientName}
+                              {badge && <span className="ml-1">{badge}</span>}
                           </div>
-                          <div className="text-pink-700 mt-0.5">
+                            <div className={`mt-0.5 ${textSecondary}`}>
                             {apt.service}
                           </div>
                         </button>
-                      ))}
+                        )
+                      })}
                     </div>
                   )
                 })}
-              </>
+              </React.Fragment>
             ))}
           </div>
         </div>
 
         {/* Calendar Mobile - Horizontal Swipe */}
         <div className="md:hidden">
-          <div className="flex overflow-x-auto scrollbar-hide snap-x snap-mandatory touch-pan-x" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div 
+            className="flex overflow-x-auto scrollbar-hide snap-x snap-mandatory touch-pan-x" 
+            style={{ WebkitOverflowScrolling: 'touch' }}
+            ref={(el) => {
+              // Auto-scroll para o dia de hoje ao carregar
+              if (el && !loading) {
+                const todayIndex = weekDays.findIndex(day => isToday(day))
+                if (todayIndex >= 0) {
+                  const cardWidth = el.scrollWidth / weekDays.length
+                  el.scrollLeft = cardWidth * todayIndex
+                }
+              }
+            }}
+          >
             {weekDays.map((day, dayIndex) => {
               const isCurrentDay = isToday(day)
               const dayAppointmentsAll = appointments.filter(apt => isSameDay(apt.startTime, day))
@@ -339,7 +493,43 @@ export default function AgendamentosPage() {
                         <p className="text-sm">Nenhum agendamento</p>
                       </div>
                     ) : (
-                      dayAppointmentsAll.map((apt) => (
+                      dayAppointmentsAll.map((apt) => {
+                        // ADMIN_CREATED sem paymentStatus = PENDING por padrão (fallback para registros antigos)
+                        const isAdminPending = apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
+                        const isSubscription = apt.origin === 'SUBSCRIPTION'
+                        const isClientSingle = apt.origin === 'SINGLE'
+                        
+                        let bgColor = 'bg-white'
+                        let borderColor = 'border-pink-200'
+                        let hoverBorder = 'hover:border-pink-400'
+                        let timeBg = 'bg-pink-600'
+                        let badge = ''
+                        let badgeBg = ''
+                        
+                        if (isAdminPending) {
+                          bgColor = 'bg-yellow-50'
+                          borderColor = 'border-yellow-400'
+                          hoverBorder = 'hover:border-yellow-500'
+                          timeBg = 'bg-yellow-600'
+                          badge = '💰'
+                          badgeBg = 'bg-yellow-200 text-yellow-800'
+                        } else if (isSubscription) {
+                          bgColor = 'bg-purple-50'
+                          borderColor = 'border-purple-300'
+                          hoverBorder = 'hover:border-purple-400'
+                          timeBg = 'bg-purple-600'
+                          badge = '✨'
+                          badgeBg = 'bg-purple-200 text-purple-800'
+                        } else if (isClientSingle) {
+                          bgColor = 'bg-blue-50'
+                          borderColor = 'border-blue-300'
+                          hoverBorder = 'hover:border-blue-400'
+                          timeBg = 'bg-blue-600'
+                          badge = '💳'
+                          badgeBg = 'bg-blue-200 text-blue-800'
+                        }
+                        
+                        return (
                         <button
                           key={apt.id}
                           onClick={() => {
@@ -352,10 +542,10 @@ export default function AgendamentosPage() {
                             })
                             setIsReagendarOpen(true)
                           }}
-                          className="w-full bg-white border-2 border-pink-200 rounded-xl p-4 hover:border-pink-400 hover:shadow-md transition-all text-left"
+                            className={`w-full border-2 rounded-xl p-4 hover:shadow-md transition-all text-left ${bgColor} ${borderColor} ${hoverBorder}`}
                         >
                           <div className="flex items-center gap-3 mb-3">
-                            <div className="flex flex-col items-center justify-center w-16 h-16 rounded-lg bg-pink-600 text-white">
+                            <div className={`flex flex-col items-center justify-center w-16 h-16 rounded-lg text-white ${timeBg}`}>
                               <span className="text-xl font-bold">
                                 {format(apt.startTime, 'HH')}
                               </span>
@@ -364,9 +554,16 @@ export default function AgendamentosPage() {
                               </span>
                             </div>
                             <div className="flex-1">
-                              <h4 className="font-bold text-gray-900 text-base">
-                                {apt.clientName}
-                              </h4>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-bold text-gray-900 text-base">
+                                  {apt.clientName}
+                                </h4>
+                                {badge && (
+                                  <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${badgeBg}`}>
+                                    {badge}
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-sm text-gray-600 mt-0.5">
                                 {apt.service}
                               </p>
@@ -388,7 +585,8 @@ export default function AgendamentosPage() {
                             </span>
                           </div>
                         </button>
-                      ))
+                        )
+                      })
                     )}
                   </div>
                 </div>
@@ -458,26 +656,54 @@ export default function AgendamentosPage() {
                   )}
 
                   <div className="space-y-1">
-                    {dayAppointments.slice(0, 2).map((apt) => (
-                      <button
-                        key={apt.id}
-                        onClick={() => {
-                          setSelectedAppointment({
-                            id: apt.id,
-                            cliente: apt.clientName,
-                            servico: apt.service,
-                            data: format(apt.startTime, 'dd/MM/yyyy'),
-                            hora: format(apt.startTime, 'HH:mm')
-                          })
-                          setIsReagendarOpen(true)
-                        }}
-                        className="w-full p-1.5 bg-pink-100 border-l-2 border-pink-600 rounded text-[10px] hover:bg-pink-200 transition-colors text-left"
-                      >
-                        <div className="font-medium text-pink-900 truncate">
-                          {format(apt.startTime, 'HH:mm')} {apt.clientName}
-                        </div>
-                      </button>
-                    ))}
+                    {dayAppointments.slice(0, 2).map((apt) => {
+                      const isAdminPending = apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
+                      const isSubscription = apt.origin === 'SUBSCRIPTION'
+                      const isClientSingle = apt.origin === 'SINGLE'
+                      
+                      let bgColor = 'bg-pink-100'
+                      let borderColor = 'border-pink-600'
+                      let textColor = 'text-pink-900'
+                      let badge = ''
+                      
+                      if (isAdminPending) {
+                        bgColor = 'bg-yellow-100'
+                        borderColor = 'border-yellow-600'
+                        textColor = 'text-yellow-900'
+                        badge = '💰'
+                      } else if (isSubscription) {
+                        bgColor = 'bg-purple-100'
+                        borderColor = 'border-purple-600'
+                        textColor = 'text-purple-900'
+                        badge = '✨'
+                      } else if (isClientSingle) {
+                        bgColor = 'bg-blue-100'
+                        borderColor = 'border-blue-600'
+                        textColor = 'text-blue-900'
+                        badge = '💳'
+                      }
+                      
+                      return (
+                        <button
+                          key={apt.id}
+                          onClick={() => {
+                            setSelectedAppointment({
+                              id: apt.id,
+                              cliente: apt.clientName,
+                              servico: apt.service,
+                              data: format(apt.startTime, 'dd/MM/yyyy'),
+                              hora: format(apt.startTime, 'HH:mm')
+                            })
+                            setIsReagendarOpen(true)
+                          }}
+                          className={`w-full p-1.5 border-l-2 rounded text-[10px] hover:opacity-80 transition-colors text-left ${bgColor} ${borderColor}`}
+                        >
+                          <div className={`font-medium truncate ${textColor}`}>
+                            {format(apt.startTime, 'HH:mm')} {apt.clientName} {badge}
+                          </div>
+                        </button>
+                      )
+                    })}
                     {dayAppointments.length > 2 && (
                       <div className="text-[10px] text-center text-pink-600 font-medium">
                         +{dayAppointments.length - 2} mais
@@ -489,21 +715,26 @@ export default function AgendamentosPage() {
             })}
           </div>
         </div>
-      )}
+      ))}
 
       {/* Legend */}
+      {!loading && (
       <div className="flex flex-wrap items-center gap-4 text-sm">
         <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-pink-100 border-l-2 border-pink-600 rounded"></div>
-          <span className="text-gray-600">Agendado</span>
+          <div className="w-4 h-4 bg-yellow-100 border-l-2 border-yellow-600 rounded"></div>
+          <span className="text-gray-600">💰 Pagar na Clínica (Admin)</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="w-4 h-4 bg-purple-100 border-l-2 border-purple-600 rounded"></div>
+          <span className="text-gray-600">✨ Plano/Assinatura</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="w-4 h-4 bg-blue-100 border-l-2 border-blue-600 rounded"></div>
+          <span className="text-gray-600">💳 Cliente Avulso</span>
         </div>
         <div className="flex items-center space-x-2">
           <div className="w-4 h-4 bg-green-100 border-l-2 border-green-600 rounded"></div>
           <span className="text-gray-600">Concluído</span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-gray-100 border-l-2 border-gray-600 rounded"></div>
-          <span className="text-gray-600">Cancelado</span>
         </div>
         <div className="flex items-center space-x-2">
           <div className="w-4 h-4 bg-red-50 border border-red-300 rounded"></div>
@@ -514,16 +745,28 @@ export default function AgendamentosPage() {
           <span className="text-gray-600">Feriado SP</span>
         </div>
       </div>
+      )}
 
       {/* Modais */}
       <NovoAgendamentoModal 
         isOpen={isNovoAgendamentoOpen}
-        onClose={() => setIsNovoAgendamentoOpen(false)}
+        onClose={() => {
+          setIsNovoAgendamentoOpen(false)
+          loadAppointments() // Recarregar após criar
+        }}
       />
       
       <ReagendarCancelarModal 
         isOpen={isReagendarOpen}
-        onClose={() => setIsReagendarOpen(false)}
+        onClose={() => {
+          setIsReagendarOpen(false)
+          setSelectedAppointment(undefined)
+        }}
+        onSuccess={() => {
+          loadAppointments() // Recarregar após reagendar/cancelar
+          setIsReagendarOpen(false)
+          setSelectedAppointment(undefined)
+        }}
         agendamento={selectedAppointment}
       />
     </div>

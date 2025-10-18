@@ -10,7 +10,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
-  const { user, loading } = useAuth()
+  const { user, loading, firebaseUser } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const [hasChecked, setHasChecked] = useState(false)
@@ -29,9 +29,13 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
       } else if (requiredRole && user.role !== requiredRole) {
         console.log('User role mismatch:', user.role, 'required:', requiredRole)
         router.push('/')
+      } else if (firebaseUser && !firebaseUser.emailVerified && pathname !== '/verificar-email' && user.role !== 'MANAGER') {
+        // Redirecionar para verificação de email se não verificado (exceto para MANAGER)
+        console.log('⚠️ Email não verificado, redirecionando...')
+        router.push('/verificar-email')
       }
     }
-  }, [user, loading, requiredRole, router, pathname, hasChecked])
+  }, [user, loading, requiredRole, router, pathname, hasChecked, firebaseUser])
 
   // Mostrar loading apenas enquanto está carregando
   if (loading) {

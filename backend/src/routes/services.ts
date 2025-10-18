@@ -3,17 +3,19 @@ import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 
 export async function servicesRoutes(app: FastifyInstance) {
-  // GET - Listar todos os serviços ativos
+  // GET - Listar serviços (por padrão só ativos, mas admin pode ver todos)
   app.get('/services', async (request, reply) => {
     logger.route('GET', '/services')
     
     try {
+      const { showAll } = request.query as { showAll?: string }
+      
       const services = await prisma.service.findMany({
-        where: { isActive: true },
+        where: showAll === 'true' ? {} : { isActive: true },
         orderBy: { name: 'asc' }
       })
       
-      logger.success(`Retornando ${services.length} serviços`)
+      logger.success(`Retornando ${services.length} serviços${showAll === 'true' ? ' (incluindo inativos)' : ''}`)
       return reply.status(200).send({
         success: true,
         data: services
@@ -64,19 +66,28 @@ export async function servicesRoutes(app: FastifyInstance) {
     logger.route('POST', '/services')
     
     try {
-      const { name, description, duration, price } = request.body as {
+      const { name, description, category, duration, price } = request.body as {
         name: string
         description: string
+        category: 'FACIAL' | 'CORPORAL' | 'MASSAGEM' | 'COMBO'
         duration: number
         price: number
       }
       
-      logger.debug('Criando novo serviço:', { name, duration, price })
+      if (!category) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Categoria é obrigatória'
+        })
+      }
+      
+      logger.debug('Criando novo serviço:', { name, category, duration, price })
       
       const service = await prisma.service.create({
         data: {
           name,
           description,
+          category,
           duration,
           price,
           isActive: true
@@ -93,6 +104,73 @@ export async function servicesRoutes(app: FastifyInstance) {
       return reply.status(500).send({
         success: false,
         error: 'Erro ao criar serviço'
+      })
+    }
+  })
+
+  // PUT - Atualizar serviço
+  app.put('/services/:id', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    logger.route('PUT', `/services/${id}`)
+    
+    try {
+      const { name, description, category, duration, price, isActive } = request.body as {
+        name?: string
+        description?: string
+        category?: 'FACIAL' | 'CORPORAL' | 'MASSAGEM' | 'COMBO'
+        duration?: number
+        price?: number
+        isActive?: boolean
+      }
+      
+      const service = await prisma.service.update({
+        where: { id },
+        data: {
+          ...(name && { name }),
+          ...(description && { description }),
+          ...(category && { category }),
+          ...(duration && { duration }),
+          ...(price && { price }),
+          ...(isActive !== undefined && { isActive })
+        }
+      })
+      
+      logger.success(`Serviço atualizado: ${service.name}`)
+      return reply.status(200).send({
+        success: true,
+        data: service
+      })
+    } catch (error) {
+      logger.error('Erro ao atualizar serviço:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao atualizar serviço'
+      })
+    }
+  })
+
+  // DELETE - Desativar serviço (soft delete)
+  app.delete('/services/:id', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    logger.route('DELETE', `/services/${id}`)
+    
+    try {
+      const service = await prisma.service.update({
+        where: { id },
+        data: { isActive: false }
+      })
+      
+      logger.success(`Serviço desativado: ${service.name}`)
+      return reply.status(200).send({
+        success: true,
+        data: service,
+        message: 'Serviço desativado com sucesso'
+      })
+    } catch (error) {
+      logger.error('Erro ao desativar serviço:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao desativar serviço'
       })
     }
   })

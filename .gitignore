@@ -44,7 +44,7 @@ out/
 next-env.d.ts
 
 # Prisma
-backend/prisma/migrations/
+# Migrations são necessárias para deploy - NÃO IGNORAR
 backend/node_modules/
 
 # Vercel

@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/Button'
+import { PhoneInput } from '@/components/PhoneInput'
 import { User, Mail, Phone, MapPin, Star } from 'lucide-react'
 import DatePicker from '@/components/DatePicker'
+import toast from 'react-hot-toast'
 
 interface Props {
   data: any
@@ -25,6 +27,27 @@ export default function Step1DadosPessoais({ data, onNext }: Props) {
     complement: data.complement || '',
     howKnew: data.howKnew || ''
   })
+
+  // Atualizar quando data mudar (ao carregar anamnese existente)
+  useEffect(() => {
+    if (data.fullName || data.phone || data.email) {
+      console.log('📝 Step1: Atualizando com dados carregados:', data)
+      setFormData({
+        fullName: data.fullName || '',
+        birthDate: data.birthDate || new Date(),
+        phone: data.phone || '',
+        email: data.email || '',
+        cep: data.cep || '',
+        street: data.street || '',
+        neighborhood: data.neighborhood || '',
+        city: data.city || '',
+        state: data.state || '',
+        number: data.number || '',
+        complement: data.complement || '',
+        howKnew: data.howKnew || ''
+      })
+    }
+  }, [data])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
@@ -52,6 +75,35 @@ export default function Step1DadosPessoais({ data, onNext }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Validar data de nascimento
+    if (!formData.birthDate) {
+      toast.error('Por favor, informe sua data de nascimento', {
+        duration: 4000,
+        icon: '📅'
+      })
+      return
+    }
+    
+    // Calcular idade
+    const today = new Date()
+    const birthDate = new Date(formData.birthDate)
+    let age = today.getFullYear() - birthDate.getFullYear()
+    const monthDiff = today.getMonth() - birthDate.getMonth()
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--
+    }
+    
+    // Validar idade mínima de 10 anos
+    if (age < 10) {
+      toast.error('Você precisa ter pelo menos 10 anos para preencher a ficha de anamnese', {
+        duration: 5000,
+        icon: '⚠️'
+      })
+      return
+    }
+    
     onNext(formData)
   }
 
@@ -107,18 +159,12 @@ export default function Step1DadosPessoais({ data, onNext }: Props) {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Celular (WhatsApp) <span className="text-red-500">*</span>
           </label>
-          <div className="relative">
-            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="tel"
-              name="phone"
-              required
-              value={formData.phone}
-              onChange={handleChange}
-              placeholder="(11) 98888-8888"
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 placeholder:text-gray-500"
-            />
-          </div>
+          <PhoneInput
+            value={formData.phone}
+            onChange={(value) => handleChange({ target: { name: 'phone', value } } as any)}
+            placeholder="(11) 98888-8888"
+            required
+          />
         </div>
 
         <div>

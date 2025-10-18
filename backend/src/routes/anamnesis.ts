@@ -81,10 +81,20 @@ export async function anamnesisRoutes(app: FastifyInstance) {
     logger.route('POST', '/anamnesis')
     
     try {
-      const { userId, facialData, corporalData } = request.body as {
+      const { 
+        userId, 
+        personalData,      // Step 1: Dados Pessoais
+        lifestyleData,     // Step 2: Estilo de Vida
+        healthData,        // Step 3: Saúde
+        objectivesData,    // Step 4: Objetivos
+        termsAccepted      // Step 5: Termos
+      } = request.body as {
         userId: string
-        facialData: any
-        corporalData: any
+        personalData: any
+        lifestyleData: any
+        healthData: any
+        objectivesData: any
+        termsAccepted: boolean
       }
       
       logger.debug('Criando nova anamnese para usuário:', userId)
@@ -118,8 +128,12 @@ export async function anamnesisRoutes(app: FastifyInstance) {
       const anamnesis = await prisma.anamnesisForm.create({
         data: {
           userId,
-          facialData,
-          corporalData
+          personalData,
+          lifestyleData,
+          healthData,
+          objectivesData,
+          termsAccepted,
+          termsAcceptedAt: termsAccepted ? new Date() : null
         },
         include: {
           user: {
@@ -147,14 +161,23 @@ export async function anamnesisRoutes(app: FastifyInstance) {
   })
 
   // PUT - Atualizar anamnese existente
-  app.put('/anamnesis/:userId', async (request, reply) => {
+  app.put('/anamnesis/user/:userId', async (request, reply) => {
     const { userId } = request.params as { userId: string }
-    logger.route('PUT', `/anamnesis/${userId}`)
+    logger.route('PUT', `/anamnesis/user/${userId}`)
     
     try {
-      const { facialData, corporalData } = request.body as {
-        facialData?: any
-        corporalData?: any
+      const { 
+        personalData,
+        lifestyleData,
+        healthData,
+        objectivesData,
+        termsAccepted
+      } = request.body as {
+        personalData?: any
+        lifestyleData?: any
+        healthData?: any
+        objectivesData?: any
+        termsAccepted?: boolean
       }
       
       logger.debug('Atualizando anamnese para usuário:', userId)
@@ -175,8 +198,14 @@ export async function anamnesisRoutes(app: FastifyInstance) {
       const anamnesis = await prisma.anamnesisForm.update({
         where: { userId },
         data: {
-          ...(facialData && { facialData }),
-          ...(corporalData && { corporalData })
+          ...(personalData && { personalData }),
+          ...(lifestyleData && { lifestyleData }),
+          ...(healthData && { healthData }),
+          ...(objectivesData && { objectivesData }),
+          ...(termsAccepted !== undefined && { 
+            termsAccepted,
+            termsAcceptedAt: termsAccepted ? new Date() : null
+          })
         },
         include: {
           user: {
@@ -204,9 +233,9 @@ export async function anamnesisRoutes(app: FastifyInstance) {
   })
 
   // DELETE - Deletar anamnese
-  app.delete('/anamnesis/:userId', async (request, reply) => {
+  app.delete('/anamnesis/user/:userId', async (request, reply) => {
     const { userId } = request.params as { userId: string }
-    logger.route('DELETE', `/anamnesis/${userId}`)
+    logger.route('DELETE', `/anamnesis/user/${userId}`)
     
     try {
       // Verifica se a anamnese existe

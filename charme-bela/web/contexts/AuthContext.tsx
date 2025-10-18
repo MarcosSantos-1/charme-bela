@@ -14,11 +14,11 @@ import {
   updateProfile as firebaseUpdateProfile,
   sendEmailVerification
 } from 'firebase/auth'
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
-import { auth, db } from '@/lib/firebase'
+import { auth } from '@/lib/firebase'
 import { User } from '@/types'
 import toast from 'react-hot-toast'
 import { saveAccount } from '@/lib/accountStorage'
+import { getUserByFirebaseUid, getOrCreateUserFromFirebase } from '@/lib/api'
 
 interface AuthContextType {
   user: User | null
@@ -32,6 +32,7 @@ interface AuthContextType {
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
   sendVerificationEmail: () => Promise<void>
+  refetchUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -42,70 +43,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      console.log('🔐 Auth state changed:', firebaseUser?.uid)
-      
-      if (firebaseUser) {
-        setFirebaseUser(firebaseUser)
-        
+    // 🔑 Verificar se existe admin logado no localStorage
+    const checkAdminSession = () => {
+      const adminSession = localStorage.getItem('adminSession')
+      if (adminSession) {
         try {
-          // Buscar dados do usuário no Firestore
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
-          
-          if (userDoc.exists()) {
-            const userData = userDoc.data() as Omit<User, 'id'>
-            const fullUser = {
-              id: firebaseUser.uid,
-              ...userData
-            }
-            console.log('✅ User data from Firestore:', fullUser)
-            setUser(fullUser)
-            
-            // Salvar conta no localStorage
-            saveAccount({
-              uid: firebaseUser.uid,
-              email: fullUser.email,
-              name: fullUser.name,
-              photoURL: fullUser.profileImageUrl,
-              lastLogin: Date.now()
-            })
-          } else {
-            console.log('⚠️ User not found in Firestore, creating...')
-            // Usuário do Firebase mas não tem no Firestore - criar perfil básico
-            const newUser: User = {
-              id: firebaseUser.uid,
-              email: firebaseUser.email!,
-              name: firebaseUser.displayName || firebaseUser.email!.split('@')[0],
-              role: 'CLIENT',
-              firebaseUid: firebaseUser.uid,
-              profileImageUrl: firebaseUser.photoURL || undefined
-            }
-            
-            await setDoc(doc(db, 'users', firebaseUser.uid), newUser)
-            console.log('✅ User created in Firestore:', newUser)
-            setUser(newUser)
-            
-            // Salvar conta no localStorage
-            saveAccount({
-              uid: firebaseUser.uid,
-              email: newUser.email,
-              name: newUser.name,
-              photoURL: newUser.profileImageUrl,
-              lastLogin: Date.now()
-            })
-          }
+          const adminUser = JSON.parse(adminSession)
+          console.log('✅ Admin session restored:', adminUser.name)
+          setUser(adminUser)
+          setLoading(false)
+          return true
         } catch (error) {
-          console.error('❌ Error fetching user data:', error)
+          console.error('❌ Error parsing admin session:', error)
+          localStorage.removeItem('adminSession')
         }
-      } else {
-        console.log('🚪 User logged out')
-        setFirebaseUser(null)
-        setUser(null)
       }
-      setLoading(false)
-    })
+      return false
+    }
 
-    return () => unsubscribe()
+    // Primeiro tenta restaurar sessão admin
+    const hasAdminSession = checkAdminSession()
+    
+    // Se não tem sessão admin, escuta mudanças do Firebase
+    if (!hasAdminSession) {
+      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        console.log('🔐 Auth state changed:', firebaseUser?.uid)
+        
+        if (firebaseUser) {
+          setFirebaseUser(firebaseUser)
+          
+          try {
+            // 🚀 INTEGRAÇÃO COM BACKEND POSTGRESQL
+            console.log('🔍 Buscando usuário no backend...')
+            
+            const backendUser = await getOrCreateUserFromFirebase({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email!,
+              displayName: firebaseUser.displayName || firebaseUser.email!.split('@')[0],
+              photoURL: firebaseUser.photoURL || undefined
+            })
+            
+            console.log('✅ User data from Backend:', backendUser)
+            setUser(backendUser)
+            
+            // Salvar conta no localStorage
+            saveAccount({
+              uid: firebaseUser.uid,
+              email: backendUser.email,
+              name: backendUser.name,
+              photoURL: backendUser.profileImageUrl,
+              lastLogin: Date.now()
+            })
+          } catch (error) {
+            console.error('❌ Error fetching user from backend:', error)
+            toast.error('Erro ao buscar dados do usuário')
+          }
+        } else {
+          console.log('🚪 User logged out')
+          setFirebaseUser(null)
+          setUser(null)
+        }
+        setLoading(false)
+      })
+
+      return () => unsubscribe()
+    }
   }, [])
 
   const signIn = async (email: string, password: string) => {
@@ -137,8 +139,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: 'sonia.santana@charmeebela.com',
           name: 'Sônia Santana',
           role: 'MANAGER',
-          firebaseUid: 'admin-local'
+          firebaseUid: 'admin-local',
+          isActive: true
         }
+        
+        // 💾 Salvar sessão admin no localStorage
+        localStorage.setItem('adminSession', JSON.stringify(adminUser))
         
         // Salvar no estado
         setUser(adminUser)
@@ -218,16 +224,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         displayName: name
       })
       
-      // Criar perfil no Firestore
-      const newUser: any = {
-        id: userCredential.user.uid,
-        email: email,
-        name: name,
-        role: 'CLIENT',
-        firebaseUid: userCredential.user.uid
-      }
-      
-      await setDoc(doc(db, 'users', userCredential.user.uid), newUser)
+      // 🚀 Backend PostgreSQL vai criar automaticamente via getOrCreateUserFromFirebase
+      // quando o usuário logar pela primeira vez
+      console.log('✅ Conta criada no Firebase:', userCredential.user.uid)
       
       // Enviar email de verificação
       try {
@@ -318,12 +317,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
-      await firebaseSignOut(auth)
+      // Limpar sessão admin se existir
+      localStorage.removeItem('adminSession')
+      
+      // Limpar Firebase auth se tiver usuário Firebase
+      if (firebaseUser) {
+        await firebaseSignOut(auth)
+      }
+      
+      // Limpar estado
+      setUser(null)
+      setFirebaseUser(null)
+      
       toast.success('Logout realizado com sucesso!')
     } catch (error) {
       console.error('Erro ao fazer logout:', error)
       toast.error('Erro ao fazer logout')
       throw error
+    }
+  }
+
+  const refetchUser = async () => {
+    try {
+      if (!firebaseUser) return
+      
+      console.log('🔄 Atualizando dados do usuário...')
+      const userData = await getUserByFirebaseUid(firebaseUser.uid)
+      setUser(userData)
+      console.log('✅ Dados do usuário atualizados')
+    } catch (error) {
+      console.error('Erro ao atualizar dados do usuário:', error)
     }
   }
 
@@ -340,7 +363,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signUp,
         signOut,
         resetPassword,
-        sendVerificationEmail
+        sendVerificationEmail,
+        refetchUser
       }}
     >
       {children}

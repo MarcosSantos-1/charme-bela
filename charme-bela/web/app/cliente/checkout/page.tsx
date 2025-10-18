@@ -5,9 +5,9 @@ import { ClientLayout } from '@/components/ClientLayout'
 import { Button } from '@/components/Button'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Check, CreditCard, AlertCircle } from 'lucide-react'
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [processing, setProcessing] = useState(false)
@@ -97,6 +97,22 @@ export default function CheckoutPage() {
         </div>
       </ClientLayout>
     </ProtectedRoute>
+  )
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={
+      <ProtectedRoute requiredRole="CLIENT">
+        <ClientLayout title="Checkout">
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600"></div>
+          </div>
+        </ClientLayout>
+      </ProtectedRoute>
+    }>
+      <CheckoutContent />
+    </Suspense>
   )
 }
 

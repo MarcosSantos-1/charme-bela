@@ -1,0 +1,12 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm install && npm run build",
+  "installCommand": "npm install",
+  "env": {
+    "NEXT_PUBLIC_API_URL": {
+      "description": "URL do backend no Render",
+      "value": ""
+    }
+  }
+}
+

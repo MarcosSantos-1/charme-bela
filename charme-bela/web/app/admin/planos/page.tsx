@@ -38,7 +38,7 @@ export default function PlanosAdminPage() {
     setLoading(true)
     try {
       const [usersData, plansData] = await Promise.all([
-        api.getAllUsers(),
+        api.getUsers(),
         api.getPlans()
       ])
       

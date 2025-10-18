@@ -3,7 +3,7 @@
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { ClientLayout } from '@/components/ClientLayout'
 import { BookingModal } from '@/components/BookingModal'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Clock } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -12,7 +12,7 @@ import * as api from '@/lib/api'
 import { Service } from '@/types'
 import toast from 'react-hot-toast'
 
-export default function ServicosClientePage() {
+function ServicosContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user } = useAuth()
@@ -207,5 +207,21 @@ export default function ServicosClientePage() {
         />
       </ClientLayout>
     </ProtectedRoute>
+  )
+}
+
+export default function ServicosClientePage() {
+  return (
+    <Suspense fallback={
+      <ProtectedRoute requiredRole="CLIENT">
+        <ClientLayout title="Serviços">
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600"></div>
+          </div>
+        </ClientLayout>
+      </ProtectedRoute>
+    }>
+      <ServicosContent />
+    </Suspense>
   )
 }

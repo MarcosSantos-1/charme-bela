@@ -8,13 +8,32 @@ services:
     buildCommand: npm install && npx prisma generate && npm run build
     startCommand: npm start
     envVars:
+      # Banco de Dados
       - key: DATABASE_URL
         sync: false
+      
+      # Stripe (adicionar manualmente no dashboard)
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PUBLIC_KEY
+        sync: false
+      - key: STRIPE_PRICE_BRONZE_ID
+        sync: false
+      - key: STRIPE_PRICE_SILVER_ID
+        sync: false
+      - key: STRIPE_PRICE_GOLD_ID
+        sync: false
+      
+      # Aplicação
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
       - key: FRONTEND_URL
-        value: https://your-frontend.vercel.app
+        sync: false  # Adicionar URL da Vercel manualmente
+      - key: ALLOWED_ORIGINS
+        sync: false  # Adicionar URLs permitidas manualmente
     healthCheckPath: /health
 

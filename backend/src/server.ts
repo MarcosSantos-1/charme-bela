@@ -13,6 +13,9 @@ import { vouchersRoutes } from './routes/vouchers'
 import { scheduleRoutes } from './routes/schedule'
 import { subscriptionsRoutes } from './routes/subscriptions'
 import { testimonialRoutes } from './routes/testimonials'
+import { stripeRoutes } from './routes/stripe'
+import { notificationRoutes } from './routes/notifications'
+import { setupCronJobs } from './utils/cron'
 
 const PORT = Number(process.env.PORT) || 3333
 const HOST = '0.0.0.0'
@@ -48,10 +51,15 @@ async function start() {
     await app.register(scheduleRoutes)
     await app.register(subscriptionsRoutes)
     await app.register(testimonialRoutes)
+    await app.register(stripeRoutes)
+    await app.register(notificationRoutes)
     logger.success('Rotas registradas com sucesso')
     
     // Iniciando servidor
     await app.listen({ port: PORT, host: HOST })
+    
+    // Inicia cron jobs
+    setupCronJobs()
     
     console.log('\n' + '='.repeat(50))
     logger.success(`Servidor rodando em http://localhost:${PORT}`)
@@ -82,6 +90,7 @@ async function start() {
     
     console.log('\n  👥 Usuários:')
     console.log('  - GET    /users                     - Listar usuários')
+    console.log('  - GET    /users/birthdays           - Aniversariantes do mês')
     console.log('  - GET    /users/firebase/:uid       - Buscar por Firebase UID')
     console.log('  - GET    /users/:id                 - Buscar usuário')
     console.log('  - POST   /users                     - Criar usuário')
@@ -104,12 +113,14 @@ async function start() {
     console.log('  - PUT    /appointments/:id/reschedule - Reagendar')
     
     console.log('\n  🎁 Vouchers:')
-    console.log('  - GET    /vouchers                 - Listar vouchers')
-    console.log('  - GET    /vouchers/user/:userId    - Vouchers do usuário')
-    console.log('  - GET    /vouchers/:id             - Buscar voucher')
-    console.log('  - POST   /vouchers                 - Criar voucher')
-    console.log('  - PUT    /vouchers/:id/use         - Usar voucher')
-    console.log('  - DELETE /vouchers/:id             - Remover voucher')
+    console.log('  - GET    /vouchers                        - Listar vouchers')
+    console.log('  - GET    /vouchers/user/:userId           - Vouchers do usuário')
+    console.log('  - GET    /vouchers/:id                    - Buscar voucher')
+    console.log('  - POST   /vouchers                        - Criar voucher')
+    console.log('  - POST   /vouchers/validate               - Validar e calcular desconto')
+    console.log('  - POST   /vouchers/:id/activate-free-month - Ativar mês grátis')
+    console.log('  - PUT    /vouchers/:id/use                - Usar voucher')
+    console.log('  - DELETE /vouchers/:id                    - Remover voucher')
     
     console.log('\n  ⏰ Horários:')
     console.log('  - GET    /schedule/available       - Horários disponíveis')
@@ -126,6 +137,26 @@ async function start() {
     console.log('  - PUT    /subscriptions/:userId/cancel - Cancelar assinatura')
     console.log('  - PUT    /subscriptions/:userId/pause  - Pausar assinatura')
     console.log('  - PUT    /subscriptions/:userId/reactivate - Reativar')
+    
+    console.log('\n  💰 Stripe (Pagamentos):')
+    console.log('  - POST   /stripe/create-checkout-session  - Checkout assinatura')
+    console.log('  - POST   /stripe/create-payment-session   - Pagamento avulso (cartão)')
+    console.log('  - POST   /stripe/create-portal-session    - Portal do cliente')
+    console.log('  - GET    /stripe/payment-methods/:userId  - Métodos de pagamento')
+    console.log('  - GET    /stripe/payment-history/:userId  - Histórico')
+    console.log('  - GET    /stripe/monthly-revenue          - Receita do mês (Admin)')
+    console.log('  - POST   /stripe/webhook                  - Webhook Stripe')
+    
+    console.log('\n  🔔 Notificações:')
+    console.log('  - GET    /notifications                    - Listar notificações')
+    console.log('  - GET    /notifications/unread-count       - Contar não lidas')
+    console.log('  - GET    /notifications/:id                - Buscar notificação')
+    console.log('  - POST   /notifications                    - Criar notificação')
+    console.log('  - PUT    /notifications/:id/read           - Marcar como lida')
+    console.log('  - PUT    /notifications/mark-all-read      - Marcar todas como lidas')
+    console.log('  - DELETE /notifications/:id                - Deletar notificação')
+    console.log('  - DELETE /notifications/clear-all          - Limpar todas')
+    console.log('  - DELETE /notifications/clear-expired      - Limpar expiradas')
     console.log('')
     
   } catch (error) {

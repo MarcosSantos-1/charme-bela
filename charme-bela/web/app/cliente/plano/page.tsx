@@ -3,7 +3,7 @@
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { ClientLayout } from '@/components/ClientLayout'
 import { Button } from '@/components/Button'
-import { Sparkles, Check, AlertCircle } from 'lucide-react'
+import { Sparkles, Check, AlertCircle, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -15,12 +15,13 @@ import toast from 'react-hot-toast'
 export default function PlanoPage() {
   const router = useRouter()
   const { user } = useAuth()
-  const { subscription, hasSubscription, remainingTreatments, cancelSubscription } = useSubscription(user?.id)
+  const { subscription, hasSubscription, remainingTreatments, cancelSubscription, loading: subLoading } = useSubscription(user?.id)
   
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [selectedPlanForUpgrade, setSelectedPlanForUpgrade] = useState<Plan | null>(null)
+  const [processingPlanId, setProcessingPlanId] = useState<string | null>(null)
 
   // Buscar todos os planos
   useEffect(() => {
@@ -61,10 +62,13 @@ export default function PlanoPage() {
     }
   }
   
-  // Verificar se pode cancelar (3 meses de compromisso)
+  // Verificar se pode cancelar
+  // ⚠️ TEMPORÁRIO: Sempre pode cancelar (fidelidade desabilitada para testes)
   const canCancelPlan = () => {
-    if (!subscription?.minimumCommitmentEnd) return true
-    return new Date() >= new Date(subscription.minimumCommitmentEnd)
+    return true // Sempre pode cancelar agora
+    // TODO: Reativar verificação de fidelidade para produção
+    // if (!subscription?.minimumCommitmentEnd) return true
+    // return new Date() >= new Date(subscription.minimumCommitmentEnd)
   }
   
   // Calcular quando poderá cancelar
@@ -79,24 +83,77 @@ export default function PlanoPage() {
   }
 
   const handleUpgrade = async (planId: string) => {
+    if (!user) return
+    
+    setProcessingPlanId(planId)
+    
     try {
-      // Criar nova assinatura (substitui a antiga)
-      await api.createSubscription({
-        userId: user!.id,
-        planId
+      console.log('📊 Estado atual:', { 
+        hasSubscription, 
+        subscriptionId: subscription?.id,
+        planId 
       })
-      toast.success('Plano atualizado com sucesso! 🎉')
-      setSelectedPlanForUpgrade(null)
-      // Recarrega página
-      window.location.reload()
+      
+      // Se JÁ TEM assinatura → Troca de plano
+      if (hasSubscription && subscription) {
+        console.log('🔄 Trocando plano...', { userId: user.id, planId })
+        const response = await api.changePlan(user.id, planId)
+        
+        console.log('🔄 Resposta do backend:', response)
+        
+        // changePlan retorna direto o data (por causa do apiRequest)
+        if (response) {
+          const { isUpgrade, newPlan } = response
+          toast.success(`Plano ${isUpgrade ? 'atualizado' : 'alterado'} para ${newPlan}! 🎉`)
+          setSelectedPlanForUpgrade(null)
+          
+          // Recarrega página
+          setTimeout(() => {
+            window.location.reload()
+          }, 1500)
+        } else {
+          throw new Error('Erro ao trocar plano')
+        }
+      } 
+      // Se NÃO TEM assinatura → Cria nova via Stripe
+      else {
+        console.log('🔵 Criando checkout session...', { userId: user.id, planId })
+        const checkoutData = await api.createCheckoutSession(user.id, planId)
+        
+        console.log('🔵 Dados do checkout:', checkoutData)
+        
+        // apiRequest já retorna só o data, não o objeto completo
+        // então checkoutData = { sessionId, url }
+        if (checkoutData && checkoutData.url) {
+          console.log('✅ Redirecionando para Stripe:', checkoutData.url)
+          // Redireciona para checkout do Stripe
+          window.location.href = checkoutData.url
+        } else {
+          console.error('❌ Dados inválidos:', checkoutData)
+          throw new Error('URL do checkout não encontrada')
+        }
+      }
     } catch (error: any) {
-      toast.error(error.message || 'Erro ao atualizar plano')
+      console.error('❌ Erro ao processar plano:', error)
+      console.error('❌ Detalhes:', error.response || error.message)
+      toast.error(error.message || 'Erro ao processar. Tente novamente.')
+    } finally {
+      setProcessingPlanId(null)
     }
   }
 
+  // Verificar se é mês grátis (sem Stripe)
+  const isFreeMonth = subscription && !subscription.stripeSubscriptionId
+  
   // Formatar data de próxima cobrança
   const getNextBillingDate = () => {
     if (!subscription?.startDate) return '-'
+    
+    // Se for mês grátis, mostrar data de expiração ao invés de cobrança
+    if (isFreeMonth && subscription.endDate) {
+      return `Válido até ${new Date(subscription.endDate).toLocaleDateString('pt-BR')}`
+    }
+    
     const start = new Date(subscription.startDate)
     const next = new Date(start)
     next.setMonth(next.getMonth() + 1)
@@ -146,10 +203,20 @@ export default function PlanoPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-pink-100">Próxima cobrança</span>
-                  <span className="font-semibold">{getNextBillingDate()}</span>
-                </div>
+                {/* Mostrar expiração para mês grátis, cobrança para planos pagos */}
+                {isFreeMonth ? (
+                  <div className="bg-gradient-to-r from-green-400/20 to-emerald-400/20 backdrop-blur-sm rounded-xl p-3 border border-green-300/30">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-green-100 font-medium">🎁 Mês Grátis</span>
+                      <span className="font-semibold text-white">{getNextBillingDate()}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-pink-100">Próxima cobrança</span>
+                    <span className="font-semibold">{getNextBillingDate()}</span>
+                  </div>
+                )}
               </div>
 
               {/* Plan Benefits - Serviços Inclusos */}
@@ -301,6 +368,7 @@ export default function PlanoPage() {
                   )}
                 </div>
               </div>
+              
               <Button
                 variant="outline"
                 className="w-full text-red-600 border-red-300 hover:bg-red-50"
@@ -447,8 +515,16 @@ export default function PlanoPage() {
                   variant="primary"
                   className="w-full"
                   onClick={() => handleUpgrade(selectedPlanForUpgrade.id)}
+                  disabled={processingPlanId === selectedPlanForUpgrade.id}
                 >
-                  {hasSubscription ? 'Confirmar Alteração' : 'Confirmar Assinatura'}
+                  {processingPlanId === selectedPlanForUpgrade.id ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin inline" />
+                      Processando...
+                    </>
+                  ) : (
+                    hasSubscription ? 'Confirmar Alteração' : 'Confirmar Assinatura'
+                  )}
                 </Button>
                 <Button
                   variant="outline"

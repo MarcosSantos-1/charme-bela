@@ -114,18 +114,50 @@ export default function AdminDashboard() {
           origin: apt.origin
         }
       }))
-      setUpcomingBirthdays(birthdaysData.map(b => ({
-        id: b.id,
-        name: b.name,
-        date: format(new Date(b.birthDate), 'dd/MM'),
-        age: b.age
-      })))
+      setUpcomingBirthdays(birthdaysData.map(b => {
+        const birthDate = new Date(b.birthDate)
+        return {
+          id: b.id,
+          name: b.name,
+          date: format(birthDate, 'dd/MM'),
+          age: b.age || 0
+        }
+      }))
 
-      // Mock de atividades (por enquanto)
-      setRecentActivities([
-        { id: '1', type: 'appointment', description: 'Novo agendamento criado', time: 'Há 5 min', icon: 'calendar' },
-        { id: '2', type: 'client', description: 'Nova cliente cadastrada', time: 'Há 1 hora', icon: 'user' },
-      ])
+      // Buscar notificações do admin para atividades recentes
+      try {
+        const adminNotifications = await api.getNotifications({
+          userId: 'admin',
+          limit: 10
+        })
+        
+        // Importar função helper
+        const { formatTimeAgo } = await import('@/lib/timeUtils')
+        
+        // Mapear notificações para formato de atividades
+        const activities = adminNotifications.map(notif => {
+          const timeAgo = formatTimeAgo(notif.createdAt)
+          
+          // Mapear tipo de notificação para tipo de atividade
+          let activityType: 'appointment' | 'payment' | 'client' | 'subscription' = 'appointment'
+          // Priorizar PAYMENT primeiro
+          if (notif.type.includes('PAYMENT')) activityType = 'subscription' // Pagamentos aparecem como subscription no dashboard resumido
+          else if (notif.type.includes('SUBSCRIPTION') || notif.type.includes('PLAN')) activityType = 'subscription'
+          else if (notif.type.includes('CLIENT') || notif.type.includes('REGISTERED')) activityType = 'client'
+          
+          return {
+            id: notif.id,
+            type: activityType,
+            description: notif.title,
+            time: timeAgo,
+            icon: notif.icon.toLowerCase()
+          }
+        })
+        
+        setRecentActivities(activities)
+      } catch (error) {
+        console.error('Erro ao carregar notificações do admin:', error)
+      }
     } catch (error) {
       console.error('Erro ao carregar dados da dashboard:', error)
       toast.error('Erro ao carregar dados')
@@ -398,7 +430,8 @@ export default function AdminDashboard() {
                   {recentActivities.map((activity) => (
                     <div
                       key={activity.id}
-                      className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors"
+                      onClick={() => router.push('/admin/atividades')}
+                      className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
                     >
                       <div className="flex items-center space-x-3">
                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${getActivityColor(activity.type)}`}>

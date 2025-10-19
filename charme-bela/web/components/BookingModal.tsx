@@ -2,7 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from './Button'
-import { X, Calendar as CalendarIcon, Check, Loader } from 'lucide-react'
+import { 
+  X, 
+  Calendar as CalendarIcon, 
+  Check, 
+  Loader, 
+  CreditCard 
+} from 'lucide-react'
 import { Service } from '@/types'
 import * as api from '@/lib/api'
 import toast from 'react-hot-toast'
@@ -18,7 +24,9 @@ interface BookingModalProps {
   remainingTreatments: number
   isIncludedInPlan: boolean
   userId: string
-  onSuccess: (type: 'SUBSCRIPTION' | 'SINGLE') => void
+  onSuccess: (type: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER') => void
+  availableVoucher?: any // Voucher de tratamento grátis ou desconto para este serviço
+  discountVoucher?: any // Voucher de desconto geral
 }
 
 export function BookingModal({
@@ -29,7 +37,9 @@ export function BookingModal({
   remainingTreatments,
   isIncludedInPlan,
   userId,
-  onSuccess
+  onSuccess,
+  availableVoucher,
+  discountVoucher
 }: BookingModalProps) {
   const [step, setStep] = useState<'details' | 'booking' | 'confirming' | 'success'>('details')
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
@@ -37,8 +47,32 @@ export function BookingModal({
   const [bookedSlots, setBookedSlots] = useState<string[]>([])
   const [selectedSlot, setSelectedSlot] = useState('')
   const [loadingSlots, setLoadingSlots] = useState(false)
-  const [bookingType, setBookingType] = useState<'SUBSCRIPTION' | 'SINGLE'>('SUBSCRIPTION')
+  const [bookingType, setBookingType] = useState<'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER'>('SUBSCRIPTION')
   const [showAnamneseModal, setShowAnamneseModal] = useState(false)
+  
+  // Calcular preço com voucher aplicado
+  const calculateFinalPrice = () => {
+    if (!service) return 0
+    
+    // Se tem voucher de tratamento grátis, preço = 0
+    if (availableVoucher?.type === 'FREE_TREATMENT') return 0
+    
+    // Se tem voucher de desconto
+    if (discountVoucher?.type === 'DISCOUNT') {
+      let discount = 0
+      if (discountVoucher.discountPercent) {
+        discount = service.price * (discountVoucher.discountPercent / 100)
+      } else if (discountVoucher.discountAmount) {
+        discount = Math.min(discountVoucher.discountAmount, service.price)
+      }
+      return Math.max(0, service.price - discount)
+    }
+    
+    return service.price
+  }
+  
+  const finalPrice = calculateFinalPrice()
+  const hasVoucherDiscount = finalPrice < (service?.price || 0)
 
   // Reset quando abrir o modal
   useEffect(() => {
@@ -48,9 +82,17 @@ export function BookingModal({
       setSelectedSlot('')
       setAvailableSlots([])
       setBookedSlots([])
-      setBookingType(hasSubscription && isIncludedInPlan ? 'SUBSCRIPTION' : 'SINGLE')
+      
+      // Definir tipo de agendamento baseado em voucher ou plano
+      if (availableVoucher || (discountVoucher && finalPrice !== service?.price)) {
+        setBookingType('VOUCHER')
+      } else if (hasSubscription && isIncludedInPlan) {
+        setBookingType('SUBSCRIPTION')
+      } else {
+        setBookingType('SINGLE')
+      }
     }
-  }, [isOpen, hasSubscription, isIncludedInPlan])
+  }, [isOpen, hasSubscription, isIncludedInPlan, availableVoucher, discountVoucher])
 
   if (!isOpen || !service) return null
 
@@ -163,27 +205,66 @@ export function BookingModal({
         bookingType
       })
 
-      // PONTO 3: Lógica de reserva de horário
-      // Cliente agendando:
-      // - SINGLE: vai para checkout (não marca como PENDING, vai pagar no Stripe)
-      // - SUBSCRIPTION: consome sessão do plano (sem paymentStatus)
-      // 
-      // TODO (futuro com Stripe):
-      // - Redirecionar para checkout do Stripe
-      // - Criar "reserva temporária" com timeout de 15min
-      // - Se não pagar em 15min, liberar horário automaticamente
-      // - Implementar webhook do Stripe para confirmar pagamento
+      // Determinar qual voucher usar
+      const voucherToUse = availableVoucher || discountVoucher
       
-      await api.createAppointment({
+      // Cria o agendamento
+      const appointment = await api.createAppointment({
         userId,
         serviceId: service.id,
         startTime: startTime.toISOString(),
         origin: bookingType,
-        // Cliente SINGLE não envia paymentStatus (vai pagar no checkout)
-        // Apenas ADMIN_CREATED envia PENDING (pagar na clínica)
+        voucherId: bookingType === 'VOUCHER' ? voucherToUse?.id : undefined,
+        paymentAmount: bookingType === 'SINGLE' ? finalPrice : undefined,
         notes: ''
       })
 
+      // Se for VOUCHER grátis (preço = 0) → Sucesso direto
+      if (bookingType === 'VOUCHER' && finalPrice === 0) {
+        console.log('🎁 Voucher grátis aplicado - agendamento confirmado!')
+        setStep('success')
+        
+        setTimeout(() => {
+          onSuccess('VOUCHER')
+          onClose()
+        }, 2000)
+        return
+      }
+
+      // Se for pagamento AVULSO (ou voucher com desconto parcial) → Redireciona para Stripe
+      if (bookingType === 'SINGLE' || (bookingType === 'VOUCHER' && finalPrice > 0)) {
+        console.log(`💳 Pagamento ${finalPrice === service.price ? 'avulso' : 'com desconto'} - redirecionando para Stripe...`)
+        console.log(`💰 Preço original: R$ ${service.price} | Preço final: R$ ${finalPrice}`)
+        
+        // Preparar descrição customizada se houver desconto
+        let customDesc = undefined
+        if (hasVoucherDiscount) {
+          const discount = service.price - finalPrice
+          customDesc = `Desconto de R$ ${discount.toFixed(2)} aplicado via voucher`
+        }
+        
+        // Cria sessão de pagamento no Stripe COM PREÇO FINAL
+        const cardData = await api.createPaymentSession(
+          userId, 
+          service.id, 
+          appointment.id,
+          finalPrice,  // Passa o preço final com desconto
+          customDesc   // Descrição do desconto
+        )
+        
+        if (cardData && cardData.url) {
+          console.log('✅ Redirecionando para checkout:', cardData.url)
+          // Redireciona para checkout do Stripe
+          window.location.href = cardData.url
+        } else {
+          throw new Error('Erro ao criar sessão de pagamento')
+        }
+        
+        // Não fecha o modal, pois está redirecionando
+        return
+      }
+      
+      // Se for SUBSCRIPTION → Sucesso direto
       setStep('success')
 
       // Chamar callback após 2 segundos
@@ -204,7 +285,6 @@ export function BookingModal({
       }
     }
   }
-
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
@@ -258,8 +338,24 @@ export function BookingModal({
                   <div>
                     <div className="text-xs text-gray-600 mb-1">Valor</div>
                     <div className="font-semibold text-gray-900">
-                      {isIncludedInPlan ? (
-                        <span className="text-green-600">Incluso</span>
+                      {availableVoucher?.type === 'FREE_TREATMENT' ? (
+                        <div>
+                          <span className="text-green-600 font-bold">GRÁTIS! 🎁</span>
+                          <div className="text-xs text-gray-400 line-through">R$ {service.price.toFixed(2)}</div>
+                        </div>
+                      ) : isIncludedInPlan ? (
+                        <div>
+                          <span className="text-green-600">Incluso</span>
+                          <div className="text-xs text-gray-500">R$ {service.price.toFixed(2)}</div>
+                        </div>
+                      ) : hasVoucherDiscount ? (
+                        <div>
+                          <span className="text-pink-600">R$ {finalPrice.toFixed(2)}</span>
+                          <div className="text-xs text-gray-400 line-through">R$ {service.price.toFixed(2)}</div>
+                          <div className="text-xs text-blue-600">
+                            {discountVoucher?.discountPercent ? `${discountVoucher.discountPercent}% OFF` : 'Desconto aplicado'}
+                          </div>
+                        </div>
                       ) : (
                         `R$ ${service.price.toFixed(2)}`
                       )}
@@ -450,6 +546,39 @@ export function BookingModal({
                     💳 Forma de Pagamento *
                   </label>
 
+                  {/* Opção de Voucher (se disponível) */}
+                  {(availableVoucher || discountVoucher) && (
+                    <button
+                      onClick={() => setBookingType('VOUCHER')}
+                      className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+                        bookingType === 'VOUCHER'
+                          ? 'border-green-500 bg-green-50'
+                          : 'border-gray-200 hover:border-green-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold text-gray-900">
+                            🎁 {finalPrice === 0 ? 'Voucher - GRÁTIS!' : 'Voucher com Desconto'}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {finalPrice === 0 ? (
+                              'Tratamento totalmente gratuito!'
+                            ) : (
+                              <>
+                                R$ {finalPrice.toFixed(2)} 
+                                <span className="text-gray-400 line-through ml-2">R$ {service.price.toFixed(2)}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {bookingType === 'VOUCHER' && (
+                          <Check className="w-6 h-6 text-green-600" />
+                        )}
+                      </div>
+                    </button>
+                  )}
+                
                   {hasSubscription && isIncludedInPlan && remainingTreatments > 0 ? (
                     <>
                       <button
@@ -482,7 +611,11 @@ export function BookingModal({
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="font-semibold text-gray-900">💰 Pagamento Avulso</div>
-                            <div className="text-sm text-gray-600">R$ {service.price.toFixed(2)} - Não consome sessão do plano</div>
+                            <div className="text-sm text-gray-600">
+                              R$ {hasVoucherDiscount ? finalPrice.toFixed(2) : service.price.toFixed(2)}
+                              {hasVoucherDiscount && <span className="text-gray-400 line-through ml-2">R$ {service.price.toFixed(2)}</span>}
+                              {!hasVoucherDiscount && ' - Não consome sessão do plano'}
+                            </div>
                           </div>
                           {bookingType === 'SINGLE' && (
                             <Check className="w-6 h-6 text-pink-600" />
@@ -490,7 +623,7 @@ export function BookingModal({
                         </div>
                       </button>
                     </>
-                  ) : (
+                  ) : !availableVoucher && !discountVoucher ? (
                     // Sem plano ou limite atingido - apenas avulso
                     <div className="w-full p-4 rounded-xl border-2 border-pink-500 bg-pink-50">
                       <div className="flex items-center justify-between">
@@ -504,7 +637,7 @@ export function BookingModal({
                         <Check className="w-6 h-6 text-pink-600" />
                       </div>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               )}
 

@@ -52,6 +52,7 @@ export default function AgendamentosPage() {
     servico: string
     data: string
     hora: string
+    status?: string
   } | undefined>()
 
   const [appointments, setAppointments] = useState<Appointment[]>([])
@@ -108,7 +109,8 @@ export default function AgendamentosPage() {
           service: apt.service?.name || 'Serviço',
           startTime: startLocal,
           endTime: endLocal,
-          status: apt.status === 'COMPLETED' ? 'completed' as const : 'scheduled' as const,
+          status: apt.status === 'COMPLETED' ? 'completed' as const : 
+                  apt.status === 'CANCELED' ? 'canceled' as const : 'scheduled' as const,
           notes: apt.notes,
           paymentStatus: apt.paymentStatus,
           origin: apt.origin
@@ -409,12 +411,17 @@ export default function AgendamentosPage() {
                         <button
                           key={apt.id}
                           onClick={() => {
+                            // Não abre modal se concluído ou cancelado
+                            if (apt.status === 'completed' || apt.status === 'canceled') {
+                              return
+                            }
                             setSelectedAppointment({
                               id: apt.id,
                               cliente: apt.clientName,
                               servico: apt.service,
                               data: format(apt.startTime, 'dd/MM/yyyy'),
-                              hora: format(apt.startTime, 'HH:mm')
+                              hora: format(apt.startTime, 'HH:mm'),
+                              status: apt.status
                             })
                             setIsReagendarOpen(true)
                           }}
@@ -533,12 +540,17 @@ export default function AgendamentosPage() {
                         <button
                           key={apt.id}
                           onClick={() => {
+                            // Não abre modal se concluído ou cancelado
+                            if (apt.status === 'completed' || apt.status === 'canceled') {
+                              return
+                            }
                             setSelectedAppointment({
                               id: apt.id,
                               cliente: apt.clientName,
                               servico: apt.service,
                               data: format(apt.startTime, 'dd/MM/yyyy'),
-                              hora: format(apt.startTime, 'HH:mm')
+                              hora: format(apt.startTime, 'HH:mm'),
+                              status: apt.status
                             })
                             setIsReagendarOpen(true)
                           }}
@@ -572,17 +584,22 @@ export default function AgendamentosPage() {
                           <div className="flex items-center justify-between">
                             <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${
                               apt.status === 'completed'
-                                ? 'bg-gray-200 text-gray-700'
+                                ? 'bg-green-500 text-white'
+                                : apt.status === 'canceled'
+                                ? 'bg-red-500 text-white'
                                 : apt.status === 'scheduled'
                                 ? 'bg-pink-500 text-white'
-                                : 'bg-green-500 text-white'
+                                : 'bg-blue-500 text-white'
                             }`}>
-                              {apt.status === 'completed' ? 'Concluído' : 
+                              {apt.status === 'completed' ? '✅ Concluído' : 
+                               apt.status === 'canceled' ? '❌ Cancelado' :
                                apt.status === 'scheduled' ? 'Agendado' : 'Confirmado'}
                             </span>
-                            <span className="text-xs text-gray-500">
-                              Toque para gerenciar →
-                            </span>
+                            {apt.status !== 'completed' && apt.status !== 'canceled' && (
+                              <span className="text-xs text-gray-500">
+                                Toque para gerenciar →
+                              </span>
+                            )}
                           </div>
                         </button>
                         )
@@ -687,12 +704,17 @@ export default function AgendamentosPage() {
                         <button
                           key={apt.id}
                           onClick={() => {
+                            // Não abre modal se concluído ou cancelado
+                            if (apt.status === 'completed' || apt.status === 'canceled') {
+                              return
+                            }
                             setSelectedAppointment({
                               id: apt.id,
                               cliente: apt.clientName,
                               servico: apt.service,
                               data: format(apt.startTime, 'dd/MM/yyyy'),
-                              hora: format(apt.startTime, 'HH:mm')
+                              hora: format(apt.startTime, 'HH:mm'),
+                              status: apt.status
                             })
                             setIsReagendarOpen(true)
                           }}

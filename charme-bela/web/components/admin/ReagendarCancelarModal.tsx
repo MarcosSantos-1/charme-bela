@@ -19,11 +19,12 @@ interface ReagendarCancelarModalProps {
     servico: string
     data: string
     hora: string
+    status?: string
   }
 }
 
 export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento }: ReagendarCancelarModalProps) {
-  const [acao, setAcao] = useState<'reagendar' | 'cancelar'>('reagendar')
+  const [acao, setAcao] = useState<'reagendar' | 'cancelar' | 'concluir'>('reagendar')
   const [novaData, setNovaData] = useState<Date | undefined>(undefined)
   const [novaHora, setNovaHora] = useState('')
   const [motivo, setMotivo] = useState('')
@@ -124,13 +125,17 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
         )
         
         toast.success('Agendamento reagendado com sucesso!')
-      } else {
+      } else if (acao === 'cancelar') {
         await api.cancelAppointment(agendamento.id, {
           canceledBy: 'admin',
           cancelReason: motivo || 'Cancelado pelo admin'
         })
         
         toast.success('Agendamento cancelado')
+      } else if (acao === 'concluir') {
+        await api.completeAppointment(agendamento.id)
+        
+        toast.success('Tratamento marcado como concluído! ✅')
       }
       
       resetForm()
@@ -153,49 +158,84 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
     setBookedSlots([])
   }
 
+  const isCompletedOrCanceled = agendamento?.status === 'completed' || agendamento?.status === 'canceled'
+  
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Reagendar ou Cancelar" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Gerenciar Agendamento" size="md">
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Info do agendamento atual */}
         {agendamento && (
-          <div className="bg-pink-50 border border-pink-200 rounded-xl p-4 mb-4">
+          <div className={`border rounded-xl p-4 mb-4 ${
+            agendamento.status === 'completed' ? 'bg-green-50 border-green-200' :
+            agendamento.status === 'canceled' ? 'bg-red-50 border-red-200' :
+            'bg-pink-50 border-pink-200'
+          }`}>
             <h3 className="font-semibold text-gray-900 mb-2">Agendamento Atual:</h3>
             <p className="text-sm text-gray-700">Cliente: <strong>{agendamento.cliente}</strong></p>
             <p className="text-sm text-gray-700">Serviço: {agendamento.servico}</p>
             <p className="text-sm text-gray-700">Data: {agendamento.data} às {agendamento.hora}</p>
+            {agendamento.status === 'completed' && (
+              <p className="text-sm text-green-700 font-semibold mt-2">✅ Tratamento Concluído</p>
+            )}
+            {agendamento.status === 'canceled' && (
+              <p className="text-sm text-red-700 font-semibold mt-2">❌ Tratamento Cancelado</p>
+            )}
+          </div>
+        )}
+        
+        {/* Aviso se concluído ou cancelado */}
+        {isCompletedOrCanceled && (
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+            <p className="text-sm text-gray-700 text-center">
+              Este agendamento já foi {agendamento?.status === 'completed' ? 'concluído' : 'cancelado'} e não pode mais ser alterado.
+            </p>
           </div>
         )}
 
-        {/* Escolher ação */}
-        <div className="flex gap-3">
+        {/* Escolher ação - não mostra se concluído/cancelado */}
+        {!isCompletedOrCanceled && (
+        <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
             onClick={() => setAcao('reagendar')}
-            className={`flex-1 py-3 px-4 rounded-xl border-2 font-medium transition-all ${
+            className={`py-2.5 px-3 rounded-lg border-2 font-medium transition-all text-xs ${
               acao === 'reagendar'
                 ? 'bg-pink-600 text-white border-pink-600'
                 : 'bg-white text-gray-700 border-gray-300 hover:border-pink-300'
             }`}
           >
-            <Calendar className="w-4 h-4 inline mr-2" />
+            <Calendar className="w-3.5 h-3.5 inline mr-1" />
             Reagendar
           </button>
           <button
             type="button"
+            onClick={() => setAcao('concluir')}
+            className={`py-2.5 px-3 rounded-lg border-2 font-medium transition-all text-xs ${
+              acao === 'concluir'
+                ? 'bg-green-600 text-white border-green-600'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-green-300'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5 inline mr-1" />
+            Concluir
+          </button>
+          <button
+            type="button"
             onClick={() => setAcao('cancelar')}
-            className={`flex-1 py-3 px-4 rounded-xl border-2 font-medium transition-all ${
+            className={`py-2.5 px-3 rounded-lg border-2 font-medium transition-all text-xs ${
               acao === 'cancelar'
                 ? 'bg-red-600 text-white border-red-600'
                 : 'bg-white text-gray-700 border-gray-300 hover:border-red-300'
             }`}
           >
-            <AlertTriangle className="w-4 h-4 inline mr-2" />
+            <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
             Cancelar
           </button>
         </div>
+        )}
 
         {/* Se reagendar */}
-        {acao === 'reagendar' && (
+        {!isCompletedOrCanceled && acao === 'reagendar' && (
           <div className="space-y-4">
             {/* Data */}
             <div>
@@ -347,8 +387,17 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
           </div>
         )}
 
+        {/* Confirmação (para concluir) */}
+        {!isCompletedOrCanceled && acao === 'concluir' && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+            <p className="text-sm text-gray-700">
+              ✅ Confirme que o tratamento foi <strong>concluído com sucesso</strong>. Esta ação marcará o agendamento como finalizado.
+            </p>
+          </div>
+        )}
+        
         {/* Motivo (para cancelamento) */}
-        {acao === 'cancelar' && (
+        {!isCompletedOrCanceled && acao === 'cancelar' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Motivo do Cancelamento
@@ -371,15 +420,22 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
             onClick={onClose}
             className="flex-1"
           >
-            Voltar
+            {isCompletedOrCanceled ? 'Fechar' : 'Voltar'}
           </Button>
-          <Button
-            type="submit"
-            variant={acao === 'reagendar' ? 'primary' : 'outline'}
-            className={`flex-1 ${acao === 'cancelar' ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : ''}`}
-          >
-            {acao === 'reagendar' ? 'Confirmar Reagendamento' : 'Confirmar Cancelamento'}
-          </Button>
+          {!isCompletedOrCanceled && (
+            <Button
+              type="submit"
+              variant={acao === 'reagendar' ? 'primary' : 'outline'}
+              className={`flex-1 ${
+                acao === 'cancelar' ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' : 
+                acao === 'concluir' ? 'bg-green-600 hover:bg-green-700 text-white border-green-600' : ''
+              }`}
+            >
+              {acao === 'reagendar' ? 'Confirmar Reagendamento' : 
+               acao === 'concluir' ? '✅ Marcar como Concluído' :
+               'Confirmar Cancelamento'}
+            </Button>
+          )}
         </div>
       </form>
     </Modal>

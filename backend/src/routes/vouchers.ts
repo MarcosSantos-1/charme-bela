@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
+import { notifyVoucherReceived } from '../utils/notifications'
 
 export async function vouchersRoutes(app: FastifyInstance) {
   // GET - Listar vouchers (com filtros)
@@ -220,6 +221,13 @@ export async function vouchersRoutes(app: FastifyInstance) {
         }
       })
       
+      // Notifica cliente sobre o voucher recebido
+      await notifyVoucherReceived(userId, {
+        description: voucher.description,
+        type: voucher.type,
+        expiresAt: voucher.expiresAt || undefined
+      })
+      
       logger.success(`Voucher criado: ${voucher.id} para ${user.name}`)
       return reply.status(201).send({
         success: true,
@@ -293,6 +301,241 @@ export async function vouchersRoutes(app: FastifyInstance) {
     }
   })
 
+  // POST - Ativar voucher de mês grátis
+  app.post('/vouchers/:id/activate-free-month', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    logger.route('POST', `/vouchers/${id}/activate-free-month`)
+    
+    try {
+      const voucher = await prisma.voucher.findUnique({
+        where: { id },
+        include: { user: true }
+      })
+      
+      if (!voucher) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Voucher não encontrado'
+        })
+      }
+      
+      if (voucher.type !== 'FREE_MONTH') {
+        return reply.status(400).send({
+          success: false,
+          error: 'Este voucher não é de mês grátis'
+        })
+      }
+      
+      if (voucher.isUsed) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Voucher já foi utilizado'
+        })
+      }
+      
+      if (voucher.expiresAt && voucher.expiresAt < new Date()) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Voucher expirado'
+        })
+      }
+      
+      if (!voucher.planId) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Voucher sem plano associado'
+        })
+      }
+      
+      // Buscar plano
+      const plan = await prisma.subscriptionPlan.findUnique({
+        where: { id: voucher.planId }
+      })
+      
+      if (!plan) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Plano não encontrado'
+        })
+      }
+      
+      // Verificar se usuário já tem assinatura ativa
+      const existingSubscription = await prisma.subscription.findUnique({
+        where: { userId: voucher.userId }
+      })
+      
+      if (existingSubscription && existingSubscription.status === 'ACTIVE') {
+        return reply.status(400).send({
+          success: false,
+          error: 'Usuário já possui uma assinatura ativa. Não é possível ativar mês grátis.'
+        })
+      }
+      
+      // Calcular data de início e fim (1 mês grátis)
+      const startDate = new Date()
+      const endDate = new Date()
+      endDate.setMonth(endDate.getMonth() + 1)
+      
+      // Criar assinatura temporária (sem Stripe)
+      const subscription = await prisma.subscription.upsert({
+        where: { userId: voucher.userId },
+        update: {
+          planId: plan.id,
+          status: 'ACTIVE',
+          startDate,
+          endDate, // Termina em 1 mês
+          stripeSubscriptionId: null // Não tem no Stripe (é grátis)
+        },
+        create: {
+          userId: voucher.userId,
+          planId: plan.id,
+          status: 'ACTIVE',
+          startDate,
+          endDate,
+          stripeSubscriptionId: null
+        }
+      })
+      
+      // Marcar voucher como usado
+      await prisma.voucher.update({
+        where: { id },
+        data: {
+          isUsed: true,
+          usedAt: new Date()
+        }
+      })
+      
+      // Notificar cliente
+      const { notifySubscriptionActivated } = await import('../utils/notifications')
+      await notifySubscriptionActivated(voucher.userId, {
+        planName: `${plan.name} (Mês Grátis)`,
+        maxTreatments: plan.maxTreatmentsPerMonth
+      })
+      
+      logger.success(`✅ Mês grátis ativado para ${voucher.user.name} - Plano: ${plan.name}`)
+      
+      return reply.status(200).send({
+        success: true,
+        data: subscription,
+        message: `Mês grátis ativado! Você tem ${plan.maxTreatmentsPerMonth} tratamentos até ${endDate.toLocaleDateString('pt-BR')}`
+      })
+    } catch (error: any) {
+      logger.error('Erro ao ativar mês grátis:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao ativar mês grátis',
+        details: error.message
+      })
+    }
+  })
+  
+  // POST - Validar e calcular desconto de voucher
+  app.post('/vouchers/validate', async (request, reply) => {
+    logger.route('POST', '/vouchers/validate')
+    
+    try {
+      const { voucherId, serviceId } = request.body as {
+        voucherId: string
+        serviceId: string
+      }
+      
+      const voucher = await prisma.voucher.findUnique({
+        where: { id: voucherId },
+        include: { user: true }
+      })
+      
+      if (!voucher) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Voucher não encontrado'
+        })
+      }
+      
+      // Validações
+      if (voucher.isUsed) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Voucher já foi utilizado'
+        })
+      }
+      
+      if (voucher.expiresAt && voucher.expiresAt < new Date()) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Voucher expirado'
+        })
+      }
+      
+      // Buscar serviço para calcular desconto
+      const service = await prisma.service.findUnique({
+        where: { id: serviceId }
+      })
+      
+      if (!service) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Serviço não encontrado'
+        })
+      }
+      
+      let finalPrice = service.price
+      let discount = 0
+      let isFree = false
+      
+      switch (voucher.type) {
+        case 'FREE_TREATMENT':
+          // Verifica se o voucher é válido para este serviço
+          if (voucher.anyService || voucher.serviceId === serviceId) {
+            finalPrice = 0
+            discount = service.price
+            isFree = true
+          } else {
+            return reply.status(400).send({
+              success: false,
+              error: 'Voucher não é válido para este serviço'
+            })
+          }
+          break
+          
+        case 'DISCOUNT':
+          if (voucher.discountPercent) {
+            discount = service.price * (voucher.discountPercent / 100)
+          } else if (voucher.discountAmount) {
+            discount = Math.min(voucher.discountAmount, service.price)
+          }
+          finalPrice = Math.max(0, service.price - discount)
+          break
+          
+        case 'FREE_MONTH':
+          return reply.status(400).send({
+            success: false,
+            error: 'Voucher de mês grátis não pode ser usado em agendamentos'
+          })
+      }
+      
+      return reply.status(200).send({
+        success: true,
+        data: {
+          voucherId: voucher.id,
+          voucherType: voucher.type,
+          voucherDescription: voucher.description,
+          originalPrice: service.price,
+          discount,
+          finalPrice,
+          isFree,
+          serviceName: service.name
+        }
+      })
+    } catch (error: any) {
+      logger.error('Erro ao validar voucher:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao validar voucher',
+        details: error.message
+      })
+    }
+  })
+  
   // DELETE - Cancelar/remover voucher (apenas admin)
   app.delete('/vouchers/:id', async (request, reply) => {
     const { id } = request.params as { id: string }

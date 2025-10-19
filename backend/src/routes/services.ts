@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
+import { createNotification } from '../utils/notifications'
 
 export async function servicesRoutes(app: FastifyInstance) {
   // GET - Listar serviços (por padrão só ativos, mas admin pode ver todos)
@@ -93,6 +94,38 @@ export async function servicesRoutes(app: FastifyInstance) {
           isActive: true
         }
       })
+      
+      // Notificar todos os clientes sobre o novo serviço
+      try {
+        const clients = await prisma.user.findMany({
+          where: { 
+            role: 'CLIENT',
+            isActive: true 
+          },
+          select: { id: true }
+        })
+        
+        // Criar notificação para cada cliente
+        const notificationPromises = clients.map(client =>
+          createNotification({
+            userId: client.id,
+            type: 'PROMOTION',
+            title: 'Novo Tratamento Disponível! ✨',
+            message: `Agora oferecemos ${service.name}! ${service.description}`,
+            icon: 'SPARKLES',
+            priority: 'NORMAL',
+            actionUrl: '/servicos',
+            actionLabel: 'Ver Tratamentos',
+            metadata: { serviceId: service.id, serviceName: service.name }
+          })
+        )
+        
+        await Promise.all(notificationPromises)
+        logger.info(`📢 ${clients.length} clientes notificados sobre novo serviço`)
+      } catch (error) {
+        logger.error('Erro ao notificar clientes sobre novo serviço:', error)
+        // Não falhar a criação do serviço se notificação falhar
+      }
       
       logger.success(`Serviço criado com sucesso: ${service.name} (ID: ${service.id})`)
       return reply.status(201).send({

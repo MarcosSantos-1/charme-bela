@@ -336,6 +336,29 @@ export default function PerfilPage() {
             )}
           </div>
 
+          {/* Ações Rápidas */}
+          <div className="bg-white rounded-2xl p-6">
+            <h3 className="font-semibold text-gray-900 mb-4">Ações Rápidas</h3>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <Link href="/cliente/pagamentos">
+                <button className="w-full p-4 bg-gradient-to-br from-green-50 to-emerald-50 hover:from-green-100 hover:to-emerald-100 border-2 border-green-200 rounded-xl transition-all group">
+                  <CreditCard className="w-8 h-8 text-green-600 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                  <div className="text-sm font-medium text-gray-900">Pagamentos</div>
+                  <div className="text-xs text-gray-600">Histórico e faturas</div>
+                </button>
+              </Link>
+              
+              <Link href="/cliente/historico">
+                <button className="w-full p-4 bg-gradient-to-br from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 border-2 border-purple-200 rounded-xl transition-all group">
+                  <FileText className="w-8 h-8 text-purple-600 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                  <div className="text-sm font-medium text-gray-900">Tratamentos</div>
+                  <div className="text-xs text-gray-600">Histórico completo</div>
+                </button>
+              </Link>
+            </div>
+          </div>
+
           {/* Account Settings */}
           <div className="bg-white rounded-2xl p-6 space-y-3">
             <h3 className="font-semibold text-gray-900 mb-4">Configurações da Conta</h3>

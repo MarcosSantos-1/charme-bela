@@ -11,30 +11,106 @@ import {
   Check, 
   Clock,
   X,
-  Plus,
-  Trash2,
   CreditCard,
-  AlertCircle
+  AlertCircle,
+  ExternalLink,
+  Loader2,
+  Settings,
+  CheckCircle,
+  XCircle
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
+import { 
+  getPaymentMethods, 
+  getPaymentHistory, 
+  createCustomerPortalSession,
+  PaymentMethod,
+  PaymentHistory
+} from '@/lib/api'
 
 export default function PagamentosPage() {
   const { user } = useAuth()
-  const { subscription, hasSubscription, loading } = useSubscription(user?.id)
-  const [showAddCardModal, setShowAddCardModal] = useState(false)
+  const { subscription, hasSubscription, loading: subLoading } = useSubscription(user?.id)
+  const searchParams = useSearchParams()
+  
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([])
+  const [loading, setLoading] = useState(true)
+  const [openingPortal, setOpeningPortal] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 5
+  
+  // Captura parâmetros de sucesso/cancelamento do Stripe
+  const success = searchParams.get('success')
+  const canceled = searchParams.get('canceled')
 
-  // Mock data - será substituído pelo Stripe
-  const savedCards = [
-    { id: '1', brand: 'Visa', last4: '4242', expiry: '12/26', isDefault: true },
-  ]
+  useEffect(() => {
+    if (user) {
+      loadPaymentData()
+    }
+  }, [user])
+  
+  useEffect(() => {
+    // Mostra toast de sucesso/erro
+    if (success === 'true') {
+      toast.success('Pagamento confirmado com sucesso! 🎉', { duration: 5000 })
+    } else if (canceled === 'true') {
+      toast.error('Pagamento cancelado. Nenhuma cobrança foi feita.', { duration: 5000 })
+    }
+  }, [success, canceled])
 
-  // Mock payment history - será substituído pelo Stripe
-  const paymentHistory = [
-    { id: '1', date: '15/Out/2025', amount: 249.90, status: 'paid', method: 'Cartão ••• 4242' },
-    { id: '2', date: '15/Set/2025', amount: 249.90, status: 'paid', method: 'Cartão ••• 4242' },
-    { id: '3', date: '15/Ago/2025', amount: 249.90, status: 'paid', method: 'Cartão ••• 4242' },
-  ]
+  const loadPaymentData = async () => {
+    if (!user) return
+    
+    try {
+      const [methods, history] = await Promise.all([
+        getPaymentMethods(user.id),
+        getPaymentHistory(user.id)
+      ])
+      
+      setPaymentMethods(methods)
+      setPaymentHistory(history)
+    } catch (error) {
+      console.error('Erro ao carregar dados de pagamento:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOpenCustomerPortal = async () => {
+    if (!user) return
+    
+    setOpeningPortal(true)
+    
+    try {
+      const portalData = await createCustomerPortalSession(user.id)
+      
+      // apiRequest já retorna só o data, então portalData = { url }
+      if (portalData && portalData.url) {
+        // Redireciona para o Customer Portal do Stripe
+        window.location.href = portalData.url
+      } else {
+        throw new Error('Erro ao abrir portal')
+      }
+    } catch (error: any) {
+      console.error('Erro ao abrir portal:', error)
+      
+      // Mostra mensagem de erro específica se disponível
+      const errorMessage = error?.message || 'Erro ao abrir portal. Tente novamente.'
+      
+      if (errorMessage.includes('Portal de Pagamentos precisa ser ativado')) {
+        toast.error('⚙️ Configure o Portal de Pagamentos no Stripe Dashboard primeiro', { duration: 6000 })
+      } else if (errorMessage.includes('Assine um plano primeiro')) {
+        toast.error('Você precisa assinar um plano primeiro para acessar o portal', { duration: 5000 })
+      } else {
+        toast.error(errorMessage, { duration: 5000 })
+      }
+    } finally {
+      setOpeningPortal(false)
+    }
+  }
 
   const getNextBillingDate = () => {
     if (!subscription?.startDate) return 'Não definido'
@@ -57,7 +133,66 @@ export default function PagamentosPage() {
     })
   }
 
-  if (loading) {
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return '-'
+    return new Date(dateString).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    })
+  }
+  
+  const formatDateTime = (dateString: string | null) => {
+    if (!dateString) return '-'
+    const date = new Date(dateString)
+    const dateStr = date.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    })
+    const timeStr = date.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+    return `${dateStr} às ${timeStr}`
+  }
+
+  const getStatusBadge = (status: string) => {
+    const badges = {
+      // Invoice statuses
+      paid: { bg: 'bg-green-100', text: 'text-green-700', label: 'Pago', icon: '✓' },
+      open: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Pendente', icon: '⏳' },
+      void: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Cancelado', icon: '✗' },
+      uncollectible: { bg: 'bg-red-100', text: 'text-red-700', label: 'Falhou', icon: '⚠' },
+      // Payment Intent statuses
+      succeeded: { bg: 'bg-green-100', text: 'text-green-700', label: 'Pago', icon: '✓' },
+      canceled: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Cancelado', icon: '✗' },
+      processing: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Processando', icon: '⏳' },
+      requires_payment_method: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Falhou', icon: '⚠' },
+    }
+    
+    const badge = badges[status as keyof typeof badges] || badges.open
+    
+    return (
+      <span className={`px-3 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>
+        {badge.icon} {badge.label}
+      </span>
+    )
+  }
+  
+  const getTypeBadge = (type: string) => {
+    return type === 'subscription' ? (
+      <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full font-medium">
+        📅 Assinatura
+      </span>
+    ) : (
+      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
+        🎫 Avulso
+      </span>
+    )
+  }
+
+  if (subLoading || loading) {
     return (
       <ProtectedRoute requiredRole="CLIENT">
         <ClientLayout title="Pagamentos">
@@ -73,6 +208,36 @@ export default function PagamentosPage() {
     <ProtectedRoute requiredRole="CLIENT">
       <ClientLayout title="Pagamentos">
         <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+          {/* Banner de Sucesso */}
+          {success === 'true' && (
+            <div className="bg-green-50 border-l-4 border-green-500 rounded-xl p-4 animate-fadeIn">
+              <div className="flex items-start gap-3">
+                <CheckCircle className="w-6 h-6 text-green-600 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-green-900 mb-1">Pagamento Confirmado!</h3>
+                  <p className="text-sm text-green-800">
+                    Seu pagamento foi processado com sucesso. O comprovante está disponível no histórico abaixo.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Banner de Cancelamento */}
+          {canceled === 'true' && (
+            <div className="bg-orange-50 border-l-4 border-orange-500 rounded-xl p-4 animate-fadeIn">
+              <div className="flex items-start gap-3">
+                <XCircle className="w-6 h-6 text-orange-600 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-orange-900 mb-1">Pagamento Cancelado</h3>
+                  <p className="text-sm text-orange-800">
+                    Você cancelou o processo de pagamento. Nenhuma cobrança foi realizada.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Sem Assinatura */}
           {!hasSubscription && (
             <div className="bg-yellow-50 border-l-4 border-yellow-500 rounded-xl p-6">
@@ -80,12 +245,11 @@ export default function PagamentosPage() {
                 <AlertCircle className="w-6 h-6 text-yellow-600 mt-0.5" />
                 <div>
                   <h3 className="font-semibold text-yellow-900 mb-1">Nenhuma assinatura ativa</h3>
-                  <p className="text-sm text-yellow-800">
+                  <p className="text-sm text-yellow-800 mb-4">
                     Você não possui uma assinatura ativa no momento. Para contratar um plano, visite a página de planos.
                   </p>
                   <Button
                     variant="primary"
-                    className="mt-4"
                     onClick={() => window.location.href = '/planos'}
                   >
                     Ver Planos Disponíveis
@@ -170,256 +334,256 @@ export default function PagamentosPage() {
 
           {/* Payment Methods */}
           <div className="bg-white rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Formas de Pagamento</h3>
-              <button
-                onClick={() => setShowAddCardModal(true)}
-                className="flex items-center space-x-2 text-pink-600 font-medium text-sm hover:text-pink-700"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Adicionar</span>
-              </button>
+            <h3 className="font-semibold text-gray-900 mb-4">Seus Cartões</h3>
+
+            {paymentMethods.length > 0 ? (
+              <>
+                <p className="text-sm text-gray-600 mb-3">Cartões salvos:</p>
+                <div className="space-y-4">
+                  {paymentMethods.map((card) => {
+                  // Gradientes modernos por bandeira
+                  const brandStyle = card.brand === 'visa' 
+                    ? 'bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800' 
+                    : card.brand === 'mastercard'
+                    ? 'bg-gradient-to-br from-orange-500 via-red-500 to-pink-600'
+                    : card.brand === 'amex'
+                    ? 'bg-gradient-to-br from-teal-600 via-cyan-700 to-blue-800'
+                    : card.brand === 'elo'
+                    ? 'bg-gradient-to-br from-yellow-500 via-orange-500 to-red-600'
+                    : 'bg-gradient-to-br from-gray-700 via-gray-800 to-slate-900'
+                  
+                  return (
+                    <div
+                      key={card.id}
+                      className={`relative rounded-2xl p-6 text-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-[1.02] ${brandStyle}`}
+                    >
+                      {/* Pattern de fundo */}
+                      <div className="absolute inset-0 opacity-10 rounded-2xl" style={{
+                        backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 80%, white 1px, transparent 1px)',
+                        backgroundSize: '50px 50px'
+                      }}></div>
+                      
+                      {/* Conteúdo */}
+                      <div className="relative z-10">
+                        {/* Header: Chip + Badge */}
+                        <div className="flex items-start justify-between mb-8">
+                          <div className="w-14 h-11 bg-gradient-to-br from-yellow-300 via-yellow-400 to-yellow-500 rounded-lg shadow-md"></div>
+                          {card.isDefault && (
+                            <div className="bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1">
+                              ⭐ Padrão
+                            </div>
+                          )}
             </div>
 
-            {/* Aviso Stripe */}
-            <div className="mb-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
-              <p className="text-sm text-blue-800">
-                🔒 <strong>Em breve:</strong> Integração completa com Stripe para gerenciar seus cartões de forma segura.
-              </p>
+                        {/* Número do Cartão */}
+                        <div className="text-2xl font-mono tracking-[0.2em] mb-6 flex items-center gap-3">
+                          <span className="opacity-60">••••</span>
+                          <span className="opacity-60">••••</span>
+                          <span className="opacity-60">••••</span>
+                          <span className="font-bold">{card.last4}</span>
             </div>
 
-            <div className="space-y-3">
-              {savedCards.map((card) => (
-                <div
-                  key={card.id}
-                  className={`p-4 rounded-xl border-2 ${
-                    card.isDefault ? 'border-pink-500 bg-pink-50' : 'border-gray-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-12 h-8 bg-gradient-to-br from-gray-700 to-gray-900 rounded flex items-center justify-center text-white text-xs font-bold">
-                        {card.brand === 'Visa' ? 'VISA' : 'MC'}
+                        {/* Footer: Validade + Bandeira */}
+                        <div className="flex justify-between items-end">
+                          <div>
+                            <div className="text-xs opacity-70 mb-1 uppercase tracking-wider">Válido até</div>
+                            <div className="text-base font-semibold">{String(card.expMonth).padStart(2, '0')}/{String(card.expYear).slice(-2)}</div>
+                          </div>
+                          <div className="text-2xl font-bold uppercase tracking-wider opacity-90">
+                            {card.brand}
                       </div>
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {card.brand} •••• {card.last4}
                         </div>
-                        <div className="text-sm text-gray-600">Validade: {card.expiry}</div>
                       </div>
+                      
+                      {/* Brilho sutil */}
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl"></div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      {card.isDefault && (
-                        <span className="text-xs bg-pink-100 text-pink-700 px-2 py-1 rounded-full font-medium">
-                          Padrão
-                        </span>
-                      )}
-                      <button 
-                        onClick={() => toast('Integração Stripe em breve', { icon: '⏳' })}
-                        className="p-2 hover:bg-gray-100 rounded-full"
-                      >
-                        <Trash2 className="w-4 h-4 text-gray-400" />
-                      </button>
-                    </div>
-                  </div>
+                  )
+                  })}
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p className="text-sm">Nenhum cartão salvo ainda</p>
+                <p className="text-xs mt-1">Seus cartões aparecerão aqui após o primeiro pagamento</p>
+              </div>
+            )}
           </div>
 
           {/* Payment History */}
           <div className="bg-white rounded-2xl p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">Histórico de Pagamentos</h3>
+            <h3 className="font-semibold text-gray-900 mb-4 flex items-center justify-between">
+              <span>Histórico de Pagamentos</span>
+              {paymentHistory.length > 0 && (
+                <span className="text-xs text-gray-500 font-normal">
+                  {paymentHistory.length} transações
+                </span>
+              )}
+            </h3>
             
             <div className="space-y-3">
               {paymentHistory.length > 0 ? (
-                paymentHistory.map((payment) => (
+                <>
+                  {paymentHistory
+                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                    .map((payment) => {
+                      const isPaid = payment.status === 'paid' || payment.status === 'succeeded'
+                      const isFailed = payment.status === 'uncollectible' || payment.status === 'requires_payment_method'
+                      const isCanceled = payment.status === 'void' || payment.status === 'canceled'
+                      const isPending = payment.status === 'open' || payment.status === 'processing'
+                      
+                      return (
                   <div
                     key={payment.id}
-                    className="flex items-center justify-between p-4 hover:bg-gray-50 rounded-xl transition-colors"
+                          className="border border-gray-200 rounded-xl p-4 hover:border-pink-300 transition-all"
                   >
-                    <div className="flex items-center space-x-4">
+                          {/* Header */}
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center space-x-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        payment.status === 'paid'
-                          ? 'bg-green-100'
-                          : payment.status === 'pending'
-                          ? 'bg-yellow-100'
-                          : 'bg-red-100'
-                      }`}>
-                        {payment.status === 'paid' ? (
+                                isPaid ? 'bg-green-100' :
+                                isFailed ? 'bg-red-100' :
+                                isCanceled ? 'bg-gray-100' :
+                                'bg-yellow-100'
+                              }`}>
+                                {isPaid ? (
                           <Check className="w-5 h-5 text-green-600" />
-                        ) : payment.status === 'pending' ? (
+                                ) : isFailed ? (
+                                  <X className="w-5 h-5 text-red-600" />
+                                ) : isCanceled ? (
+                                  <X className="w-5 h-5 text-gray-600" />
+                                ) : (
                           <Clock className="w-5 h-5 text-yellow-600" />
-                        ) : (
-                          <X className="w-5 h-5 text-red-600" />
                         )}
                       </div>
                       <div>
-                        <div className="font-medium text-gray-900">
+                                <div className="font-bold text-gray-900 text-lg">
                           R$ {payment.amount.toFixed(2).replace('.', ',')}
                         </div>
-                        <div className="text-sm text-gray-600">{payment.date}</div>
-                        <div className="text-xs text-gray-500 mt-1">{payment.method}</div>
+                                <div className="text-sm text-gray-600 flex items-center space-x-1">
+                                  <Clock className="w-3 h-3" />
+                                  <span>{formatDateTime(payment.paidAt || payment.createdAt)}</span>
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {payment.description}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right space-y-1">
+                              {getStatusBadge(payment.status)}
+                              {getTypeBadge(payment.type)}
                       </div>
                     </div>
-                    <div className="flex items-center space-x-3">
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                        payment.status === 'paid'
-                          ? 'bg-green-100 text-green-700'
-                          : payment.status === 'pending'
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}>
-                        {payment.status === 'paid' ? 'Pago' : payment.status === 'pending' ? 'Pendente' : 'Falhou'}
-                      </span>
-                      {payment.status === 'paid' && (
-                        <button 
-                          onClick={() => toast('Download de nota fiscal em breve', { icon: '📄' })}
-                          className="p-2 hover:bg-gray-100 rounded-full"
-                        >
-                          <Download className="w-4 h-4 text-gray-600" />
-                        </button>
+                      
+                      {/* Links de comprovante */}
+                      {isPaid && (
+                        <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                          {payment.invoicePdf && (
+                            <a
+                              href={payment.invoicePdf}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center space-x-2 text-sm text-pink-600 hover:text-pink-700 font-medium"
+                            >
+                              <Download className="w-4 h-4" />
+                              <span>PDF</span>
+                            </a>
+                          )}
+                          {payment.hostedInvoiceUrl && (
+                            <a
+                              href={payment.hostedInvoiceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              <span>Comprovante</span>
+                            </a>
+                          )}
+                          {payment.receiptUrl && (
+                            <a
+                              href={payment.receiptUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center space-x-2 text-sm text-green-600 hover:text-green-700 font-medium"
+                            >
+                              <Download className="w-4 h-4" />
+                              <span>Recibo</span>
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Mensagem de erro se falhou */}
+                      {isFailed && (
+                        <div className="pt-3 border-t border-gray-100">
+                          <p className="text-xs text-red-600">
+                            ⚠️ Pagamento não foi processado. Tente novamente ou use outro cartão.
+                          </p>
+                        </div>
                       )}
                     </div>
+                  )
+                  })}
+                  
+                {/* Paginação */}
+                {paymentHistory.length > itemsPerPage && (
+                    <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t border-gray-200">
+                      <button
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                          currentPage === 1
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-pink-50 text-pink-600 hover:bg-pink-100'
+                        }`}
+                      >
+                        ← Anterior
+                      </button>
+                      
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.ceil(paymentHistory.length / itemsPerPage) }, (_, i) => i + 1).map(page => (
+                          <button
+                            key={page}
+                            onClick={() => setCurrentPage(page)}
+                            className={`w-10 h-10 rounded-lg font-medium transition-all ${
+                              currentPage === page
+                                ? 'bg-pink-600 text-white'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        ))}
+                      </div>
+                      
+                      <button
+                        onClick={() => setCurrentPage(p => Math.min(Math.ceil(paymentHistory.length / itemsPerPage), p + 1))}
+                        disabled={currentPage === Math.ceil(paymentHistory.length / itemsPerPage)}
+                        className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                          currentPage === Math.ceil(paymentHistory.length / itemsPerPage)
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-pink-50 text-pink-600 hover:bg-pink-100'
+                        }`}
+                      >
+                        Próxima →
+                      </button>
                   </div>
-                ))
+                  )}
+                </>
               ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>Nenhum pagamento registrado ainda</p>
+                <div className="text-center py-12 text-gray-500">
+                  <Calendar className="w-16 h-16 mx-auto mb-3 opacity-30" />
+                  <p className="font-medium">Nenhum pagamento registrado ainda</p>
+                  <p className="text-sm mt-1">Seu histórico aparecerá aqui após o primeiro pagamento</p>
                 </div>
               )}
             </div>
           </div>
-
-          {/* Invoice Settings */}
-          <div className="bg-white rounded-2xl p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">Preferências de Fatura</h3>
-            
-            <div className="space-y-3">
-              <label className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
-                <span className="text-gray-700">Enviar fatura por e-mail</span>
-                <input type="checkbox" defaultChecked className="w-5 h-5 text-pink-600 rounded" />
-              </label>
-              
-              <label className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
-                <span className="text-gray-700">Lembrete de pagamento</span>
-                <input type="checkbox" defaultChecked className="w-5 h-5 text-pink-600 rounded" />
-              </label>
-              
-              <label className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
-                <span className="text-gray-700">Notificar falhas de pagamento</span>
-                <input type="checkbox" defaultChecked className="w-5 h-5 text-pink-600 rounded" />
-              </label>
-            </div>
-          </div>
         </div>
-
-        {/* Add Card Modal */}
-        {showAddCardModal && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
-            <div className="bg-white w-full md:max-w-lg md:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900">Adicionar Cartão</h2>
-                <button
-                  onClick={() => setShowAddCardModal(false)}
-                  className="p-2 hover:bg-gray-100 rounded-full"
-                >
-                  <X className="w-5 h-5 text-gray-900" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-4">
-                {/* Aviso */}
-                <div className="p-4 bg-blue-50 border-l-4 border-blue-500 rounded mb-4">
-                  <p className="text-sm text-blue-800">
-                    <strong>Integração Stripe em breve!</strong> Por enquanto, este é apenas um preview da funcionalidade.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Número do Cartão
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="1234 5678 9012 3456"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 placeholder:text-gray-500"
-                    disabled
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Nome no Cartão
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Nome como está no cartão"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 placeholder:text-gray-500"
-                    disabled
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Validade
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="MM/AA"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 placeholder:text-gray-500"
-                      disabled
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      CVV
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="123"
-                      maxLength={4}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 placeholder:text-gray-500"
-                      disabled
-                    />
-                  </div>
-                </div>
-
-                <label className="flex items-center space-x-2 pt-2 opacity-50">
-                  <input type="checkbox" className="w-5 h-5 text-pink-600 rounded" disabled />
-                  <span className="text-sm text-gray-700">Definir como cartão padrão</span>
-                </label>
-
-                <div className="space-y-3 pt-4">
-                  <Button
-                    variant="primary"
-                    className="w-full"
-                    onClick={() => {
-                      toast('Integração Stripe em desenvolvimento! 🚀', {
-                        duration: 3000,
-                        icon: '⏳'
-                      })
-                      setShowAddCardModal(false)
-                    }}
-                  >
-                    <CreditCard className="w-5 h-5 mr-2" />
-                    Adicionar Cartão (Em breve)
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => setShowAddCardModal(false)}
-                  >
-                    Fechar
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </ClientLayout>
     </ProtectedRoute>
   )
 }
+

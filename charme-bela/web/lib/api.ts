@@ -134,19 +134,42 @@ async function apiRequest<T>(
     const fullUrl = `${API_URL}${endpoint}`
     console.log(`🌐 API Request: ${options.method || 'GET'} ${fullUrl}`)
     
+    // Só adiciona Content-Type se tiver body
+    const headers: Record<string, string> = { ...options.headers as Record<string, string> }
+    if (options.body) {
+      headers['Content-Type'] = 'application/json'
+    }
+    
     const response = await fetch(fullUrl, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     })
     
     console.log(`📡 Response: ${response.status} ${response.statusText}`)
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      const errorMessage = errorData.error || `HTTP error! status: ${response.status}`
+      let errorData: any = {}
+      let errorText = ''
+      
+      try {
+        // Tenta ler como texto primeiro
+        errorText = await response.text()
+        // Tenta parsear como JSON
+        errorData = errorText ? JSON.parse(errorText) : {}
+      } catch (e) {
+        // Se não for JSON válido, usa o texto
+        errorData = { error: errorText || `HTTP ${response.status}` }
+      }
+      
+      const errorMessage = errorData.error || errorData.message || errorText || `HTTP error! status: ${response.status}`
+      
+      // Log detalhado do erro
+      console.error(`❌ Erro em ${endpoint}:`, {
+        status: response.status,
+        message: errorMessage,
+        data: errorData,
+        rawText: errorText
+      })
       
       // Se é 404 em subscription, não é erro - é comportamento esperado
       const isSubscriptionNotFound = response.status === 404 && 
@@ -204,9 +227,9 @@ export async function updateConfig(data: any) {
 export async function getPlanPrices() {
   const config: any = await getConfig()
   return {
-    bronze: config?.priceBronze || 119.90,
-    silver: config?.priceSilver || 139.90,
-    gold: config?.priceGold || 169.90
+    bronze: config?.priceBronze || 200.00,
+    silver: config?.priceSilver || 300.00,
+    gold: config?.priceGold || 450.00
   }
 }
 
@@ -503,6 +526,20 @@ export async function cancelAppointment(
   })
 }
 
+// Deletar agendamento do histórico (soft delete - apenas oculta)
+export async function deleteAppointment(id: string): Promise<any> {
+  return apiRequest(`/appointments/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+// Limpar histórico completo (oculta todos concluídos/cancelados)
+export async function clearHistory(userId: string): Promise<any> {
+  return apiRequest(`/appointments/clear-history/${userId}`, {
+    method: 'PUT',
+  })
+}
+
 
 // ============================================
 // SUBSCRIPTIONS
@@ -680,6 +717,32 @@ export async function deleteVoucher(id: string): Promise<void> {
   return apiRequest(`/vouchers/${id}`, { method: 'DELETE' })
 }
 
+// Validar voucher e calcular desconto
+export interface VoucherValidation {
+  voucherId: string
+  voucherType: string
+  voucherDescription: string
+  originalPrice: number
+  discount: number
+  finalPrice: number
+  isFree: boolean
+  serviceName: string
+}
+
+export async function validateVoucher(voucherId: string, serviceId: string): Promise<VoucherValidation> {
+  return apiRequest('/vouchers/validate', {
+    method: 'POST',
+    body: JSON.stringify({ voucherId, serviceId })
+  })
+}
+
+// Ativar voucher de mês grátis
+export async function activateFreeMonthVoucher(voucherId: string): Promise<Subscription> {
+  return apiRequest(`/vouchers/${voucherId}/activate-free-month`, {
+    method: 'POST'
+  })
+}
+
 // ============================================
 // AUTH HELPERS
 // ============================================
@@ -773,14 +836,12 @@ export interface Birthday {
 export async function getDashboardStats(): Promise<DashboardStats> {
   try {
     // Buscar estatísticas em paralelo
-    const [clients, todayAppts, subscriptions] = await Promise.all([
+    const [clients, todayAppts, subscriptions, revenue] = await Promise.all([
       getUsers({ role: 'CLIENT', isActive: true }),
       getTodayAppointments(),
-      getSubscriptions({ status: 'ACTIVE' })
+      getSubscriptions({ status: 'ACTIVE' }),
+      getMonthlyRevenue()
     ])
-
-    // Calcular receita do mês (simulado - depois conectar com pagamentos reais)
-    const monthRevenue = 0 // TODO: Implementar cálculo de receita
 
     // Filtrar apenas agendamentos ativos (não cancelados/no-show)
     const activeAppts = todayAppts.filter(apt => 
@@ -791,7 +852,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     return {
       totalClients: clients.length,
       todayAppointments: activeAppts.length, // Apenas agendamentos ativos
-      monthRevenue,
+      monthRevenue: revenue.totalRevenue, // ✅ RECEITA REAL DO STRIPE
       activeSubscriptions: subscriptions.length,
       completedToday
     }
@@ -842,31 +903,239 @@ export async function rescheduleAppointment(
 
 export async function getUpcomingBirthdays(): Promise<Birthday[]> {
   try {
-    const clients = await getUsers({ role: 'CLIENT', isActive: true })
-    const today = new Date()
-    const currentMonth = today.getMonth()
-    
-    const birthdays = clients
-      .filter(client => {
-        // Filtrar clientes que têm data de nascimento
-        // TODO: Adicionar campo birthDate no User
-        return false // Por enquanto retorna vazio até adicionar campo
-      })
-      .map(client => ({
-        id: client.id,
-        name: client.name,
-        email: client.email,
-        birthDate: '', // TODO: Usar client.birthDate quando disponível
-        age: 0
-      }))
-      .sort((a, b) => {
-        // Ordenar por data de aniversário
-        return 0
-      })
-
-    return birthdays
+    const birthdays = await apiRequest<Birthday[]>('/users/birthdays', { method: 'GET' })
+    return birthdays || []
   } catch (error) {
     console.error('Erro ao buscar aniversariantes:', error)
     return []
   }
+}
+
+// ============================================
+// STRIPE (Pagamentos)
+// ============================================
+
+export interface CheckoutSessionResponse {
+  sessionId: string
+  url: string
+}
+
+export interface CustomerPortalResponse {
+  url: string
+}
+
+export interface PaymentMethod {
+  id: string
+  brand: string
+  last4: string
+  expMonth: number
+  expYear: number
+  isDefault: boolean
+}
+
+export interface PaymentHistory {
+  id: string
+  type: 'subscription' | 'single'
+  amount: number
+  totalAmount: number
+  currency: string
+  status: string // paid, open, void, uncollectible, succeeded, canceled, processing
+  description: string
+  paidAt: string | null
+  createdAt: string
+  invoicePdf: string | null
+  hostedInvoiceUrl: string | null
+  receiptUrl?: string | null
+}
+
+// Criar sessão de checkout (assinatura)
+export async function createCheckoutSession(
+  userId: string,
+  planId: string
+): Promise<CheckoutSessionResponse> {
+  return apiRequest('/stripe/create-checkout-session', {
+    method: 'POST',
+    body: JSON.stringify({ userId, planId })
+  })
+}
+
+// Criar sessão de pagamento único (tratamento avulso)
+export async function createPaymentSession(
+  userId: string,
+  serviceId: string,
+  appointmentId?: string,
+  customAmount?: number,
+  customDescription?: string
+): Promise<CheckoutSessionResponse> {
+  return apiRequest('/stripe/create-payment-session', {
+    method: 'POST',
+    body: JSON.stringify({ 
+      userId, 
+      serviceId, 
+      appointmentId,
+      customAmount,
+      customDescription
+    })
+  })
+}
+
+// Criar sessão do Customer Portal
+export async function createCustomerPortalSession(
+  userId: string
+): Promise<CustomerPortalResponse> {
+  return apiRequest('/stripe/create-portal-session', {
+    method: 'POST',
+    body: JSON.stringify({ userId })
+  })
+}
+
+// Buscar métodos de pagamento do usuário
+export async function getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
+  try {
+    const methods = await apiRequest<PaymentMethod[]>(`/stripe/payment-methods/${userId}`)
+    return methods || []
+  } catch (error) {
+    console.error('Erro ao buscar métodos de pagamento:', error)
+    return []
+  }
+}
+
+// Buscar histórico de pagamentos
+export async function getPaymentHistory(userId: string): Promise<PaymentHistory[]> {
+  try {
+    const history = await apiRequest<PaymentHistory[]>(`/stripe/payment-history/${userId}`)
+    return history || []
+  } catch (error) {
+    console.error('Erro ao buscar histórico de pagamentos:', error)
+    return []
+  }
+}
+
+// Trocar de plano (upgrade/downgrade)
+export async function changePlan(userId: string, newPlanId: string): Promise<any> {
+  return apiRequest(`/subscriptions/${userId}/change-plan`, {
+    method: 'PUT',
+    body: JSON.stringify({ newPlanId })
+  })
+}
+
+// Buscar receita do mês atual
+export interface MonthlyRevenue {
+  totalRevenue: number
+  subscriptionRevenue: number
+  singlePaymentRevenue: number
+  paymentCount: number
+  month: number
+  year: number
+}
+
+export async function getMonthlyRevenue(): Promise<MonthlyRevenue> {
+  try {
+    const revenue = await apiRequest<MonthlyRevenue>('/stripe/monthly-revenue')
+    return revenue
+  } catch (error) {
+    console.error('Erro ao buscar receita mensal:', error)
+    return {
+      totalRevenue: 0,
+      subscriptionRevenue: 0,
+      singlePaymentRevenue: 0,
+      paymentCount: 0,
+      month: new Date().getMonth() + 1,
+      year: new Date().getFullYear()
+    }
+  }
+}
+
+// ============================================
+// NOTIFICATIONS (Notificações)
+// ============================================
+
+export interface Notification {
+  id: string
+  userId?: string | null
+  type: string
+  title: string
+  message: string
+  icon: string
+  priority: string
+  read: boolean
+  readAt?: string
+  metadata?: any
+  actionUrl?: string
+  actionLabel?: string
+  expiresAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+// Buscar notificações
+export async function getNotifications(params?: {
+  userId?: string
+  unreadOnly?: boolean
+  limit?: number
+}): Promise<Notification[]> {
+  const queryParams = new URLSearchParams()
+  if (params?.userId) queryParams.append('userId', params.userId)
+  if (params?.unreadOnly) queryParams.append('unreadOnly', 'true')
+  if (params?.limit) queryParams.append('limit', params.limit.toString())
+  
+  const query = queryParams.toString()
+  return apiRequest(`/notifications${query ? `?${query}` : ''}`, { method: 'GET' })
+}
+
+// Contar notificações não lidas
+export async function getUnreadNotificationsCount(userId: string): Promise<{ count: number }> {
+  return apiRequest(`/notifications/unread-count?userId=${userId}`, { method: 'GET' })
+}
+
+// Buscar notificação específica
+export async function getNotification(id: string): Promise<Notification> {
+  return apiRequest(`/notifications/${id}`, { method: 'GET' })
+}
+
+// Criar notificação
+export async function createNotification(data: {
+  userId?: string | null
+  type: string
+  title: string
+  message: string
+  icon?: string
+  priority?: string
+  metadata?: any
+  actionUrl?: string
+  actionLabel?: string
+  expiresAt?: string
+}): Promise<Notification> {
+  return apiRequest('/notifications', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  })
+}
+
+// Marcar notificação como lida
+export async function markNotificationAsRead(id: string): Promise<Notification> {
+  return apiRequest(`/notifications/${id}/read`, { method: 'PUT' })
+}
+
+// Marcar todas as notificações como lidas
+export async function markAllNotificationsAsRead(userId: string): Promise<{ count: number; message: string }> {
+  return apiRequest('/notifications/mark-all-read', {
+    method: 'PUT',
+    body: JSON.stringify({ userId })
+  })
+}
+
+// Deletar notificação
+export async function deleteNotification(id: string): Promise<{ message: string }> {
+  return apiRequest(`/notifications/${id}`, { method: 'DELETE' })
+}
+
+// Limpar todas as notificações
+export async function clearAllNotifications(userId: string): Promise<{ count: number; message: string }> {
+  return apiRequest(`/notifications/clear-all?userId=${userId}`, { method: 'DELETE' })
+}
+
+// Limpar notificações expiradas
+export async function clearExpiredNotifications(): Promise<{ count: number; message: string }> {
+  return apiRequest('/notifications/clear-expired', { method: 'DELETE' })
 }

@@ -8,6 +8,7 @@ import { DarVoucherModal } from '@/components/admin/DarVoucherModal'
 import * as api from '@/lib/api'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
+import { useRouter } from 'next/navigation'
 
 interface Client {
   id: string
@@ -23,6 +24,7 @@ interface Client {
 }
 
 export default function ClientesPage() {
+  const router = useRouter()
   const [searchTerm, setSearchTerm] = useState('')
   const [isAdicionarClienteOpen, setIsAdicionarClienteOpen] = useState(false)
   const [isDarVoucherOpen, setIsDarVoucherOpen] = useState(false)
@@ -388,6 +390,11 @@ export default function ClientesPage() {
           setSelectedClientForVoucher(null)
         }}
         preSelectedClient={selectedClientForVoucher}
+        onVoucherCreated={() => {
+          setIsDarVoucherOpen(false)
+          setSelectedClientForVoucher(null)
+          router.push('/admin/vouchers')
+        }}
       />
     </div>
   )

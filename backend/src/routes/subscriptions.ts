@@ -247,7 +247,9 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         })
       }
       
-      // Verifica se está dentro do período de fidelidade
+      // ⚠️ TEMPORÁRIO: Fidelidade desabilitada para testes
+      // TODO: Reativar após testes
+      /*
       const now = new Date()
       if (subscription.minimumCommitmentEnd && now < subscription.minimumCommitmentEnd) {
         const monthsRemaining = Math.ceil(
@@ -261,6 +263,8 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           canCancelAfter: subscription.minimumCommitmentEnd
         })
       }
+      */
+      const now = new Date()
       
       // Calcula a data de término do período já pago (próximo ciclo)
       const startDate = subscription.startDate
@@ -409,6 +413,168 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
       return reply.status(500).send({
         success: false,
         error: 'Erro ao reativar assinatura'
+      })
+    }
+  })
+
+  // PUT - Trocar de plano (upgrade/downgrade)
+  app.put('/subscriptions/:userId/change-plan', async (request, reply) => {
+    const { userId } = request.params as { userId: string }
+    logger.route('PUT', `/subscriptions/${userId}/change-plan`)
+    
+    try {
+      const { newPlanId } = request.body as { newPlanId: string }
+      
+      if (!newPlanId) {
+        return reply.status(400).send({
+          success: false,
+          error: 'newPlanId é obrigatório'
+        })
+      }
+      
+      // Busca assinatura atual
+      const subscription = await prisma.subscription.findUnique({
+        where: { userId },
+        include: { plan: true }
+      })
+      
+      if (!subscription) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Assinatura não encontrada'
+        })
+      }
+      
+      if (subscription.status !== 'ACTIVE') {
+        return reply.status(400).send({
+          success: false,
+          error: 'Apenas assinaturas ativas podem ter o plano alterado'
+        })
+      }
+      
+      // Verifica se é o mesmo plano
+      if (subscription.planId === newPlanId) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Este já é o plano atual'
+        })
+      }
+      
+      // Busca novo plano
+      const newPlan = await prisma.subscriptionPlan.findUnique({
+        where: { id: newPlanId }
+      })
+      
+      if (!newPlan) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Novo plano não encontrado'
+        })
+      }
+      
+      // Atualiza assinatura
+      const updatedSubscription = await prisma.subscription.update({
+        where: { userId },
+        data: {
+          planId: newPlanId
+        },
+        include: {
+          user: true,
+          plan: true
+        }
+      })
+      
+      const isUpgrade = newPlan.price > subscription.plan.price
+      
+      logger.success(`Plano ${isUpgrade ? 'upgraded' : 'downgraded'}: ${subscription.plan.name} → ${newPlan.name}`)
+      
+      return reply.status(200).send({
+        success: true,
+        data: updatedSubscription,
+        message: `Plano alterado para ${newPlan.name} com sucesso!`,
+        isUpgrade,
+        oldPlan: subscription.plan.name,
+        newPlan: newPlan.name
+      })
+    } catch (error) {
+      logger.error('Erro ao trocar plano:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao trocar plano'
+      })
+    }
+  })
+  
+  // ============================================
+  // POST - Verificar e expirar mês grátis
+  // ============================================
+  app.post('/subscriptions/check-expiration/:userId', async (request, reply) => {
+    const { userId } = request.params as { userId: string }
+    logger.route('POST', `/subscriptions/check-expiration/${userId}`)
+    
+    try {
+      const subscription = await prisma.subscription.findUnique({
+        where: { userId },
+        include: { plan: true }
+      })
+      
+      if (!subscription) {
+        return reply.status(200).send({
+          success: true,
+          expired: false,
+          message: 'Sem assinatura'
+        })
+      }
+      
+      // Verificar se é mês grátis expirado
+      const now = new Date()
+      const isFreeMonth = !subscription.stripeSubscriptionId
+      const isExpired = subscription.endDate && subscription.endDate < now
+      
+      if (isFreeMonth && isExpired && subscription.status === 'ACTIVE') {
+        // Cancelar assinatura expirada
+        await prisma.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            status: 'CANCELED',
+            canceledAt: now,
+            cancelReason: 'Mês grátis expirado'
+          }
+        })
+        
+        // Notificar cliente
+        const { createNotification } = await import('../utils/notifications')
+        await createNotification({
+          userId,
+          type: 'SUBSCRIPTION_CANCELED',
+          title: 'Seu Mês Grátis Expirou',
+          message: `Seu período de teste do plano ${subscription.plan.name} terminou. Que tal assinar para continuar aproveitando?`,
+          icon: 'INFO',
+          priority: 'HIGH',
+          actionUrl: '/planos',
+          actionLabel: 'Ver Planos'
+        })
+        
+        logger.warning(`⏰ Mês grátis expirado para userId ${userId} - cancelado`)
+        
+        return reply.status(200).send({
+          success: true,
+          expired: true,
+          message: 'Assinatura de mês grátis expirada e cancelada'
+        })
+      }
+      
+      return reply.status(200).send({
+        success: true,
+        expired: false,
+        message: 'Assinatura válida'
+      })
+    } catch (error: any) {
+      logger.error('Erro ao verificar expiração:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao verificar expiração',
+        details: error.message
       })
     }
   })

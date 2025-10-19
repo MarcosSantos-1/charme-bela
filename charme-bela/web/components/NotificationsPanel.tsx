@@ -1,7 +1,17 @@
 'use client'
 
-import { useState } from 'react'
-import { Bell, X, Check, Calendar, CreditCard, Sparkles, AlertCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Bell, X, Check, Calendar, CreditCard, Sparkles, AlertCircle, Gift, Star, User, Info } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { 
+  getNotifications, 
+  markNotificationAsRead, 
+  markAllNotificationsAsRead, 
+  deleteNotification, 
+  clearAllNotifications,
+  type Notification as ApiNotification 
+} from '@/lib/api'
+import { formatTimeAgo } from '@/lib/timeUtils'
 
 interface Notification {
   id: string
@@ -10,77 +20,144 @@ interface Notification {
   message: string
   time: string
   read: boolean
-  icon: 'calendar' | 'card' | 'sparkles' | 'alert'
+  icon: string
+  actionUrl?: string
+  actionLabel?: string
 }
 
-const mockNotifications: Notification[] = [
-  {
-    id: '1',
-    type: 'info',
-    title: 'Consulta Confirmada',
-    message: 'Sua consulta de Drenagem Linfática foi confirmada para 16/Out às 14:00',
-    time: 'Há 2 horas',
-    read: false,
-    icon: 'calendar'
-  },
-  {
-    id: '2',
-    type: 'success',
-    title: 'Pagamento Aprovado',
-    message: 'Pagamento de R$ 249,90 processado com sucesso. Próxima cobrança: 15/Nov',
-    time: 'Ontem',
-    read: false,
-    icon: 'card'
-  },
-  {
-    id: '3',
-    type: 'warning',
-    title: 'Lembrete de Consulta',
-    message: 'Você tem uma consulta amanhã às 15:30. Massagem Modeladora',
-    time: 'Há 1 dia',
-    read: true,
-    icon: 'alert'
-  },
-  {
-    id: '4',
-    type: 'info',
-    title: 'Novo Tratamento Disponível',
-    message: 'Agora oferecemos Jato de Plasma! Incluído no seu plano Plus Care',
-    time: 'Há 3 dias',
-    read: true,
-    icon: 'sparkles'
-  }
-]
+interface NotificationsPanelProps {
+  userId?: string | null // null = notificações do admin
+}
 
-export default function NotificationsPanel() {
+export default function NotificationsPanel({ userId }: NotificationsPanelProps) {
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications)
+  const [notifications, setNotifications] = useState<Notification[]>([])
   const [showModal, setShowModal] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   const unreadCount = notifications.filter(n => !n.read).length
-
-  const markAsRead = (id: string) => {
-    setNotifications(notifications.map(n => 
-      n.id === id ? { ...n, read: true } : n
-    ))
-  }
-
-  const markAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })))
-  }
-
-  const deleteNotification = (id: string) => {
-    setNotifications(notifications.filter(n => n.id !== id))
-  }
-
-  const getIcon = (icon: string) => {
-    switch (icon) {
-      case 'calendar': return <Calendar className="w-5 h-5" />
-      case 'card': return <CreditCard className="w-5 h-5" />
-      case 'sparkles': return <Sparkles className="w-5 h-5" />
-      case 'alert': return <AlertCircle className="w-5 h-5" />
-      default: return <Bell className="w-5 h-5" />
+  
+  const handleNotificationClick = (notification: Notification) => {
+    markAsRead(notification.id)
+    
+    // Redirecionar se tiver actionUrl
+    if (notification.actionUrl) {
+      setIsOpen(false)
+      setShowModal(false)
+      router.push(notification.actionUrl)
     }
+  }
+
+  // Mapear tipo de notificação da API para tipo de estilo
+  const mapNotificationType = (apiType: string): 'success' | 'warning' | 'info' | 'error' => {
+    if (apiType.includes('SUCCEEDED') || apiType.includes('COMPLETED') || apiType.includes('CONFIRMED')) return 'success'
+    if (apiType.includes('FAILED') || apiType.includes('CANCELED')) return 'error'
+    if (apiType.includes('REMINDER') || apiType.includes('EXPIRING') || apiType.includes('LIMIT')) return 'warning'
+    return 'info'
+  }
+
+  // Carregar notificações
+  const loadNotifications = async () => {
+    try {
+      setLoading(true)
+      const data = await getNotifications({
+        userId: userId === null ? 'admin' : (userId || undefined),
+        limit: 50
+      })
+      
+      const formattedNotifications: Notification[] = data.map(n => ({
+        id: n.id,
+        type: mapNotificationType(n.type),
+        title: n.title,
+        message: n.message,
+        time: formatTimeAgo(n.createdAt),
+        read: n.read,
+        icon: n.icon,
+        actionUrl: n.actionUrl,
+        actionLabel: n.actionLabel
+      }))
+      
+      setNotifications(formattedNotifications)
+    } catch (error) {
+      console.error('Erro ao carregar notificações:', error)
+      // Não quebrar o componente se o backend estiver offline
+      setNotifications([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (userId !== undefined) {
+      loadNotifications()
+      
+      // Atualizar a cada 30 segundos
+      const interval = setInterval(loadNotifications, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [userId])
+
+  const markAsRead = async (id: string) => {
+    try {
+      await markNotificationAsRead(id)
+      setNotifications(notifications.map(n => 
+        n.id === id ? { ...n, read: true } : n
+      ))
+    } catch (error) {
+      console.error('Erro ao marcar notificação como lida:', error)
+    }
+  }
+
+  const markAllAsRead = async () => {
+    try {
+      if (userId !== undefined) {
+        await markAllNotificationsAsRead(userId === null ? 'admin' : userId!)
+        setNotifications(notifications.map(n => ({ ...n, read: true })))
+      }
+    } catch (error) {
+      console.error('Erro ao marcar todas como lidas:', error)
+    }
+  }
+
+  const handleDeleteNotification = async (id: string) => {
+    try {
+      await deleteNotification(id)
+      setNotifications(notifications.filter(n => n.id !== id))
+    } catch (error) {
+      console.error('Erro ao deletar notificação:', error)
+    }
+  }
+
+  const handleClearAll = async () => {
+    if (confirm('Tem certeza que deseja limpar todas as notificações?')) {
+      try {
+        if (userId !== undefined) {
+          await clearAllNotifications(userId === null ? 'admin' : userId!)
+          setNotifications([])
+        }
+      } catch (error) {
+        console.error('Erro ao limpar notificações:', error)
+      }
+    }
+  }
+
+  const getIcon = (iconName: string) => {
+    const iconMap: Record<string, any> = {
+      BELL: Bell,
+      CALENDAR: Calendar,
+      CARD: CreditCard,
+      SPARKLES: Sparkles,
+      ALERT: AlertCircle,
+      CHECK: Check,
+      INFO: Info,
+      GIFT: Gift,
+      STAR: Star,
+      USER: User
+    }
+    
+    const IconComponent = iconMap[iconName] || Bell
+    return <IconComponent className="w-5 h-5" />
   }
 
   const getIconColor = (type: string) => {
@@ -141,15 +218,20 @@ export default function NotificationsPanel() {
 
             {/* Notifications List */}
             <div className="overflow-y-auto flex-1 scrollbar-hide">
-              {notifications.length > 0 ? (
+              {loading ? (
+                <div className="px-6 py-12 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-600 mx-auto mb-3"></div>
+                  <p className="text-gray-500">Carregando...</p>
+                </div>
+              ) : notifications.length > 0 ? (
                 <div className="divide-y divide-gray-100">
                   {notifications.map((notif) => (
                     <div
                       key={notif.id}
-                      className={`px-6 py-4 hover:bg-gray-50 transition-colors ${
+                      className={`px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer ${
                         !notif.read ? 'bg-pink-50/30' : ''
                       }`}
-                      onClick={() => markAsRead(notif.id)}
+                      onClick={() => handleNotificationClick(notif)}
                     >
                       <div className="flex items-start space-x-3">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${getIconColor(notif.type)}`}>
@@ -166,7 +248,7 @@ export default function NotificationsPanel() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                deleteNotification(notif.id)
+                                handleDeleteNotification(notif.id)
                               }}
                               className="p-1 hover:bg-gray-200 rounded-full flex-shrink-0"
                             >
@@ -233,7 +315,7 @@ export default function NotificationsPanel() {
                               )}
                             </h4>
                             <button
-                              onClick={() => deleteNotification(notif.id)}
+                              onClick={() => handleDeleteNotification(notif.id)}
                               className="p-1 hover:bg-gray-200 rounded-full"
                             >
                               <X className="w-4 h-4 text-gray-500" />
@@ -275,11 +357,7 @@ export default function NotificationsPanel() {
                   Marcar todas como lidas
                 </button>
                 <button
-                  onClick={() => {
-                    if (confirm('Tem certeza que deseja limpar todas as notificações?')) {
-                      setNotifications([])
-                    }
-                  }}
+                  onClick={handleClearAll}
                   className="text-sm text-red-600 font-medium hover:text-red-700"
                 >
                   Limpar tudo

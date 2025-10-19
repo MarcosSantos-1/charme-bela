@@ -58,9 +58,9 @@ export default function ConfiguracoesPage() {
     addressState: '',
     minCancellationHours: 24,
     cancellationPolicy: '',
-    priceBronze: 119.90,
-    priceSilver: 139.90,
-    priceGold: 169.90
+    priceBronze: 200.00,
+    priceSilver: 300.00,
+    priceGold: 450.00
   })
 
   useEffect(() => {
@@ -94,9 +94,9 @@ export default function ConfiguracoesPage() {
           addressState: data.addressState || '',
           minCancellationHours: data.minCancellationHours || 24,
           cancellationPolicy: data.cancellationPolicy || 'Cancelamentos devem ser feitos com no mínimo 24 horas de antecedência. Cancelamentos fora deste prazo estarão sujeitos a cobrança.',
-          priceBronze: data.priceBronze || 119.90,
-          priceSilver: data.priceSilver || 139.90,
-          priceGold: data.priceGold || 169.90
+          priceBronze: data.priceBronze || 200.00,
+          priceSilver: data.priceSilver || 300.00,
+          priceGold: data.priceGold || 450.00
         })
       }
     } catch (error) {

@@ -24,7 +24,7 @@ A lógica é criar 3 níveis de planos, cada um com acesso a uma gama de tratame
 
 **Foco:** Cuidados faciais e corporais essenciais, ideais para manutenção e bem-estar. Perfeito para quem quer começar a se cuidar com mais frequência.
 
-* **Preço Sugerido:** R$ 149,90 / mês
+* **Preço Sugerido:** R$ 200,00 / mês
 
 **Tratamentos Inclusos (o cliente escolxFaciais:** (poderia ser limitada a 1 por mês para não sobrecarregar a pele)
 
@@ -51,7 +51,7 @@ A lógica é criar 3 níveis de planos, cada um com acesso a uma gama de tratame
 
 **Foco:** Clientes que buscam tratamentos um pouco mais elaborados ou tecnológicos, incluindo modelagem corporal e cuidados faciais mais avançados.
 
-* **Preço Sugerido:** R$ 249,90 / mês
+* **Preço Sugerido:** R$ 300,00 / mês
 
 **Tratamentos Inclusos (o cliente escolhe 1 por semana):**
 
@@ -81,7 +81,7 @@ A lógica é criar 3 níveis de planos, cada um com acesso a uma gama de tratame
 
 **Foco:** Acesso total e exclusivo. Ideal para clientes que desejam os tratamentos mais avançados e de alto impacto, como microagulhamento e peelings mais intensos, com máxima flexibilidade.
 
-* **Preço Sugerido:** R$ 399,90 / mês
+* **Preço Sugerido:** R$ 450,00 / mês
 
 **Tratamentos Inclusos (o cliente escolhe até 6 tratamentos por mês):**
 

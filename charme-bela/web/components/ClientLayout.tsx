@@ -50,9 +50,18 @@ export function ClientLayout({ children, title }: ClientLayoutProps) {
     { icon: FileText, label: 'Histórico', href: '/cliente/historico', active: pathname === '/cliente/historico' },
   ]
 
+  // Verificar se é mês grátis
+  const isFreeMonth = subscription && !subscription.stripeSubscriptionId
+  
   // Formatar data de próxima cobrança
   const getNextBillingDate = () => {
     if (!subscription?.startDate) return '-'
+    
+    // Se for mês grátis, mostrar data de expiração
+    if (isFreeMonth && subscription.endDate) {
+      return new Date(subscription.endDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+    }
+    
     const start = new Date(subscription.startDate)
     const next = new Date(start)
     next.setMonth(next.getMonth() + 1)
@@ -119,10 +128,18 @@ export function ClientLayout({ children, title }: ClientLayoutProps) {
           {/* Subscription Status */}
           {hasSubscription && subscription && (
             <Link href="/cliente/plano">
-              <div className="mb-3 p-3 bg-green-50 border-l-4 border-green-500 rounded cursor-pointer hover:bg-green-100 transition-colors">
-                <div className="text-xs text-green-600 font-medium">Status da Assinatura</div>
+              <div className={`mb-3 p-3 border-l-4 rounded cursor-pointer transition-colors ${
+                isFreeMonth 
+                  ? 'bg-green-50 border-green-500 hover:bg-green-100' 
+                  : 'bg-green-50 border-green-500 hover:bg-green-100'
+              }`}>
+                <div className="text-xs text-green-600 font-medium">
+                  {isFreeMonth ? '🎁 Mês Grátis Ativo' : 'Status da Assinatura'}
+                </div>
                 <div className="text-sm font-bold text-green-700">{subscription.plan.name} ✓</div>
-                <div className="text-xs text-green-600 mt-1">Próx. cobrança: {getNextBillingDate()}</div>
+                <div className="text-xs text-green-600 mt-1">
+                  {isFreeMonth ? `Válido até: ${getNextBillingDate()}` : `Próx. cobrança: ${getNextBillingDate()}`}
+                </div>
               </div>
             </Link>
           )}
@@ -160,7 +177,7 @@ export function ClientLayout({ children, title }: ClientLayoutProps) {
 
           <div className="flex items-center space-x-2">
             {/* Notifications */}
-            <NotificationsPanel />
+            <NotificationsPanel userId={user?.id || null} />
 
             {/* Profile Button */}
             <button
@@ -207,9 +224,13 @@ export function ClientLayout({ children, title }: ClientLayoutProps) {
             
             {hasSubscription && subscription && (
               <Link href="/cliente/plano" className="block px-4 py-3 bg-green-50 border-l-4 border-green-500 hover:bg-green-100 transition-colors">
-                <div className="text-xs text-green-600 font-medium">Status da Assinatura</div>
+                <div className="text-xs text-green-600 font-medium">
+                  {isFreeMonth ? '🎁 Mês Grátis Ativo' : 'Status da Assinatura'}
+                </div>
                 <div className="text-sm font-bold text-green-700">{subscription.plan.name} ✓</div>
-                <div className="text-xs text-green-600 mt-1">Próx. cobrança: {getNextBillingDate()}</div>
+                <div className="text-xs text-green-600 mt-1">
+                  {isFreeMonth ? `Válido até: ${getNextBillingDate()}` : `Próx. cobrança: ${getNextBillingDate()}`}
+                </div>
               </Link>
             )}
             

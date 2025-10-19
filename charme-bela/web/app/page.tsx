@@ -297,7 +297,7 @@ export default function LandingPage() {
                 
                 {/* Navigation Arrows */}
                 <button
-                  onClick={(e) => { e.stopPropagation(); previousImage() }}
+                  onClick={(e) => { e.stopPropagation(); prevImage() }}
                   className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 hover:bg-white backdrop-blur-sm rounded-full flex items-center justify-center transition-colors shadow-lg"
                   aria-label="Imagem anterior"
                 >
@@ -505,7 +505,7 @@ export default function LandingPage() {
               <div className="p-6">
                 <div className="mb-6">
                   <div className="flex items-baseline">
-                    <span className="text-4xl font-bold text-gray-900">R$ 149</span>
+                    <span className="text-4xl font-bold text-gray-900">R$ 200</span>
                     <span className="text-gray-600 ml-2">/mês</span>
                   </div>
                   <p className="text-sm text-gray-500 mt-1">Até 4 procedimentos/mês</p>
@@ -529,9 +529,11 @@ export default function LandingPage() {
                   ))}
                 </ul>
 
-                <Button variant="outline" className="w-full">
-                  Escolher Plano
-                </Button>
+                <Link href="/planos">
+                  <Button variant="outline" className="w-full">
+                    Escolher Plano
+                  </Button>
+                </Link>
               </div>
             </div>
 
@@ -552,7 +554,7 @@ export default function LandingPage() {
               <div className="p-6">
                 <div className="mb-6">
                   <div className="flex items-baseline">
-                    <span className="text-4xl font-bold text-gray-900">R$ 249</span>
+                    <span className="text-4xl font-bold text-gray-900">R$ 300</span>
                     <span className="text-gray-600 ml-2">/mês</span>
                   </div>
                   <p className="text-sm text-gray-500 mt-1">Até 4 procedimentos/mês</p>
@@ -578,9 +580,11 @@ export default function LandingPage() {
                   ))}
                 </ul>
 
-                <Button variant="primary" className="w-full">
-                  Escolher Plano
-                </Button>
+                <Link href="/planos">
+                  <Button variant="primary" className="w-full">
+                    Escolher Plano
+                  </Button>
+                </Link>
               </div>
             </div>
 
@@ -595,7 +599,7 @@ export default function LandingPage() {
               <div className="p-6">
                 <div className="mb-6">
                   <div className="flex items-baseline">
-                    <span className="text-4xl font-bold text-gray-900">R$ 399</span>
+                    <span className="text-4xl font-bold text-gray-900">R$ 450</span>
                     <span className="text-gray-600 ml-2">/mês</span>
                   </div>
                   <p className="text-sm text-gray-500 mt-1">Até 4 procedimentos/mês</p>
@@ -621,9 +625,11 @@ export default function LandingPage() {
                   ))}
                 </ul>
 
-                <Button variant="outline" className="w-full">
-                  Escolher Plano
-                </Button>
+                <Link href="/planos">
+                  <Button variant="outline" className="w-full">
+                    Escolher Plano
+                  </Button>
+                </Link>
               </div>
             </div>
           </div>
@@ -818,7 +824,7 @@ export default function LandingPage() {
                 </h3>
                 <p className="text-gray-600 mb-6">
                   Compare: uma única sessão de Limpeza de Pele (R$ 120) + Drenagem Linfática (R$ 100) 
-                  já custaria R$ 220 avulso. Com o plano Essencial por R$ 149,90, você tem direito a 
+                  já custaria R$ 220 avulso. Com o plano Essencial por R$ 200,00, você tem direito a 
                   <strong> 4 procedimentos no mês</strong>!
                 </p>
                 <div className="space-y-4">
@@ -875,11 +881,11 @@ export default function LandingPage() {
                     </div>
                     <div className="flex justify-between font-bold text-pink-600 text-lg">
                       <span>Você paga:</span>
-                      <span>R$ 249,90</span>
+                      <span>R$ 300,00</span>
                     </div>
                     <div className="text-center mt-2">
                       <span className="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
-                        Economize R$ 230,10! 🎉
+                        Economize R$ 180,00! 🎉
                       </span>
                     </div>
                   </div>

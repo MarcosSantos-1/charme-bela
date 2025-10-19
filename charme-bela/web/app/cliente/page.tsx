@@ -108,7 +108,7 @@ export default function ClientePage() {
         <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
           {/* Notificações - Visível apenas no Desktop */}
           <div className="hidden md:flex justify-end">
-            <NotificationsPanel />
+            <NotificationsPanel userId={user?.id || null} />
           </div>
           
           {/* My Plan Card - DINÂMICO */}
@@ -164,7 +164,7 @@ export default function ClientePage() {
                   </span>
                 </div>
                 <h3 className="text-2xl font-bold mb-1">Assine um Plano</h3>
-                <p className="text-gray-100 text-sm mb-4">A partir de R$ 149,90 / mês</p>
+                <p className="text-gray-100 text-sm mb-4">A partir de R$ 200,00 / mês</p>
                 
                 <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
                   <p className="text-sm">

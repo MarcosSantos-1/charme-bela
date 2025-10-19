@@ -298,7 +298,7 @@ async function main() {
       name: 'Essencial Beauty',
       tier: 'BRONZE',
       description: 'Cuidados faciais e corporais essenciais. Perfeito para quem quer começar a se cuidar com mais frequência. Inclui tratamentos básicos de pele e massagens relaxantes.',
-      price: 149.90,
+      price: 200.00,
       maxTreatmentsPerMonth: 4,
       maxTreatmentsPerWeek: 999, // Sem limite semanal (valor alto)
       maxFacialPerMonth: null, // Sem limite de faciais
@@ -333,7 +333,7 @@ async function main() {
       name: 'Plus Care',
       tier: 'SILVER',
       description: 'Tratamentos elaborados e tecnológicos. Inclui modelagem corporal e cuidados faciais avançados como radiofrequência e tratamentos específicos.',
-      price: 249.90,
+      price: 300.00,
       maxTreatmentsPerMonth: 4,
       maxTreatmentsPerWeek: 999, // Sem limite semanal (valor alto)
       maxFacialPerMonth: null, // Sem limite de faciais
@@ -367,7 +367,7 @@ async function main() {
       name: 'Premium Experience',
       tier: 'GOLD',
       description: 'Acesso total e exclusivo aos tratamentos mais avançados. Inclui microagulhamento, peelings intensos, skinbooster e máxima flexibilidade.',
-      price: 399.90,
+      price: 450.00,
       maxTreatmentsPerMonth: 6,
       maxTreatmentsPerWeek: 999, // Sem limite semanal (valor alto)
       maxFacialPerMonth: null, // Sem limite de faciais

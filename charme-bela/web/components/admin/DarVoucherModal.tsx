@@ -12,9 +12,10 @@ interface DarVoucherModalProps {
   isOpen: boolean
   onClose: () => void
   preSelectedClient?: { id: string, name: string } | null
+  onVoucherCreated?: () => void
 }
 
-export function DarVoucherModal({ isOpen, onClose, preSelectedClient }: DarVoucherModalProps) {
+export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherCreated }: DarVoucherModalProps) {
   const [formData, setFormData] = useState({
     clienteId: '',
     clienteNome: '',
@@ -191,6 +192,11 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient }: DarVouch
       console.log('✅ Voucher criado:', voucher)
       
       toast.success('Voucher criado com sucesso! 🎁')
+      
+      // Callback opcional (pode redirecionar para página de vouchers)
+      if (onVoucherCreated) {
+        onVoucherCreated()
+      }
       
       /* 
       ═══════════════════════════════════════════════════════════

@@ -1,8 +1,96 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
+import { notifyAdminNewClientRegistered, notifyWelcome } from '../utils/notifications'
 
 export async function usersRoutes(app: FastifyInstance) {
+  // GET - Buscar aniversariantes do mês
+  app.get('/users/birthdays', async (request, reply) => {
+    logger.route('GET', '/users/birthdays')
+    
+    try {
+      const now = new Date()
+      const currentMonth = now.getMonth() + 1 // 1-12
+      
+      // Buscar todos os clientes com anamnese
+      const users = await prisma.user.findMany({
+        where: {
+          role: 'CLIENT',
+          isActive: true,
+          anamnesisForm: {
+            isNot: null
+          }
+        },
+        include: {
+          anamnesisForm: true
+        }
+      })
+      
+      // Filtrar aniversariantes do mês
+      const birthdays = users
+        .map(user => {
+          if (!user.anamnesisForm) return null
+          
+          const personalData = user.anamnesisForm.personalData as any
+          if (!personalData?.birthDate) return null
+          
+          // Validar se birthDate é uma data válida
+          const birthDate = new Date(personalData.birthDate)
+          if (isNaN(birthDate.getTime())) {
+            logger.warning(`Data de nascimento inválida para ${user.name}`)
+            return null
+          }
+          
+          const birthMonth = birthDate.getMonth() + 1
+          
+          // Apenas do mês atual
+          if (birthMonth !== currentMonth) return null
+          
+          // Calcular idade corretamente
+          let age = now.getFullYear() - birthDate.getFullYear()
+          const monthDiff = now.getMonth() - birthDate.getMonth()
+          const dayDiff = now.getDate() - birthDate.getDate()
+          
+          // Ajustar idade se ainda não fez aniversário este ano
+          if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+            age--
+          }
+          
+          // Filtrar idades inválidas (menor que 16 ou maior que 120)
+          if (age < 16 || age > 120) {
+            logger.warning(`Idade inválida calculada para ${user.name}: ${age} anos`)
+            return null
+          }
+          
+          return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            birthDate: personalData.birthDate,
+            birthDay: birthDate.getDate(),
+            birthMonth,
+            age
+          }
+        })
+        .filter(b => b !== null)
+        .sort((a: any, b: any) => a.birthDay - b.birthDay) // Ordenar por dia
+      
+      logger.success(`Retornando ${birthdays.length} aniversariantes do mês ${currentMonth}`)
+      
+      return reply.status(200).send({
+        success: true,
+        data: birthdays
+      })
+    } catch (error: any) {
+      logger.error('Erro ao buscar aniversariantes:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao buscar aniversariantes',
+        details: error.message
+      })
+    }
+  })
+  
   // GET - Listar todos os usuários (com filtros opcionais)
   app.get('/users', async (request, reply) => {
     logger.route('GET', '/users')
@@ -256,6 +344,19 @@ export async function usersRoutes(app: FastifyInstance) {
           anamnesisForm: true
         }
       })
+      
+      // Se é um cliente, notifica admin e envia boas-vindas
+      if (user.role === 'CLIENT') {
+        // Notifica admin sobre novo cliente
+        await notifyAdminNewClientRegistered({
+          clientName: user.name,
+          email: user.email,
+          userId: user.id
+        })
+        
+        // Envia boas-vindas ao cliente
+        await notifyWelcome(user.id, user.name)
+      }
       
       logger.success(`Usuário criado com sucesso: ${user.name} (ID: ${user.id})`)
       return reply.status(201).send({

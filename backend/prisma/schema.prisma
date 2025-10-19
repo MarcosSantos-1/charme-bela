@@ -30,6 +30,7 @@ model User {
   subscription       Subscription?
   vouchers           Voucher[]
   monthlyUsage       MonthlyUsage[]
+  notifications      Notification[]
   
   // Controle
   isActive           Boolean            @default(true) // Admin pode desativar um cliente
@@ -171,6 +172,7 @@ model Appointment {
   paymentStatus   PaymentStatus?    // Null se for de assinatura/voucher
   paymentMethod   String?           // "pix", "credit_card", "debit_card"
   paymentAmount   Float?
+  paymentExpiresAt DateTime?        // Expira em 15min se não pagar (SINGLE)
   
   // Voucher (se aplicável)
   voucherId       String?
@@ -181,6 +183,7 @@ model Appointment {
   canceledBy       String?          // "client" ou "admin"
   canceledAt       DateTime?
   cancelReason     String?
+  hiddenFromHistory Boolean         @default(false) // Ocultar do histórico do cliente (soft delete)
   
   // Observações
   notes            String?          @db.Text
@@ -193,6 +196,7 @@ model Appointment {
   @@index([serviceId])
   @@index([startTime])
   @@index([status])
+  @@index([paymentExpiresAt]) // Para encontrar agendamentos expirados
 }
 
 // ============================================
@@ -363,9 +367,9 @@ model SystemConfig {
   cancellationPolicy          String?
   
   // Preços dos Planos (para controle centralizado)
-  priceBronze                 Float?   @default(119.90)
-  priceSilver                 Float?   @default(139.90)
-  priceGold                   Float?   @default(169.90)
+  priceBronze                 Float?   @default(200.00)
+  priceSilver                 Float?   @default(300.00)
+  priceGold                   Float?   @default(450.00)
   
   updatedAt                   DateTime @updatedAt
   updatedBy                   String?  // ID do admin que atualizou
@@ -426,4 +430,105 @@ enum VoucherType {
   FREE_TREATMENT  // Tratamento gratuito
   FREE_MONTH      // Mês grátis de assinatura
   DISCOUNT        // Desconto em tratamento
+}
+
+// ============================================
+// NOTIFICAÇÕES
+// ============================================
+
+model Notification {
+  id              String            @id @default(cuid())
+  
+  // Destinatário
+  userId          String?           // Null = notificação para admin
+  user            User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Tipo e conteúdo
+  type            NotificationType
+  title           String
+  message         String            @db.Text
+  
+  // Ícone e estilo
+  icon            NotificationIcon  @default(BELL)
+  priority        NotificationPriority @default(NORMAL)
+  
+  // Status
+  read            Boolean           @default(false)
+  readAt          DateTime?
+  
+  // Metadados adicionais (JSON para flexibilidade)
+  metadata        Json?             // Ex: { appointmentId, serviceId, amount, etc }
+  
+  // Link de ação (opcional)
+  actionUrl       String?           // Ex: "/cliente/agenda", "/admin/agendamentos"
+  actionLabel     String?           // Ex: "Ver agendamento", "Confirmar"
+  
+  // Controle
+  expiresAt       DateTime?         // Data de expiração (auto-deletar)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  @@index([userId])
+  @@index([type])
+  @@index([read])
+  @@index([createdAt])
+}
+
+// ============================================
+// ENUMS DE NOTIFICAÇÃO
+// ============================================
+
+enum NotificationType {
+  // Agendamentos
+  APPOINTMENT_CONFIRMED       // Admin confirmou agendamento
+  APPOINTMENT_CANCELED        // Agendamento cancelado
+  APPOINTMENT_RESCHEDULED     // Agendamento reagendado
+  APPOINTMENT_REMINDER        // Lembrete de agendamento próximo
+  APPOINTMENT_COMPLETED       // Agendamento concluído
+  
+  // Pagamentos
+  PAYMENT_SUCCEEDED           // Pagamento bem-sucedido
+  PAYMENT_FAILED              // Pagamento falhou
+  PAYMENT_REFUNDED            // Pagamento estornado
+  SUBSCRIPTION_RENEWED        // Assinatura renovada
+  SUBSCRIPTION_EXPIRING       // Assinatura expirando em breve
+  
+  // Clientes (Admin)
+  NEW_CLIENT_REGISTERED       // Novo cliente cadastrado
+  NEW_APPOINTMENT_REQUEST     // Novo pedido de agendamento
+  CLIENT_CANCELED             // Cliente cancelou agendamento
+  
+  // Vouchers e Presentes
+  VOUCHER_RECEIVED            // Cliente ganhou voucher
+  VOUCHER_EXPIRING            // Voucher expirando em breve
+  
+  // Assinaturas
+  SUBSCRIPTION_ACTIVATED      // Assinatura ativada
+  SUBSCRIPTION_CANCELED       // Assinatura cancelada
+  PLAN_LIMIT_REACHED          // Limite de tratamentos atingido
+  
+  // Sistema
+  SYSTEM_MESSAGE              // Mensagem do sistema/admin
+  PROMOTION                   // Promoção ou novidade
+  WELCOME                     // Boas-vindas
+}
+
+enum NotificationIcon {
+  BELL          // Notificação geral
+  CALENDAR      // Agendamentos
+  CARD          // Pagamentos
+  SPARKLES      // Presentes/Vouchers
+  ALERT         // Avisos
+  CHECK         // Confirmações
+  INFO          // Informações
+  GIFT          // Presentes
+  STAR          // Destaques
+  USER          // Usuários/Clientes
+}
+
+enum NotificationPriority {
+  LOW           // Baixa prioridade
+  NORMAL        // Prioridade normal
+  HIGH          // Alta prioridade
+  URGENT        // Urgente
 }

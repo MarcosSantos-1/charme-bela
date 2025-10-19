@@ -17,7 +17,8 @@ import {
   X,
   ClipboardList,
   HomeIcon,
-  CreditCard
+  CreditCard,
+  Gift
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -26,6 +27,7 @@ const navigation = [
   { name: 'Agendamentos', href: '/admin/agendamentos', icon: Calendar },
   { name: 'Clientes', href: '/admin/clientes', icon: Users },
   { name: 'Planos', href: '/admin/planos', icon: CreditCard },
+  { name: 'Vouchers', href: '/admin/vouchers', icon: Gift },
   { name: 'Serviços', href: '/admin/servicos', icon: Sparkles },
   { name: 'Anamneses', href: '/admin/anamneses', icon: ClipboardList },
   { name: 'Configurações', href: '/admin/configuracoes', icon: Settings },
@@ -211,7 +213,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 </h1>
                 
                 <div className="flex items-center space-x-4">
-                  <NotificationsPanel />
+                  <NotificationsPanel userId={null} />
                   <Link
                     href="/"
                     className="text-sm text-gray-600 hover:text-pink-600"

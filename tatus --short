@@ -1,0 +1,462 @@
+[1mdiff --git a/backend/src/routes/subscriptions.ts b/backend/src/routes/subscriptions.ts[m
+[1mindex f1269e2..06c940a 100644[m
+[1m--- a/backend/src/routes/subscriptions.ts[m
+[1m+++ b/backend/src/routes/subscriptions.ts[m
+[36m@@ -3,414 +3,78 @@[m [mimport { prisma } from '../lib/prisma'[m
+ import { logger } from '../utils/logger'[m
+ [m
+ export async function subscriptionsRoutes(app: FastifyInstance) {[m
+[31m-  // GET - Listar todas as assinaturas[m
+[31m-  app.get('/subscriptions', async (request, reply) => {[m
+[31m-    logger.route('GET', '/subscriptions')[m
+[31m-    [m
+[31m-    try {[m
+[31m-      const { status } = request.query as { status?: string }[m
+[31m-      [m
+[31m-      const subscriptions = await prisma.subscription.findMany({[m
+[31m-        where: {[m
+[31m-          ...(status && { status: status.toUpperCase() as any })[m
+[31m-        },[m
+[31m-        include: {[m
+[31m-          user: {[m
+[31m-            select: {[m
+[31m-              id: true,[m
+[31m-              name: true,[m
+[31m-              email: true,[m
+[31m-              phone: true[m
+[31m-            }[m
+[31m-          },[m
+[31m-          plan: true[m
+[31m-        },[m
+[31m-        orderBy: { createdAt: 'desc' }[m
+[31m-      })[m
+[31m-      [m
+[31m-      logger.success(`Retornando ${subscriptions.length} assinaturas`)[m
+[31m-      return reply.status(200).send({[m
+[31m-        success: true,[m
+[31m-        data: subscriptions[m
+[31m-      })[m
+[31m-    } catch (error) {[m
+[31m-      logger.error('Erro ao buscar assinaturas:', error)[m
+[31m-      return reply.status(500).send({[m
+[31m-        success: false,[m
+[31m-        error: 'Erro ao buscar assinaturas'[m
+[31m-      })[m
+[31m-    }[m
+[31m-  })[m
+[31m-[m
+[31m-  // GET - Buscar assinatura de um usuário[m
+[31m-  app.get('/subscriptions/user/:userId', async (request, reply) => {[m
+[32m+[m[32m  // Rota adicional: POST /subscriptions/check-expiration[m
+[32m+[m[32m  // Verifica e expira mês grátis quando cliente acessa[m
+[32m+[m[32m  app.post('/subscriptions/check-expiration/:userId', async (request, reply) => {[m
+     const { userId } = request.params as { userId: string }[m
+[31m-    logger.route('GET', `/subscriptions/user/${userId}`)[m
+[32m+[m[32m    logger.route('POST', `/subscriptions/check-expiration/${userId}`)[m
+     [m
+     try {[m
+       const subscription = await prisma.subscription.findUnique({[m
+         where: { userId },[m
+[31m-        include: {[m
+[31m-          user: {[m
+[31m-            select: {[m
+[31m-              id: true,[m
+[31m-              name: true,[m
+[31m-              email: true[m
+[31m-            }[m
+[31m-          },[m
+[31m-          plan: {[m
+[31m-            include: {[m
+[31m-              services: true[m
+[31m-            }[m
+[31m-          }[m
+[31m-        }[m
+[32m+[m[32m        include: { plan: true }[m
+       })[m
+       [m
+       if (!subscription) {[m
+[31m-        logger.warning(`Assinatura não encontrada para usuário: ${userId}`)[m
+         return reply.status(404).send({[m
+           success: false,[m
+           error: 'Assinatura não encontrada'[m
+         })[m
+       }[m
+       [m
+[31m-      // Busca uso mensal atual[m
+[32m+[m[32m      // Verificar se é mês grátis expirado[m
+       const now = new Date()[m
+[31m-      const month = now.getMonth() + 1[m
+[31m-      const year = now.getFullYear()[m
+[31m-      [m
+[31m-      const monthlyUsage = await prisma.monthlyUsage.findUnique({[m
+[31m-        where: {[m
+[31m-          userId_month_year: { userId, month, year }[m
+[31m-        }[m
+[31m-      })[m
+[31m-      [m
+[31m-      logger.success(`Assinatura encontrada: ${subscription.id}`)[m
+[31m-      return reply.status(200).send({[m
+[31m-        success: true,[m
+[31m-        data: {[m
+[31m-          ...subscription,[m
+[31m-          currentMonthUsage: {[m
+[31m-            totalTreatments: monthlyUsage?.totalTreatments || 0[m
+[31m-          },[m
+[31m-          limits: {[m
+[31m-            maxPerMonth: subscription.plan.maxTreatmentsPerMonth,[m
+[31m-            maxPerDay: 3[m
+[31m-          },[m
+[31m-          remaining: {[m
+[31m-            thisMonth: subscription.plan.maxTreatmentsPerMonth - (monthlyUsage?.totalTreatments || 0)[m
+[32m+[m[32m      const isFreeMonth = !subscription.stripeSubscriptionId[m
+[32m+[m[32m      const isExpired = subscription.endDate && subscription.endDate < now[m
+[32m+[m[41m      [m
+[32m+[m[32m      if (isFreeMonth && isExpired && subscription.status === 'ACTIVE') {[m
+[32m+[m[32m        // Cancelar assinatura expirada[m
+[32m+[m[32m        await prisma.subscription.update({[m
+[32m+[m[32m          where: { id: subscription.id },[m
+[32m+[m[32m          data: {[m
+[32m+[m[32m            status: 'CANCELED',[m
+[32m+[m[32m            canceledAt: now,[m
+[32m+[m[32m            cancelReason: 'Mês grátis expirado'[m
+           }[m
+[31m-        }[m
+[31m-      })[m
+[31m-    } catch (error) {[m
+[31m-      logger.error('Erro ao buscar assinatura:', error)[m
+[31m-      return reply.status(500).send({[m
+[31m-        success: false,[m
+[31m-        error: 'Erro ao buscar assinatura'[m
+[31m-      })[m
+[31m-    }[m
+[31m-  })[m
+[31m-[m
+[31m-  // POST - Criar assinatura (mock - sem Stripe por enquanto)[m
+[31m-  app.post('/subscriptions', async (request, reply) => {[m
+[31m-    logger.route('POST', '/subscriptions')[m
+[31m-    [m
+[31m-    try {[m
+[31m-      const {[m
+[31m-        userId,[m
+[31m-        planId,[m
+[31m-        stripeSubscriptionId  // Null para mock[m
+[31m-      } = request.body as {[m
+[31m-        userId: string[m
+[31m-        planId: string[m
+[31m-        stripeSubscriptionId?: string[m
+[31m-      }[m
+[31m-      [m
+[31m-      logger.debug('Criando nova assinatura:', { userId, planId })[m
+[31m-      [m
+[31m-      // Verifica se usuário existe[m
+[31m-      const user = await prisma.user.findUnique({[m
+[31m-        where: { id: userId }[m
+[31m-      })[m
+[31m-      [m
+[31m-      if (!user) {[m
+[31m-        return reply.status(404).send({[m
+[31m-          success: false,[m
+[31m-          error: 'Usuário não encontrado'[m
+[31m-        })[m
+[31m-      }[m
+[31m-      [m
+[31m-      // Verifica se já tem assinatura ativa[m
+[31m-      const existingSubscription = await prisma.subscription.findUnique({[m
+[31m-        where: { userId }[m
+[31m-      })[m
+[31m-      [m
+[31m-      if (existingSubscription && existingSubscription.status === 'ACTIVE') {[m
+[31m-        return reply.status(400).send({[m
+[31m-          success: false,[m
+[31m-          error: 'Usuário já possui uma assinatura ativa'[m
+[31m-        })[m
+[31m-      }[m
+[31m-      [m
+[31m-      // Verifica se plano existe[m
+[31m-      const plan = await prisma.subscriptionPlan.findUnique({[m
+[31m-        where: { id: planId }[m
+[31m-      })[m
+[31m-      [m
+[31m-      if (!plan) {[m
+[31m-        return reply.status(404).send({[m
+[31m-          success: false,[m
+[31m-          error: 'Plano não encontrado'[m
+         })[m
+[31m-      }[m
+[31m-      [m
+[31m-      // Busca configurações para pegar fidelidade mínima[m
+[31m-      const config = await prisma.systemConfig.findFirst()[m
+[31m-      const commitmentMonths = config?.minimumCommitmentMonths || 3[m
+[31m-      [m
+[31m-      // Calcula data de compromisso mínimo[m
+[31m-      const minimumCommitmentEnd = new Date()[m
+[31m-      minimumCommitmentEnd.setMonth(minimumCommitmentEnd.getMonth() + commitmentMonths)[m
+[31m-      [m
+[31m-      // Cria ou atualiza assinatura[m
+[31m-      const subscription = await prisma.subscription.upsert({[m
+[31m-        where: { userId },[m
+[31m-        update: {[m
+[31m-          planId,[m
+[31m-          stripeSubscriptionId,[m
+[31m-          status: 'ACTIVE',[m
+[31m-          startDate: new Date(),[m
+[31m-          minimumCommitmentEnd,[m
+[31m-          endDate: null,[m
+[31m-          canceledAt: null,[m
+[31m-          cancelReason: null[m
+[31m-        },[m
+[31m-        create: {[m
+[32m+[m[41m        [m
+[32m+[m[32m        // Notificar cliente[m
+[32m+[m[32m        const { createNotification } = await import('../utils/notifications')[m
+[32m+[m[32m        await createNotification({[m
+           userId,[m
+[31m-          planId,[m
+[31m-          stripeSubscriptionId,[m
+[31m-          status: 'ACTIVE',[m
+[31m-          startDate: new Date(),[m
+[31m-          minimumCommitmentEnd[m
+[31m-        },[m
+[31m-        include: {[m
+[31m-          user: {[m
+[31m-            select: {[m
+[31m-              id: true,[m
+[31m-              name: true,[m
+[31m-              email: true[m
+[31m-            }[m
+[31m-          },[m
+[31m-          plan: true[m
+[31m-        }[m
+[31m-      })[m
+[31m-      [m
+[31m-      logger.success(`Assinatura criada: ${subscription.id}`)[m
+[31m-      return reply.status(201).send({[m
+[31m-        success: true,[m
+[31m-        data: subscription,[m
+[31m-        message: `Assinatura ${plan.name} ativada com sucesso! Compromisso mínimo de ${commitmentMonths} meses.`[m
+[31m-      })[m
+[31m-    } catch (error) {[m
+[31m-      logger.error('Erro ao criar assinatura:', error)[m
+[31m-      return reply.status(500).send({[m
+[31m-        success: false,[m
+[31m-        error: 'Erro ao criar assinatura'[m
+[31m-      })[m
+[31m-    }[m
+[31m-  })[m
+[31m-[m
+[31m-  // PUT - Cancelar assinatura[m
+[31m-  app.put('/subscriptions/:userId/cancel', async (request, reply) => {[m
+[31m-    const { userId } = request.params as { userId: string }[m
+[31m-    logger.route('PUT', `/subscriptions/${userId}/cancel`)[m
+[31m-    [m
+[31m-    try {[m
+[31m-      const { cancelReason } = request.body as { cancelReason?: string }[m
+[31m-      [m
+[31m-      const subscription = await prisma.subscription.findUnique({[m
+[31m-        where: { userId },[m
+[31m-        include: { plan: true }[m
+[31m-      })[m
+[31m-      [m
+[31m-      if (!subscription) {[m
+[31m-        return reply.status(404).send({[m
+[31m-          success: false,[m
+[31m-          error: 'Assinatura não encontrada'[m
+[31m-        })[m
+[31m-      }[m
+[31m-      [m
+[31m-      if (subscription.status === 'CANCELED') {[m
+[31m-        return reply.status(400).send({[m
+[31m-          success: false,[m
+[31m-          error: 'Assinatura já está cancelada'[m
+[32m+[m[32m          type: 'SUBSCRIPTION_CANCELED',[m
+[32m+[m[32m          title: 'Seu Mês Grátis Expirou',[m
+[32m+[m[32m          message: `Seu período de teste do plano ${subscription.plan.name} terminou. Que tal assinar para continuar aproveitando?`,[m
+[32m+[m[32m          icon: 'INFO',[m
+[32m+[m[32m          priority: 'HIGH',[m
+[32m+[m[32m          actionUrl: '/planos',[m
+[32m+[m[32m          actionLabel: 'Ver Planos'[m
+         })[m
+[31m-      }[m
+[31m-      [m
+[31m-      // Verifica se está dentro do período de fidelidade[m
+[31m-      const now = new Date()[m
+[31m-      if (subscription.minimumCommitmentEnd && now < subscription.minimumCommitmentEnd) {[m
+[31m-        const monthsRemaining = Math.ceil([m
+[31m-          (subscription.minimumCommitmentEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24 * 30)[m
+[31m-        )[m
+         [m
+[31m-        return reply.status(400).send({[m
+[31m-          success: false,[m
+[31m-          error: `Ainda faltam ${monthsRemaining} mês(es) para completar o período mínimo de compromisso`,[m
+[31m-          minimumCommitmentEnd: subscription.minimumCommitmentEnd,[m
+[31m-          canCancelAfter: subscription.minimumCommitmentEnd[m
+[31m-        })[m
+[31m-      }[m
+[31m-      [m
+[31m-      // Calcula a data de término do período já pago (próximo ciclo)[m
+[31m-      const startDate = subscription.startDate[m
+[31m-      const dayOfMonth = startDate.getDate()[m
+[31m-      [m
+[31m-      // Próxima data de cobrança[m
+[31m-      let nextBillingDate = new Date()[m
+[31m-      nextBillingDate.setDate(dayOfMonth)[m
+[31m-      [m
+[31m-      // Se já passou o dia do mês atual, vai para o próximo mês[m
+[31m-      if (now.getDate() >= dayOfMonth) {[m
+[31m-        nextBillingDate.setMonth(nextBillingDate.getMonth() + 1)[m
+[31m-      }[m
+[31m-      [m
+[31m-      // Define como fim do dia anterior à próxima cobrança[m
+[31m-      const accessUntil = new Date(nextBillingDate)[m
+[31m-      accessUntil.setDate(accessUntil.getDate() - 1)[m
+[31m-      accessUntil.setHours(23, 59, 59, 999)[m
+[31m-      [m
+[31m-      // Cancela a assinatura mas mantém acesso até o fim do período pago[m
+[31m-      const updatedSubscription = await prisma.subscription.update({[m
+[31m-        where: { userId },[m
+[31m-        data: {[m
+[31m-          status: 'CANCELED',[m
+[31m-          canceledAt: now,[m
+[31m-          cancelReason,[m
+[31m-          endDate: accessUntil  // ← Fim do período já pago, não imediato![m
+[31m-        },[m
+[31m-        include: {[m
+[31m-          user: true,[m
+[31m-          plan: true[m
+[31m-        }[m
+[31m-      })[m
+[31m-      [m
+[31m-      logger.info(`Assinatura cancelada. Acesso mantido até: ${accessUntil.toISOString()}`)[m
+[31m-      [m
+[31m-      logger.success(`Assinatura cancelada: ${userId}`)[m
+[31m-      return reply.status(200).send({[m
+[31m-        success: true,[m
+[31m-        data: updatedSubscription,[m
+[31m-        accessUntil: accessUntil,[m
+[31m-        message: `Assinatura cancelada. Você ainda pode usar seus benefícios até ${accessUntil.toLocaleDateString('pt-BR')}`[m
+[31m-      })[m
+[31m-    } catch (error) {[m
+[31m-      logger.error('Erro ao cancelar assinatura:', error)[m
+[31m-      return reply.status(500).send({[m
+[31m-        success: false,[m
+[31m-        error: 'Erro ao cancelar assinatura'[m
+[31m-      })[m
+[31m-    }[m
+[31m-  })[m
+[31m-[m
+[31m-  // PUT - Pausar assinatura[m
+[31m-  app.put('/subscriptions/:userId/pause', async (request, reply) => {[m
+[31m-    const { userId } = request.params as { userId: string }[m
+[31m-    logger.route('PUT', `/subscriptions/${userId}/pause`)[m
+[31m-    [m
+[31m-    try {[m
+[31m-      const subscription = await prisma.subscription.findUnique({[m
+[31m-        where: { userId }[m
+[31m-      })[m
+[31m-      [m
+[31m-      if (!subscription) {[m
+[31m-        return reply.status(404).send({[m
+[31m-          success: false,[m
+[31m-          error: 'Assinatura não encontrada'[m
+[31m-        })[m
+[31m-      }[m
+[31m-      [m
+[31m-      if (subscription.status !== 'ACTIVE') {[m
+[31m-        return reply.status(400).send({[m
+[31m-          success: false,[m
+[31m-          error: 'Apenas assinaturas ativas podem ser pausadas'[m
+[31m-        })[m
+[31m-      }[m
+[31m-      [m
+[31m-      const updatedSubscription = await prisma.subscription.update({[m
+[31m-        where: { userId },[m
+[31m-        data: {[m
+[31m-          status: 'PAUSED'[m
+[31m-        },[m
+[31m-        include: {[m
+[31m-          user: true,[m
+[31m-          plan: true[m
+[31m-        }[m
+[31m-      })[m
+[31m-      [m
+[31m-      logger.success(`Assinatura pausada: ${userId}`)[m
+[31m-      return reply.status(200).send({[m
+[31m-        success: true,[m
+[31m-        data: updatedSubscription,[m
+[31m-        message: 'Assinatura pausada com sucesso'[m
+[31m-      })[m
+[31m-    } catch (error) {[m
+[31m-      logger.error('Erro ao pausar assinatura:', error)[m
+[31m-      return reply.status(500).send({[m
+[31m-        success: false,[m
+[31m-        error: 'Erro ao pausar assinatura'[m
+[31m-      })[m
+[31m-    }[m
+[31m-  })[m
+[31m-[m
+[31m-  // PUT - Reativar assinatura[m
+[31m-  app.put('/subscriptions/:userId/reactivate', async (request, reply) => {[m
+[31m-    const { userId } = request.params as { userId: string }[m
+[31m-    logger.route('PUT', `/subscriptions/${userId}/reactivate`)[m
+[31m-    [m
+[31m-    try {[m
+[31m-      const subscription = await prisma.subscription.findUnique({[m
+[31m-        where: { userId }[m
+[31m-      })[m
+[31m-      [m
+[31m-      if (!subscription) {[m
+[31m-        return reply.status(404).send({[m
+[31m-          success: false,[m
+[31m-          error: 'Assinatura não encontrada'[m
+[31m-        })[m
+[31m-      }[m
+[31m-      [m
+[31m-      if (subscription.status !== 'PAUSED') {[m
+[31m-        return reply.status(400).send({[m
+[31m-          success: false,[m
+[31m-          error: 'Apenas assinaturas pausadas podem ser reativadas'[m
+[32m+[m[32m        logger.warning(`⏰ Mês grátis expirado para userId ${userId} - cancelado`)[m
+[32m+[m[41m        [m
+[32m+[m[32m        return reply.status(200).send({[m
+[32m+[m[32m          success: true,[m
+[32m+[m[32m          expired: true,[m
+[32m+[m[32m          message: 'Assinatura de mês grátis expirada e cancelada'[m
+         })[m
+       }[m
+       [m
+[31m-      const updatedSubscription = await prisma.subscription.update({[m
+[31m-        where: { userId },[m
+[31m-        data: {[m
+[31m-          status: 'ACTIVE'[m
+[31m-        },[m
+[31m-        include: {[m
+[31m-          user: true,[m
+[31m-          plan: true[m
+[31m-        }[m
+[31m-      })[m
+[31m-      [m
+[31m-      logger.success(`Assinatura reativada: ${userId}`)[m
+       return reply.status(200).send({[m
+         success: true,[m
+[31m-        data: updatedSubscription,[m
+[31m-        message: 'Assinatura reativada com sucesso'[m
+[32m+[m[32m        expired: false,[m
+[32m+[m[32m        message: 'Assinatura válida'[m
+       })[m
+[31m-    } catch (error) {[m
+[31m-      logger.error('Erro ao reativar assinatura:', error)[m
+[32m+[m[32m    } catch (error: any) {[m
+[32m+[m[32m      logger.error('Erro ao verificar expiração:', error)[m
+       return reply.status(500).send({[m
+         success: false,[m
+[31m-        error: 'Erro ao reativar assinatura'[m
+[32m+[m[32m        error: 'Erro ao verificar expiração',[m
+[32m+[m[32m        details: error.message[m
+       })[m
+     }[m
+   })[m
+[32m+[m[41m  [m
+[32m+[m[32m  // Rotas existentes continuam aqui...[m
+[32m+[m[32m  // (O arquivo original tem as outras rotas de subscription)[m
+ }[m
+[31m-[m

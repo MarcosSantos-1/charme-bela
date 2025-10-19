@@ -1,9 +1,11 @@
 'use client'
 
 import { ProtectedRoute } from '@/components/ProtectedRoute'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ArrowLeft, Calendar, DollarSign, UserCheck, Sparkles, Activity, Filter } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import * as api from '@/lib/api'
+import { formatTimeAgo, formatFullDate } from '@/lib/timeUtils'
 
 interface RecentActivity {
   id: string
@@ -17,18 +19,72 @@ interface RecentActivity {
 export default function AtividadesPage() {
   const router = useRouter()
   const [filter, setFilter] = useState<string>('all')
+  const [activities, setActivities] = useState<RecentActivity[]>([])
+  const [loading, setLoading] = useState(true)
 
-  // Mock data - será substituído por dados do backend
-  const [activities, setActivities] = useState<RecentActivity[]>([
-    { id: '1', type: 'appointment', description: 'Maria Silva agendou Limpeza de Pele', time: 'Há 5 min', date: '16/10/2025 14:35', icon: 'calendar' },
-    { id: '2', type: 'payment', description: 'Pagamento recebido - R$ 249,90 (Ana Costa)', time: 'Há 12 min', date: '16/10/2025 14:28', icon: 'dollar' },
-    { id: '3', type: 'client', description: 'Nova cliente cadastrada: Fernanda Lima', time: 'Há 1 hora', date: '16/10/2025 13:40', icon: 'user' },
-    { id: '4', type: 'subscription', description: 'Ana Costa renovou plano Premium', time: 'Há 2 horas', date: '16/10/2025 12:40', icon: 'star' },
-    { id: '5', type: 'appointment', description: 'Julia Oliveira cancelou agendamento', time: 'Há 3 horas', date: '16/10/2025 11:40', icon: 'calendar' },
-    { id: '6', type: 'payment', description: 'Pagamento recebido - R$ 149,90 (Carla Mendes)', time: 'Há 4 horas', date: '16/10/2025 10:40', icon: 'dollar' },
-    { id: '7', type: 'client', description: 'Cliente atualizado: Paula Costa', time: 'Há 5 horas', date: '16/10/2025 09:40', icon: 'user' },
-    { id: '8', type: 'subscription', description: 'Fernanda Lima assinou plano Essencial', time: 'Há 6 horas', date: '16/10/2025 08:40', icon: 'star' },
-  ])
+  // Carregar atividades do backend
+  useEffect(() => {
+    loadActivities()
+  }, [])
+
+  const loadActivities = async () => {
+    try {
+      setLoading(true)
+      const notifications = await api.getNotifications({
+        userId: 'admin',
+        limit: 100 // Buscar mais notificações para o histórico completo
+      })
+      
+      // Mapear notificações para formato de atividades
+      const mappedActivities: RecentActivity[] = notifications.map(notif => {
+        // Usar funções helper para tempo
+        const timeAgo = formatTimeAgo(notif.createdAt)
+        const formattedDate = formatFullDate(notif.createdAt)
+        
+        // Mapear tipo de notificação para tipo de atividade
+        let activityType: 'appointment' | 'payment' | 'client' | 'subscription' = 'appointment'
+        let icon: 'calendar' | 'dollar' | 'user' | 'star' = 'calendar'
+        
+        // Priorizar PAYMENT primeiro (antes de SUBSCRIPTION que também pode conter PAYMENT)
+        if (notif.type.includes('PAYMENT')) {
+          activityType = 'payment'
+          icon = 'dollar'
+        } else if (notif.type.includes('SUBSCRIPTION') || notif.type.includes('PLAN')) {
+          activityType = 'subscription'
+          icon = 'star'
+        } else if (notif.type.includes('CLIENT') || notif.type.includes('REGISTERED') || notif.type === 'NEW_CLIENT_REGISTERED') {
+          activityType = 'client'
+          icon = 'user'
+        } else if (notif.type.includes('APPOINTMENT') || notif.type.includes('CANCELED')) {
+          activityType = 'appointment'
+          icon = 'calendar'
+        }
+        
+        return {
+          id: notif.id,
+          type: activityType,
+          description: notif.message,
+          time: timeAgo,
+          date: formattedDate,
+          icon
+        }
+      })
+      
+      console.log('📊 Atividades mapeadas:', mappedActivities.length)
+      console.log('📊 Por tipo:', {
+        payments: mappedActivities.filter(a => a.type === 'payment').length,
+        appointments: mappedActivities.filter(a => a.type === 'appointment').length,
+        clients: mappedActivities.filter(a => a.type === 'client').length,
+        subscriptions: mappedActivities.filter(a => a.type === 'subscription').length
+      })
+      
+      setActivities(mappedActivities)
+    } catch (error) {
+      console.error('Erro ao carregar atividades:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const getActivityIcon = (icon: string) => {
     switch (icon) {
@@ -131,30 +187,47 @@ export default function AtividadesPage() {
 
           {/* Lista de Atividades */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="space-y-4">
-              {filteredActivities.map((activity) => (
-                <div
-                  key={activity.id}
-                  className="flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors border border-gray-100"
-                >
-                  <div className="flex items-center space-x-4">
-                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${getActivityColor(activity.type)}`}>
-                      {getActivityIcon(activity.icon)}
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600 mx-auto mb-3"></div>
+                <p className="text-gray-500">Carregando atividades...</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredActivities.map((activity) => (
+                  <div
+                    key={activity.id}
+                    className="flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors border border-gray-100"
+                  >
+                    <div className="flex items-center space-x-4">
+                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${getActivityColor(activity.type)}`}>
+                        {getActivityIcon(activity.icon)}
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">{activity.description}</div>
+                        <div className="text-sm text-gray-500 mt-1">{activity.date}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-medium text-gray-900">{activity.description}</div>
-                      <div className="text-sm text-gray-500 mt-1">{activity.date}</div>
-                    </div>
+                    <div className="text-sm text-gray-500">{activity.time}</div>
                   </div>
-                  <div className="text-sm text-gray-500">{activity.time}</div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
 
-            {filteredActivities.length === 0 && (
+            {!loading && filteredActivities.length === 0 && (
               <div className="text-center py-12">
                 <Activity className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">Nenhuma atividade encontrada</p>
+                <p className="text-gray-500">
+                  {filter === 'all' 
+                    ? 'Nenhuma atividade encontrada' 
+                    : `Nenhuma atividade de ${
+                        filter === 'appointment' ? 'agendamentos' :
+                        filter === 'payment' ? 'pagamentos' :
+                        filter === 'client' ? 'clientes' :
+                        'assinaturas'
+                      } encontrada`
+                  }
+                </p>
               </div>
             )}
           </div>

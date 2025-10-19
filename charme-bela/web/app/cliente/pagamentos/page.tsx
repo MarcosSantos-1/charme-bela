@@ -19,7 +19,7 @@ import {
   CheckCircle,
   XCircle
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { 
@@ -30,10 +30,56 @@ import {
   PaymentHistory
 } from '@/lib/api'
 
-export default function PagamentosPage() {
+// Componente separado que usa useSearchParams
+function PaymentAlerts() {
+  const searchParams = useSearchParams()
+  const success = searchParams.get('success')
+  const canceled = searchParams.get('canceled')
+
+  useEffect(() => {
+    if (success === 'true') {
+      toast.success('Pagamento confirmado com sucesso! 🎉', { duration: 5000 })
+    } else if (canceled === 'true') {
+      toast.error('Pagamento cancelado. Nenhuma cobrança foi feita.', { duration: 5000 })
+    }
+  }, [success, canceled])
+
+  return (
+    <>
+      {success === 'true' && (
+        <div className="bg-green-50 border-l-4 border-green-500 rounded-xl p-4 animate-fadeIn">
+          <div className="flex items-start gap-3">
+            <CheckCircle className="w-6 h-6 text-green-600 mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-green-900 mb-1">Pagamento Confirmado!</h3>
+              <p className="text-sm text-green-800">
+                Seu pagamento foi processado com sucesso. O comprovante está disponível no histórico abaixo.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {canceled === 'true' && (
+        <div className="bg-orange-50 border-l-4 border-orange-500 rounded-xl p-4 animate-fadeIn">
+          <div className="flex items-start gap-3">
+            <XCircle className="w-6 h-6 text-orange-600 mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-orange-900 mb-1">Pagamento Cancelado</h3>
+              <p className="text-sm text-orange-800">
+                Você cancelou o processo de pagamento. Nenhuma cobrança foi realizada.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function PagamentosContent() {
   const { user } = useAuth()
   const { subscription, hasSubscription, loading: subLoading } = useSubscription(user?.id)
-  const searchParams = useSearchParams()
   
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([])
@@ -41,25 +87,12 @@ export default function PagamentosPage() {
   const [openingPortal, setOpeningPortal] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 5
-  
-  // Captura parâmetros de sucesso/cancelamento do Stripe
-  const success = searchParams.get('success')
-  const canceled = searchParams.get('canceled')
 
   useEffect(() => {
     if (user) {
       loadPaymentData()
     }
   }, [user])
-  
-  useEffect(() => {
-    // Mostra toast de sucesso/erro
-    if (success === 'true') {
-      toast.success('Pagamento confirmado com sucesso! 🎉', { duration: 5000 })
-    } else if (canceled === 'true') {
-      toast.error('Pagamento cancelado. Nenhuma cobrança foi feita.', { duration: 5000 })
-    }
-  }, [success, canceled])
 
   const loadPaymentData = async () => {
     if (!user) return
@@ -205,40 +238,13 @@ export default function PagamentosPage() {
   }
 
   return (
-    <ProtectedRoute requiredRole="CLIENT">
-      <ClientLayout title="Pagamentos">
-        <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-          {/* Banner de Sucesso */}
-          {success === 'true' && (
-            <div className="bg-green-50 border-l-4 border-green-500 rounded-xl p-4 animate-fadeIn">
-              <div className="flex items-start gap-3">
-                <CheckCircle className="w-6 h-6 text-green-600 mt-0.5" />
-                <div>
-                  <h3 className="font-semibold text-green-900 mb-1">Pagamento Confirmado!</h3>
-                  <p className="text-sm text-green-800">
-                    Seu pagamento foi processado com sucesso. O comprovante está disponível no histórico abaixo.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {/* Banner de Cancelamento */}
-          {canceled === 'true' && (
-            <div className="bg-orange-50 border-l-4 border-orange-500 rounded-xl p-4 animate-fadeIn">
-              <div className="flex items-start gap-3">
-                <XCircle className="w-6 h-6 text-orange-600 mt-0.5" />
-                <div>
-                  <h3 className="font-semibold text-orange-900 mb-1">Pagamento Cancelado</h3>
-                  <p className="text-sm text-orange-800">
-                    Você cancelou o processo de pagamento. Nenhuma cobrança foi realizada.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {/* Sem Assinatura */}
+    <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      {/* Alertas de Pagamento */}
+      <Suspense fallback={<div />}>
+        <PaymentAlerts />
+      </Suspense>
+      
+      {/* Sem Assinatura */}
           {!hasSubscription && (
             <div className="bg-yellow-50 border-l-4 border-yellow-500 rounded-xl p-6">
               <div className="flex items-start gap-3">
@@ -581,7 +587,16 @@ export default function PagamentosPage() {
               )}
             </div>
           </div>
-        </div>
+    </div>
+  )
+}
+
+// Componente wrapper principal
+export default function PagamentosPage() {
+  return (
+    <ProtectedRoute requiredRole="CLIENT">
+      <ClientLayout title="Pagamentos">
+        <PagamentosContent />
       </ClientLayout>
     </ProtectedRoute>
   )

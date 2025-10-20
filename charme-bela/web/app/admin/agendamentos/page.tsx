@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Calendar, Clock, Plus, Search, Filter, ChevronLeft, ChevronRight, Grid3x3, List, Loader2 } from 'lucide-react'
+import { Calendar, Clock, Plus, ChevronLeft, ChevronRight, Grid3x3, List, Loader2 } from 'lucide-react'
 import { Button } from '@/components/Button'
 import { format, addDays, startOfWeek, addWeeks, subWeeks, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -57,7 +57,6 @@ export default function AgendamentosPage() {
 
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
 
   // Buscar agendamentos do backend
   useEffect(() => {
@@ -159,22 +158,15 @@ export default function AgendamentosPage() {
   
   const hours = getHoursRange()
 
-  // Filtrar agendamentos por busca
-  const filteredAppointments = appointments.filter(apt => 
-    searchTerm === '' || 
-    apt.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    apt.service.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-
   const getAppointmentsForDateTime = (date: Date, hour: number) => {
-    return filteredAppointments.filter(apt => {
+    return appointments.filter(apt => {
       const aptHour = apt.startTime.getHours()
       return isSameDay(apt.startTime, date) && aptHour === hour
     })
   }
 
   const getAppointmentsForDate = (date: Date) => {
-    return filteredAppointments.filter(apt => isSameDay(apt.startTime, date))
+    return appointments.filter(apt => isSameDay(apt.startTime, date))
   }
 
   // Buscar feriados baseado no modo de visualização
@@ -259,25 +251,7 @@ export default function AgendamentosPage() {
           </Button>
         </div>
 
-        <div className="flex items-center space-x-3">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar cliente ou serviço..."
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
-            />
-          </div>
-
-          {/* Filter */}
-          <Button variant="outline" size="sm">
-            <Filter className="w-4 h-4 mr-2" />
-            Filtrar
-          </Button>
-
+        <div>
           {/* New appointment */}
           <Button 
             variant="primary" 
@@ -285,7 +259,8 @@ export default function AgendamentosPage() {
             onClick={() => setIsNovoAgendamentoOpen(true)}
           >
             <Plus className="w-4 h-4 mr-2" />
-            Novo Agendamento
+            <span className="hidden sm:inline">Novo Agendamento</span>
+            <span className="sm:hidden">Novo</span>
           </Button>
         </div>
       </div>
@@ -493,11 +468,12 @@ export default function AgendamentosPage() {
                   </div>
 
                   {/* Agendamentos do dia */}
-                  <div className="space-y-3 pb-4">
+                  <div className="space-y-3 pb-4 min-h-[300px] flex flex-col">
                     {dayAppointmentsAll.length === 0 ? (
-                      <div className="text-center py-12 text-gray-400">
-                        <Calendar className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                        <p className="text-sm">Nenhum agendamento</p>
+                      <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                        <Calendar className="w-16 h-16 mb-3 opacity-20" />
+                        <p className="text-sm font-medium">Nenhum agendamento</p>
+                        <p className="text-xs mt-1 opacity-60">Deslize para ver outros dias</p>
                       </div>
                     ) : (
                       dayAppointmentsAll.map((apt) => {
@@ -651,17 +627,12 @@ export default function AgendamentosPage() {
                     isCurrentDay ? 'bg-pink-50' : feriadoInfo.isFeriado ? 'bg-red-50' : 'hover:bg-gray-50'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-2">
                     <span className={`text-sm font-bold ${
                       isCurrentDay ? 'text-pink-600' : feriadoInfo.isFeriado ? 'text-red-600' : 'text-gray-900'
                     }`}>
                       {format(day, 'd')}
                     </span>
-                    {dayAppointments.length > 0 && (
-                      <span className="bg-pink-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                        {dayAppointments.length}
-                      </span>
-                    )}
                   </div>
 
                   {feriadoInfo.isFeriado && (
@@ -672,7 +643,22 @@ export default function AgendamentosPage() {
                     </div>
                   )}
 
-                  <div className="space-y-1">
+                  {/* Mobile: Apenas mostrar quantidade de clientes */}
+                  {dayAppointments.length > 0 && (
+                    <div className="md:hidden">
+                      <div className="bg-pink-100 border-l-2 border-pink-600 rounded p-2 text-center">
+                        <div className="text-2xl font-bold text-pink-600">
+                          {dayAppointments.length}
+                        </div>
+                        <div className="text-[10px] text-pink-700 font-medium">
+                          {dayAppointments.length === 1 ? 'agendamento' : 'agendamentos'}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Desktop: Mostrar lista de appointments */}
+                  <div className="hidden md:block space-y-1">
                     {dayAppointments.slice(0, 2).map((apt) => {
                       const isAdminPending = apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
                       const isSubscription = apt.origin === 'SUBSCRIPTION'

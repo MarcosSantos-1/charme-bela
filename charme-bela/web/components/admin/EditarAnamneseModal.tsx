@@ -71,15 +71,25 @@ export function EditarAnamneseModal({ isOpen, onClose, onSuccess, anamnese }: Ed
   if (!anamnese) return null
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={`Editar Anamnese - ${anamnese.user?.name || 'Cliente'}`}
-      size="xl"
-    >
-      <div className="space-y-6">
+    <div className={`fixed inset-0 bg-black/60 z-50 ${isOpen ? 'flex' : 'hidden'} items-center justify-center p-4`}>
+      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[95vh] flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+          <h2 className="text-xl font-bold text-gray-900">
+            Editar Anamnese - {anamnese.user?.name || 'Cliente'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="space-y-6">
         {/* Progress */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between">
           {[1, 2, 3, 4].map((step) => (
             <div key={step} className="flex items-center flex-1">
               <div
@@ -105,7 +115,7 @@ export function EditarAnamneseModal({ isOpen, onClose, onSuccess, anamnese }: Ed
         </div>
 
         {/* Steps Content */}
-        <div className="min-h-[400px] max-h-[60vh] overflow-y-auto p-4 bg-gray-50 rounded-xl">
+        <div className="p-4 bg-gray-50 rounded-xl">
           {currentStep === 1 && (
             <Step1Content data={personalData} setData={setPersonalData} />
           )}
@@ -113,32 +123,35 @@ export function EditarAnamneseModal({ isOpen, onClose, onSuccess, anamnese }: Ed
             <Step2Content data={lifestyleData} setData={setLifestyleData} />
           )}
           {currentStep === 3 && (
-            <Step3Content data={healthData} setData={setHealthData} />
+            <Step3Content data={healthData} setData={setHealthData} sexo={personalData.sexo} />
           )}
           {currentStep === 4 && (
             <Step4Content data={objectivesData} setData={setObjectivesData} />
           )}
         </div>
+        </div>
+      </div>
 
-        {/* Navigation */}
-        <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+        {/* Navigation - Sticky Footer */}
+        <div className="px-6 py-4 border-t border-gray-200 bg-white rounded-b-2xl flex-shrink-0">
+        <div className="flex items-center justify-between">
           <Button
             variant="outline"
             onClick={prevStep}
             disabled={currentStep === 1}
           >
             <ChevronLeft className="w-4 h-4 mr-2" />
-            Anterior
+            <span className="hidden sm:inline">Anterior</span>
           </Button>
 
-          <div className="text-sm text-gray-600">
+          <div className="text-sm font-medium text-gray-700">
             Etapa {currentStep} de 4
           </div>
 
           {currentStep < 4 ? (
             <Button variant="primary" onClick={nextStep}>
-              Próxima
-              <ChevronRight className="w-4 h-4 ml-2" />
+              <span className="hidden sm:inline">Próxima</span>
+              <ChevronRight className="w-4 h-4 sm:ml-2" />
             </Button>
           ) : (
             <Button
@@ -147,12 +160,13 @@ export function EditarAnamneseModal({ isOpen, onClose, onSuccess, anamnese }: Ed
               disabled={loading}
             >
               <Save className="w-4 h-4 mr-2" />
-              {loading ? 'Salvando...' : 'Salvar Anamnese'}
+              {loading ? 'Salvando...' : 'Salvar'}
             </Button>
           )}
         </div>
+        </div>
       </div>
-    </Modal>
+    </div>
   )
 }
 
@@ -185,6 +199,23 @@ function Step1Content({ data, setData }: any) {
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
             required
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Sexo *
+          </label>
+          <select
+            value={data.sexo || ''}
+            onChange={(e) => updateField('sexo', e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
+            required
+          >
+            <option value="">Selecione</option>
+            <option value="feminino">Feminino</option>
+            <option value="masculino">Masculino</option>
+            <option value="outro">Outro</option>
+          </select>
         </div>
 
         <div>
@@ -352,16 +383,21 @@ function Step2Content({ data, setData }: any) {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Nível de Stress (0-10)
+            Nível de Stress
           </label>
           <input
-            type="number"
-            min="0"
-            max="10"
-            value={data.stressLevel || ''}
-            onChange={(e) => updateField('stressLevel', parseInt(e.target.value))}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
+            type="range"
+            min="1"
+            max="5"
+            value={data.stressLevel || '3'}
+            onChange={(e) => updateField('stressLevel', e.target.value)}
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-pink-500"
           />
+          <div className="flex justify-between text-xs text-gray-600 mt-1">
+            <span>Muito baixo</span>
+            <span className="font-semibold text-pink-600">Nível {data.stressLevel || '3'}</span>
+            <span>Muito alto</span>
+          </div>
         </div>
 
         <div>
@@ -476,7 +512,7 @@ function Step2Content({ data, setData }: any) {
 }
 
 // Step 3: Saúde
-function Step3Content({ data, setData }: any) {
+function Step3Content({ data, setData, sexo }: any) {
   const updateField = (field: string, value: any) => {
     setData({ ...data, [field]: value })
   }
@@ -489,6 +525,8 @@ function Step3Content({ data, setData }: any) {
       updateField('healthConditions', [...conditions, condition])
     }
   }
+
+  const isFeminino = sexo === 'feminino'
 
   return (
     <div className="space-y-4">
@@ -605,64 +643,73 @@ function Step3Content({ data, setData }: any) {
           </label>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Está gestante?
-          </label>
-          <select
-            value={data.pregnant || ''}
-            onChange={(e) => updateField('pregnant', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
-          >
-            <option value="">Selecione</option>
-            <option value="yes">Sim</option>
-            <option value="no">Não</option>
-          </select>
-        </div>
+        {/* Perguntas apenas para mulheres */}
+        {isFeminino && (
+          <>
+            <div className="pt-4 border-t border-gray-200">
+              <h4 className="text-sm font-semibold text-pink-700 mb-3">Perguntas específicas (Feminino)</h4>
+            </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Está amamentando?
-          </label>
-          <select
-            value={data.breastfeeding || ''}
-            onChange={(e) => updateField('breastfeeding', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
-          >
-            <option value="">Selecione</option>
-            <option value="yes">Sim</option>
-            <option value="no">Não</option>
-          </select>
-        </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Está gestante?
+              </label>
+              <select
+                value={data.pregnant || ''}
+                onChange={(e) => updateField('pregnant', e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
+              >
+                <option value="">Selecione</option>
+                <option value="yes">Sim</option>
+                <option value="no">Não</option>
+              </select>
+            </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Usa anticoncepcional?
-          </label>
-          <select
-            value={data.birthControl || ''}
-            onChange={(e) => updateField('birthControl', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
-          >
-            <option value="">Selecione</option>
-            <option value="yes">Sim</option>
-            <option value="no">Não</option>
-          </select>
-        </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Está amamentando?
+              </label>
+              <select
+                value={data.breastfeeding || ''}
+                onChange={(e) => updateField('breastfeeding', e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
+              >
+                <option value="">Selecione</option>
+                <option value="yes">Sim</option>
+                <option value="no">Não</option>
+              </select>
+            </div>
 
-        {data.birthControl === 'yes' && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Qual tipo?
-            </label>
-            <input
-              type="text"
-              value={data.birthControlType || ''}
-              onChange={(e) => updateField('birthControlType', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
-              placeholder="Ex: Pílula, DIU, injeção..."
-            />
-          </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Usa anticoncepcional?
+              </label>
+              <select
+                value={data.birthControl || ''}
+                onChange={(e) => updateField('birthControl', e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
+              >
+                <option value="">Selecione</option>
+                <option value="yes">Sim</option>
+                <option value="no">Não</option>
+              </select>
+            </div>
+
+            {data.birthControl === 'yes' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Qual tipo?
+                </label>
+                <input
+                  type="text"
+                  value={data.birthControlType || ''}
+                  onChange={(e) => updateField('birthControlType', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
+                  placeholder="Ex: Pílula, DIU, injeção..."
+                />
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

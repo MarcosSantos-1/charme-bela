@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
+import { StyledDatePicker } from '../StyledDatePicker'
 import { X, ChevronLeft, ChevronRight, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
@@ -71,8 +72,8 @@ export function EditarAnamneseModal({ isOpen, onClose, onSuccess, anamnese }: Ed
   if (!anamnese) return null
 
   return (
-    <div className={`fixed inset-0 bg-black/60 z-50 ${isOpen ? 'flex' : 'hidden'} items-center justify-center p-4`}>
-      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[95vh] flex flex-col">
+    <div className={`fixed inset-0 bg-black/60 z-[100] ${isOpen ? 'flex' : 'hidden'} items-center justify-center p-4 pb-20 sm:pb-4`}>
+      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] sm:max-h-[95vh] flex flex-col shadow-2xl">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
           <h2 className="text-xl font-bold text-gray-900">
@@ -222,11 +223,11 @@ function Step1Content({ data, setData }: any) {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Data de Nascimento
           </label>
-          <input
-            type="date"
-            value={data.birthDate || ''}
-            onChange={(e) => updateField('birthDate', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
+          <StyledDatePicker
+            selected={data.birthDate ? new Date(data.birthDate) : null}
+            onChange={(date) => updateField('birthDate', date ? date.toISOString().split('T')[0] : '')}
+            maxDate={new Date()}
+            placeholderText="Selecione a data de nascimento"
           />
         </div>
 

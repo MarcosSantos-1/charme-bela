@@ -2,6 +2,7 @@
 
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { ClientLayout } from '@/components/ClientLayout'
+import { StyledDatePicker } from '@/components/StyledDatePicker'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppointments } from '@/lib/hooks/useAppointments'
 import { Clock, Calendar, Check, X, FileText, CreditCard, Filter, Trash2, AlertTriangle, XCircle } from 'lucide-react'
@@ -276,26 +277,19 @@ export default function HistoricoPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Data Inicial</label>
-                  <input
-                    type="date"
-                    value={startDateFilter}
-                    onChange={(e) => setStartDateFilter(e.target.value)}
-                    className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 font-medium [&::-webkit-calendar-picker-indicator]:opacity-70"
-                    style={{
-                      colorScheme: 'light'
-                    }}
+                  <StyledDatePicker
+                    selected={startDateFilter ? new Date(startDateFilter) : null}
+                    onChange={(date) => setStartDateFilter(date ? date.toISOString().split('T')[0] : '')}
+                    placeholderText="Data inicial"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Data Final</label>
-                  <input
-                    type="date"
-                    value={endDateFilter}
-                    onChange={(e) => setEndDateFilter(e.target.value)}
-                    className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 font-medium [&::-webkit-calendar-picker-indicator]:opacity-70"
-                    style={{
-                      colorScheme: 'light'
-                    }}
+                  <StyledDatePicker
+                    selected={endDateFilter ? new Date(endDateFilter) : null}
+                    onChange={(date) => setEndDateFilter(date ? date.toISOString().split('T')[0] : '')}
+                    minDate={startDateFilter ? new Date(startDateFilter) : undefined}
+                    placeholderText="Data final"
                   />
                 </div>
               </div>

@@ -193,22 +193,22 @@ export default function AtividadesPage() {
                 <p className="text-gray-500">Carregando atividades...</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {filteredActivities.map((activity) => (
                   <div
                     key={activity.id}
-                    className="flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors border border-gray-100"
+                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors border border-gray-100"
                   >
-                    <div className="flex items-center space-x-4">
-                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${getActivityColor(activity.type)}`}>
+                    <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                      <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${getActivityColor(activity.type)}`}>
                         {getActivityIcon(activity.icon)}
                       </div>
-                      <div>
-                        <div className="font-medium text-gray-900">{activity.description}</div>
-                        <div className="text-sm text-gray-500 mt-1">{activity.date}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 text-sm sm:text-base">{activity.description}</div>
+                        <div className="text-xs sm:text-sm text-gray-500 mt-1">{activity.date}</div>
                       </div>
                     </div>
-                    <div className="text-sm text-gray-500">{activity.time}</div>
+                    <div className="text-xs sm:text-sm text-gray-500 mt-2 sm:mt-0 ml-13 sm:ml-0 flex-shrink-0">{activity.time}</div>
                   </div>
                 ))}
               </div>

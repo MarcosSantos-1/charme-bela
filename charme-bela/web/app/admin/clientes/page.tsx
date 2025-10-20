@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Search, Filter, Plus, Mail, Phone, Calendar, MoreVertical, Sparkles, Gift, Loader2 } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Search, Plus, Mail, Phone, Calendar, MoreVertical, Sparkles, Gift, Loader2, User, Users, TrendingUp } from 'lucide-react'
 import { Button } from '@/components/Button'
 import { AdicionarClienteModal } from '@/components/admin/AdicionarClienteModal'
 import { DarVoucherModal } from '@/components/admin/DarVoucherModal'
@@ -21,6 +21,142 @@ interface Client {
   hasSubscription: boolean
   subscriptionPlan?: string
   createdAt?: string
+}
+
+// Mobile Client Card Component
+function ClientCard({ 
+  client, 
+  onToggleStatus, 
+  onEdit, 
+  onGiveVoucher 
+}: { 
+  client: Client
+  onToggleStatus: (id: string, currentStatus: boolean) => void
+  onEdit: (client: Client) => void
+  onGiveVoucher: (id: string, name: string) => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  return (
+    <div className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:shadow-md transition-all">
+      {/* Header with avatar and menu */}
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center flex-shrink-0">
+            <span className="text-pink-600 font-bold text-lg">
+              {client.name.charAt(0)}
+            </span>
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-900 text-base">{client.name}</h3>
+            <div className="flex items-center gap-2 mt-1">
+              <span
+                className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${
+                  client.status === 'active'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-red-100 text-red-700'
+                }`}
+              >
+                {client.status === 'active' ? '✓ Ativo' : '✗ Inativo'}
+              </span>
+              {client.hasSubscription && (
+                <span className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full ${
+                  client.subscriptionPlan?.toLowerCase().includes('ouro')
+                    ? 'bg-gradient-to-r from-yellow-100 to-amber-100 text-yellow-800 border border-yellow-300'
+                    : client.subscriptionPlan?.toLowerCase().includes('prata')
+                    ? 'bg-gradient-to-r from-gray-100 to-slate-200 text-slate-700 border border-gray-300'
+                    : client.subscriptionPlan?.toLowerCase().includes('bronze')
+                    ? 'bg-gradient-to-r from-orange-100 to-orange-200 text-orange-800 border border-orange-300'
+                    : 'bg-purple-100 text-purple-700'
+                }`}>
+                  <Sparkles className="w-3 h-3 mr-1" />
+                  {client.subscriptionPlan}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Menu button */}
+        <div className="relative">
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <MoreVertical className="w-5 h-5 text-gray-400" />
+          </button>
+
+          {menuOpen && (
+            <>
+              <div 
+                className="fixed inset-0 z-[100]" 
+                onClick={() => setMenuOpen(false)}
+              />
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border-2 border-gray-200 z-[101]">
+                <button
+                  onClick={() => {
+                    onToggleStatus(client.id, client.status === 'active')
+                    setMenuOpen(false)
+                  }}
+                  className={`w-full px-4 py-3 text-left text-sm font-medium hover:bg-gray-50 first:rounded-t-xl transition-colors ${
+                    client.status === 'active' ? 'text-red-600' : 'text-green-600'
+                  }`}
+                >
+                  {client.status === 'active' ? '🔒 Inativar' : '✅ Ativar'}
+                </button>
+                <div className="border-t border-gray-100"></div>
+                <button
+                  onClick={() => {
+                    onEdit(client)
+                    setMenuOpen(false)
+                  }}
+                  className="w-full px-4 py-3 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  ✏️ Editar
+                </button>
+                <div className="border-t border-gray-100"></div>
+                <button
+                  onClick={() => {
+                    onGiveVoucher(client.id, client.name)
+                    setMenuOpen(false)
+                  }}
+                  className="w-full px-4 py-3 text-left text-sm font-medium text-purple-600 hover:bg-purple-50 last:rounded-b-xl transition-colors"
+                >
+                  🎁 Dar Voucher
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Contact info */}
+      <div className="space-y-2 mb-3">
+        <div className="flex items-center text-sm text-gray-600">
+          <Mail className="w-4 h-4 mr-2 text-gray-400 flex-shrink-0" />
+          <span className="truncate">{client.email}</span>
+        </div>
+        <div className="flex items-center text-sm text-gray-600">
+          <Phone className="w-4 h-4 mr-2 text-gray-400 flex-shrink-0" />
+          {client.phone}
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+        <div className="flex items-center text-sm text-gray-600">
+          <Calendar className="w-4 h-4 mr-1.5 text-gray-400" />
+          <span className="text-xs">Última: {client.lastVisit}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-500">Agendamentos:</span>
+          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-pink-100 text-pink-600 text-sm font-bold">
+            {client.totalAppointments}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function ClientesPage() {
@@ -135,8 +271,8 @@ export default function ClientesPage() {
         </Button>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col md:flex-row gap-4">
+      {/* Search and Actions */}
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
@@ -148,35 +284,43 @@ export default function ClientesPage() {
           />
         </div>
 
-        <Button variant="outline">
-          <Filter className="w-5 h-5 mr-2" />
-          Filtros
-        </Button>
-
         <Button 
           variant="secondary"
           onClick={() => setIsDarVoucherOpen(true)}
+          className="whitespace-nowrap"
         >
           <Gift className="w-5 h-5 mr-2" />
-          Dar Voucher
+          <span className="hidden sm:inline">Dar Voucher</span>
+          <span className="sm:hidden">Voucher</span>
         </Button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="text-sm text-gray-600 mb-1">Total de Clientes</div>
-          <div className="text-3xl font-bold text-gray-900">{clients.length}</div>
+      {/* Stats - Grid de 3 colunas mesmo em mobile */}
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border-2 border-blue-200 p-4 sm:p-6">
+          <div className="flex items-center justify-between mb-2">
+            <User className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-bold text-blue-700 mb-1">{clients.length}</div>
+          <div className="text-[10px] sm:text-sm font-medium text-blue-600">Total</div>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="text-sm text-gray-600 mb-1">Clientes Ativos</div>
-          <div className="text-3xl font-bold text-green-600">
+        
+        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl border-2 border-green-200 p-4 sm:p-6">
+          <div className="flex items-center justify-between mb-2">
+            <Users className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-bold text-green-700 mb-1">
             {clients.filter(c => c.status === 'active').length}
           </div>
+          <div className="text-[10px] sm:text-sm font-medium text-green-600">Ativos</div>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="text-sm text-gray-600 mb-1">Novos Este Mês</div>
-          <div className="text-3xl font-bold text-pink-600">{novosEsteMes}</div>
+        
+        <div className="bg-gradient-to-br from-pink-50 to-pink-100 rounded-xl border-2 border-pink-200 p-4 sm:p-6">
+          <div className="flex items-center justify-between mb-2">
+            <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-pink-600" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-bold text-pink-700 mb-1">{novosEsteMes}</div>
+          <div className="text-[10px] sm:text-sm font-medium text-pink-600">Novos</div>
         </div>
       </div>
 
@@ -190,8 +334,27 @@ export default function ClientesPage() {
         </div>
       ) : (
         <>
-          {/* Table */}
-          <div className="bg-white rounded-xl border border-gray-200">
+          {/* Mobile Cards */}
+          <div className="lg:hidden space-y-3">
+            {filteredClients.map((client) => (
+              <ClientCard 
+                key={client.id}
+                client={client}
+                onToggleStatus={handleToggleStatus}
+                onEdit={(client) => {
+                  setSelectedClientForEdit(client)
+                  setIsEditarClienteOpen(true)
+                }}
+                onGiveVoucher={(id, name) => {
+                  setSelectedClientForVoucher({ id, name })
+                  setIsDarVoucherOpen(true)
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Desktop Table */}
+          <div className="hidden lg:block bg-white rounded-xl border border-gray-200">
             <div className="overflow-x-auto">
               <table className="w-full">
             <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
@@ -249,12 +412,30 @@ export default function ClientesPage() {
                   <td className="px-6 py-4">
                     {client.hasSubscription ? (
                       <div className="flex items-center">
-                        <Sparkles className="w-4 h-4 mr-2 text-purple-600" />
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center mr-3 ${
+                          client.subscriptionPlan?.toLowerCase().includes('ouro')
+                            ? 'bg-gradient-to-br from-yellow-400 to-amber-500'
+                            : client.subscriptionPlan?.toLowerCase().includes('prata')
+                            ? 'bg-gradient-to-br from-gray-300 to-slate-400'
+                            : client.subscriptionPlan?.toLowerCase().includes('bronze')
+                            ? 'bg-gradient-to-br from-orange-400 to-orange-600'
+                            : 'bg-purple-500'
+                        }`}>
+                          <Sparkles className="w-5 h-5 text-white" />
+                        </div>
                         <div>
-                          <div className="text-sm font-medium text-purple-700">
+                          <div className={`text-sm font-bold ${
+                            client.subscriptionPlan?.toLowerCase().includes('ouro')
+                              ? 'text-yellow-700'
+                              : client.subscriptionPlan?.toLowerCase().includes('prata')
+                              ? 'text-slate-600'
+                              : client.subscriptionPlan?.toLowerCase().includes('bronze')
+                              ? 'text-orange-700'
+                              : 'text-purple-700'
+                          }`}>
                             {client.subscriptionPlan}
                           </div>
-                          <div className="text-xs text-gray-500">Assinante</div>
+                          <div className="text-xs text-gray-500 font-medium">Assinante</div>
                         </div>
                       </div>
                     ) : (
@@ -288,7 +469,17 @@ export default function ClientesPage() {
                   <td className="px-6 py-4 text-right">
                     <div className="relative">
                       <button 
-                        onClick={() => setOpenMenuId(openMenuId === client.id ? null : client.id)}
+                        onClick={(e) => {
+                          const buttonRect = e.currentTarget.getBoundingClientRect()
+                          const spaceBelow = window.innerHeight - buttonRect.bottom
+                          const menuHeight = 180 // approximate height of menu
+                          
+                          // Store if should open upward
+                          const shouldOpenUp = spaceBelow < menuHeight
+                          e.currentTarget.dataset.openUp = shouldOpenUp.toString()
+                          
+                          setOpenMenuId(openMenuId === client.id ? null : client.id)
+                        }}
                         className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                       >
                         <MoreVertical className="w-5 h-5 text-gray-400" />
@@ -300,7 +491,7 @@ export default function ClientesPage() {
                             className="fixed inset-0 z-[100]" 
                             onClick={() => setOpenMenuId(null)}
                           />
-                          <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border-2 border-gray-200 z-[101]">
+                          <div className="absolute right-0 bottom-full mb-2 w-56 bg-white rounded-xl shadow-xl border-2 border-gray-200 z-[101]">
                             <button
                               onClick={() => {
                                 handleToggleStatus(client.id, client.status === 'active')
@@ -349,17 +540,15 @@ export default function ClientesPage() {
         <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
           <div className="text-sm text-gray-600">
             Mostrando <span className="font-medium">{filteredClients.length}</span> de{' '}
-            <span className="font-medium">{clients.length}</span> resultados
-          </div>
-          <div className="flex space-x-2">
-            <Button variant="outline" size="sm" disabled>
-              Anterior
-            </Button>
-            <Button variant="outline" size="sm" disabled>
-              Próximo
-            </Button>
+            <span className="font-medium">{clients.length}</span> cliente{clients.length !== 1 ? 's' : ''}
           </div>
         </div>
+          </div>
+
+          {/* Mobile results count */}
+          <div className="lg:hidden text-center text-sm text-gray-600 py-4">
+            Mostrando <span className="font-medium">{filteredClients.length}</span> de{' '}
+            <span className="font-medium">{clients.length}</span> cliente{clients.length !== 1 ? 's' : ''}
           </div>
         </>
       )}

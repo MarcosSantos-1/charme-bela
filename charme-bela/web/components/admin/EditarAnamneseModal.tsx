@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
-import { StyledDatePicker } from '../StyledDatePicker'
 import { X, ChevronLeft, ChevronRight, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
@@ -223,11 +222,12 @@ function Step1Content({ data, setData }: any) {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Data de Nascimento
           </label>
-          <StyledDatePicker
-            selected={data.birthDate ? new Date(data.birthDate) : null}
-            onChange={(date) => updateField('birthDate', date ? date.toISOString().split('T')[0] : '')}
-            maxDate={new Date()}
-            placeholderText="Selecione a data de nascimento"
+          <input
+            type="date"
+            value={data.birthDate || ''}
+            onChange={(e) => updateField('birthDate', e.target.value)}
+            max={new Date().toISOString().split('T')[0]}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
           />
         </div>
 

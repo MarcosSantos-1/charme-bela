@@ -140,46 +140,60 @@ export default function PlanosAdminPage() {
             const hasPlan = user.subscription?.status === 'ACTIVE'
             
             return (
-              <div key={user.id} className="bg-white rounded-xl border-2 border-gray-200 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <h3 className="font-semibold text-gray-900">{user.name}</h3>
-                        <p className="text-sm text-gray-600">{user.email}</p>
+              <div key={user.id} className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:shadow-md transition-all">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  {/* User Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 bg-pink-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-pink-600 font-bold">
+                          {user.name.charAt(0).toUpperCase()}
+                        </span>
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-gray-900 text-base truncate">{user.name}</h3>
+                        <p className="text-sm text-gray-600 truncate">{user.email}</p>
+                      </div>
+                    </div>
+                    
+                    {/* Plan Status */}
+                    <div className="ml-13">
                       {hasPlan ? (
-                        <div className="flex items-center gap-2">
-                          <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
                             ✓ Plano {user.subscription.plan.name}
                           </span>
-                          <span className="text-xs text-gray-500">
+                          <p className="text-xs text-gray-500">
                             Válido até {new Date(user.subscription.endDate).toLocaleDateString('pt-BR')}
-                          </span>
+                          </p>
                         </div>
                       ) : (
-                        <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-sm">
+                        <span className="inline-flex px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
                           Sem plano ativo
                         </span>
                       )}
                     </div>
                   </div>
                   
-                  <div className="flex gap-2">
+                  {/* Actions */}
+                  <div className="flex gap-2 sm:flex-shrink-0">
                     {hasPlan ? (
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleCancelPlan(user.id, user.subscription.id)}
-                        className="text-red-600 border-red-300 hover:bg-red-50"
+                        className="text-red-600 border-red-300 hover:bg-red-50 flex-1 sm:flex-initial"
                       >
-                        Cancelar Plano
+                        <X className="w-4 h-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Cancelar Plano</span>
+                        <span className="sm:hidden">Cancelar</span>
                       </Button>
                     ) : (
                       <Button
                         variant="primary"
                         size="sm"
                         onClick={() => handleActivatePlan(user)}
+                        className="flex-1 sm:flex-initial"
                       >
                         <Star className="w-4 h-4 mr-2" />
                         Ativar Plano

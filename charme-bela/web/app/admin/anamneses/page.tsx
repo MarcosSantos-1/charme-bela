@@ -1,11 +1,80 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Search, FileText, Eye, Download, Plus, Calendar, AlertCircle, User } from 'lucide-react'
+import { Search, FileText, Eye, Download, Plus, Calendar, AlertCircle, User, Edit2, Mail } from 'lucide-react'
 import { Button } from '@/components/Button'
 import { CriarAnamneseModal } from '@/components/admin/CriarAnamneseModal'
 import * as api from '@/lib/api'
 import toast from 'react-hot-toast'
+
+// Mobile Card Component
+function AnamneseCard({ anamnese, onView, onEdit }: any) {
+  const createdDate = new Date(anamnese.createdAt)
+  const isComplete = anamnese.termsAccepted === true
+
+  return (
+    <div className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:shadow-md transition-all">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center flex-shrink-0">
+            <FileText className="w-6 h-6 text-pink-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-gray-900 text-base truncate">
+              {anamnese.user?.name || 'Cliente'}
+            </h3>
+            <div className="flex items-center gap-2 mt-1">
+              <span
+                className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${
+                  isComplete
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-yellow-100 text-yellow-700'
+                }`}
+              >
+                {isComplete ? '✓ Completa' : '⏳ Pendente'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="space-y-2 mb-3">
+        <div className="flex items-center text-sm text-gray-600">
+          <Mail className="w-4 h-4 mr-2 text-gray-400 flex-shrink-0" />
+          <span className="truncate">{anamnese.user?.email || '-'}</span>
+        </div>
+        <div className="flex items-center text-sm text-gray-600">
+          <Calendar className="w-4 h-4 mr-2 text-gray-400 flex-shrink-0" />
+          <span>Criada em {createdDate.toLocaleDateString('pt-BR')}</span>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 pt-3 border-t border-gray-100">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="flex-1"
+          onClick={() => onView(anamnese)}
+        >
+          <Eye className="w-4 h-4 mr-1.5" />
+          Ver
+        </Button>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="flex-1"
+          onClick={() => onEdit(anamnese)}
+        >
+          <Edit2 className="w-4 h-4 mr-1.5" />
+          Editar
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 export default function AnamnesesPage() {
   const [searchTerm, setSearchTerm] = useState('')
@@ -13,6 +82,7 @@ export default function AnamnesesPage() {
   const [anamneses, setAnamneses] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [viewingAnamnese, setViewingAnamnese] = useState<any>(null)
+  const [editingAnamnese, setEditingAnamnese] = useState<any>(null)
 
   useEffect(() => {
     loadAnamneses()
@@ -85,14 +155,28 @@ export default function AnamnesesPage() {
         />
       </div>
 
-      {/* Table */}
+      {/* Content */}
       {loading ? (
         <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600 mx-auto"></div>
           <p className="text-gray-600 mt-4">Carregando anamneses...</p>
         </div>
       ) : filteredAnamneses.length > 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <>
+          {/* Mobile Cards */}
+          <div className="lg:hidden space-y-3">
+            {filteredAnamneses.map((anamnese) => (
+              <AnamneseCard
+                key={anamnese.id}
+                anamnese={anamnese}
+                onView={(a: any) => setViewingAnamnese(a)}
+                onEdit={(a: any) => setEditingAnamnese(a)}
+              />
+            ))}
+          </div>
+
+          {/* Desktop Table */}
+          <div className="hidden lg:block bg-white rounded-xl border border-gray-200 overflow-hidden">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -149,30 +233,33 @@ export default function AnamnesesPage() {
                         {isComplete ? '✓ Completa' : '⏳ Pendente'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right space-x-2">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-2">
                       <Button 
                         variant="ghost" 
                         size="sm"
                         onClick={() => setViewingAnamnese(anamnese)}
                       >
                         <Eye className="w-4 h-4 mr-2" />
-                        Visualizar
+                        Ver
                       </Button>
                       <Button 
                         variant="ghost" 
                         size="sm"
-                        onClick={() => toast('Download em desenvolvimento', { icon: 'ℹ️' })}
+                        onClick={() => setEditingAnamnese(anamnese)}
                       >
-                        <Download className="w-4 h-4 mr-2" />
-                        PDF
+                        <Edit2 className="w-4 h-4 mr-2" />
+                        Editar
                       </Button>
+                      </div>
                     </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       ) : (
         <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
           <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -481,6 +568,16 @@ export default function AnamnesesPage() {
         isOpen={isCriarAnamneseOpen}
         onClose={() => setIsCriarAnamneseOpen(false)}
         onSuccess={loadAnamneses}
+      />
+
+      <CriarAnamneseModal 
+        isOpen={!!editingAnamnese}
+        onClose={() => setEditingAnamnese(null)}
+        onSuccess={() => {
+          loadAnamneses()
+          setEditingAnamnese(null)
+        }}
+        editingAnamnese={editingAnamnese}
       />
     </div>
   )

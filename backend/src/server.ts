@@ -16,6 +16,7 @@ import { testimonialRoutes } from './routes/testimonials'
 import { stripeRoutes } from './routes/stripe'
 import { notificationRoutes } from './routes/notifications'
 import { setupCronJobs } from './utils/cron'
+import { setupKeepAlive } from './utils/keepalive'
 
 const PORT = Number(process.env.PORT) || 3333
 const HOST = '0.0.0.0'
@@ -60,6 +61,9 @@ async function start() {
     
     // Inicia cron jobs
     setupCronJobs()
+    
+    // Inicia keep-alive (evita cold start no Render)
+    setupKeepAlive()
     
     console.log('\n' + '='.repeat(50))
     logger.success(`Servidor rodando em http://localhost:${PORT}`)

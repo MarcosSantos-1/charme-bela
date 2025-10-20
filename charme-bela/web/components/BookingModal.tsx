@@ -12,9 +12,13 @@ import {
 import { Service } from '@/types'
 import * as api from '@/lib/api'
 import toast from 'react-hot-toast'
-import ReactDatePicker from 'react-datepicker'
+import ReactDatePicker, { registerLocale } from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
+import { ptBR } from 'date-fns/locale'
 import { AnamneseRequiredModal } from './AnamneseRequiredModal'
+
+// Registrar locale português
+registerLocale('pt-BR', ptBR)
 
 interface BookingModalProps {
   service: Service | null
@@ -287,8 +291,8 @@ export function BookingModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
-      <div className="bg-white w-full md:max-w-2xl md:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 z-[100] flex items-end md:items-center justify-center pb-20 md:pb-0">
+      <div className="bg-white w-full md:max-w-3xl md:rounded-2xl rounded-t-2xl max-h-[95vh] md:max-h-[95vh] overflow-y-auto shadow-2xl">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <h2 className="text-xl font-bold text-gray-900">
@@ -307,7 +311,7 @@ export function BookingModal({
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {/* STEP 1: Detalhes do Serviço */}
           {step === 'details' && (
             <div className="space-y-6">
@@ -403,6 +407,8 @@ export function BookingModal({
                     calendarClassName="custom-calendar"
                     inline={false}
                     showPopperArrow={false}
+                    popperPlacement="bottom-start"
+                    locale="pt-BR"
                   />
                 </div>
                 <style jsx global>{`
@@ -412,6 +418,9 @@ export function BookingModal({
                   .custom-datepicker-wrapper input {
                     width: 100%;
                   }
+                  .react-datepicker-popper {
+                    z-index: 9999 !important;
+                  }
                   .react-datepicker {
                     border: 2px solid #e5e7eb;
                     border-radius: 12px;
@@ -419,21 +428,41 @@ export function BookingModal({
                     font-family: inherit;
                   }
                   .react-datepicker__header {
-                    background-color: #ec4899;
+                    background: linear-gradient(135deg, #db2777 0%, #ec4899 100%);
                     border-bottom: none;
                     border-radius: 10px 10px 0 0;
-                    padding-top: 12px;
+                    padding-top: 16px;
+                    padding-bottom: 12px;
                   }
-                  .react-datepicker__current-month,
-                  .react-datepicker__day-name {
+                  .react-datepicker__current-month {
                     color: white;
-                    font-weight: 600;
+                    font-weight: 800;
+                    font-size: 17px;
+                    margin-bottom: 12px;
+                    text-shadow: 0 2px 4px rgba(0,0,0,0.15);
+                  }
+                  .react-datepicker__day-names {
+                    margin-top: 8px;
+                    background-color: rgba(255,255,255,0.2);
+                    padding: 6px 0;
+                    border-radius: 6px;
+                  }
+                  .react-datepicker__day-name {
+                    color: #111827 !important;
+                    font-weight: 700 !important;
+                    font-size: 12px !important;
+                    text-transform: uppercase !important;
+                    width: 2rem !important;
+                    line-height: 2rem !important;
+                    margin: 0.166rem !important;
                   }
                   .react-datepicker__day {
                     color: #374151;
                     font-weight: 500;
                     border-radius: 8px;
-                    margin: 2px;
+                    width: 2rem !important;
+                    line-height: 2rem !important;
+                    margin: 0.166rem !important;
                   }
                   .react-datepicker__day:hover {
                     background-color: #fce7f3;
@@ -457,6 +486,21 @@ export function BookingModal({
                   }
                   .react-datepicker__navigation:hover *::before {
                     border-color: #fce7f3;
+                  }
+                  
+                  /* Inline mode adjustments */
+                  .react-datepicker--inline {
+                    border: none;
+                  }
+                  .react-datepicker__month-container {
+                    width: 100%;
+                  }
+                  
+                  /* Mobile optimizations */
+                  @media (max-width: 640px) {
+                    .react-datepicker {
+                      width: 100% !important;
+                    }
                   }
                 `}</style>
               </div>

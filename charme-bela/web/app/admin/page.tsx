@@ -247,7 +247,7 @@ export default function AdminDashboard() {
         ) : (
         <div className="p-4 md:p-8 max-w-7xl mx-auto">
           {/* Header com Ações Rápidas */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 md:mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Bem-vinda!</h1>
               <p className="text-gray-600 capitalize">{todayDate}</p>
@@ -277,7 +277,7 @@ export default function AdminDashboard() {
             {/* Coluna Principal (2/3) */}
             <div className="lg:col-span-2 space-y-6">
               {/* Agendamentos de Hoje */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">Agendamentos de Hoje</h2>
@@ -293,7 +293,7 @@ export default function AdminDashboard() {
                   </button>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-3 -mx-3 sm:mx-0">
                   {todayAppointments.map((appointment) => {
                     // Determinar tipo de agendamento
                     const isAdminPending = appointment.origin === 'ADMIN_CREATED' && appointment.paymentStatus === 'PENDING' // Admin criou, pagar na clínica
@@ -326,7 +326,7 @@ export default function AdminDashboard() {
                     return (
                     <div
                       key={appointment.id}
-                        className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 rounded-xl border-2 hover:shadow-md transition-all min-h-[100px] sm:min-h-[90px] ${bgGradient} ${borderColor}`}
+                        className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 sm:rounded-xl rounded-none border-2 hover:shadow-md transition-all min-h-[100px] sm:min-h-[90px] ${bgGradient} ${borderColor}`}
                     >
                       <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
                           <div className={`text-center min-w-[56px] rounded-lg p-2 flex-shrink-0 ${timeBg}`}>
@@ -385,26 +385,39 @@ export default function AdminDashboard() {
                               {isAdminPending ? (
                                 <button
                                   onClick={() => handleCompletePaid(appointment)}
-                                  className="p-2 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 transition-colors shadow-sm"
+                                  disabled={loadingAction}
+                                  className="px-3 py-2.5 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                                   title="Marcar como Pago e Concluído"
                                 >
-                                  <Banknote className="w-4 h-4" />
+                                  {loadingAction ? (
+                                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent" />
+                                  ) : (
+                                    <Banknote className="w-5 h-5" />
+                                  )}
+                                  <span className="text-xs font-semibold">Pago</span>
                                 </button>
                               ) : (
                               <button
                                 onClick={() => handleComplete(appointment)}
-                                  className="p-2 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 transition-colors shadow-sm"
+                                disabled={loadingAction}
+                                  className="px-3 py-2.5 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 hover:scale-105 active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                                   title="Finalizar consulta"
                               >
-                                <Check className="w-4 h-4" />
+                                {loadingAction ? (
+                                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent" />
+                                ) : (
+                                  <Check className="w-5 h-5" />
+                                )}
+                                <span className="text-xs font-semibold hidden sm:inline">Concluir</span>
                               </button>
                             )}
                             <button
                                 onClick={() => handleOpenReagendarCancelar(appointment)}
-                                className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors shadow-sm"
+                                disabled={loadingAction}
+                                className="p-2.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 hover:scale-105 active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Reagendar ou Cancelar"
                             >
-                              <Edit className="w-4 h-4" />
+                              <Edit className="w-5 h-5" />
                             </button>
                             </div>
                           </>

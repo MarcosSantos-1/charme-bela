@@ -148,19 +148,8 @@ export default function AdminLoginPage() {
           </a>
         </div>
 
-        {/* Setup Instructions */}
-        <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <p className="text-sm text-blue-800 font-medium mb-2">
-            ℹ️ Credenciais:
-          </p>
-          <div className="text-xs text-blue-700 space-y-1">
-            <p><strong>Usuário:</strong> sonia.santana</p>
-            <p><strong>Senha:</strong> 2020</p>
-          </div>
-        </div>
-
         {/* Decorative elements */}
-        <div className="mt-6 text-center">
+        <div className="mt-8 text-center">
           <div className="inline-flex items-center space-x-2 text-gray-400">
             <Sparkles className="w-4 h-4" />
             <span className="text-xs">Charme & Bela Admin Panel</span>

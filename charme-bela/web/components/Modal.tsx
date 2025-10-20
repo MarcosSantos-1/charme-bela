@@ -89,7 +89,7 @@ export function Modal({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm pb-20 sm:pb-0"
       onClick={onClose}
     >
       <div 
@@ -98,7 +98,7 @@ export function Modal({
           bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full ${sizeClasses[size]}
           transform transition-all duration-300 ease-out
           ${isDragging ? 'transition-none' : ''}
-          max-h-[90vh] sm:max-h-[85vh]
+          max-h-[85vh] sm:max-h-[85vh]
           flex flex-col
         `}
         style={{

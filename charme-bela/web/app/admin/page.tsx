@@ -641,8 +641,8 @@ export default function AdminDashboard() {
 
       {/* Modal de Aniversariantes */}
       {showBirthdaysModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 pb-24 sm:pb-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-bold text-gray-900 flex items-center">
                 <Cake className="w-6 h-6 text-pink-600 mr-2" />

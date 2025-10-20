@@ -222,41 +222,56 @@ export default function VouchersPage() {
 
               {/* Busca */}
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                 <input
                   type="text"
                   placeholder="Buscar por cliente, email ou descrição..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 placeholder:text-gray-500 font-medium"
                 />
               </div>
             </div>
           </div>
 
-          {/* Estatísticas */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-              <div className="text-sm text-gray-600 mb-1">Total</div>
-              <div className="text-2xl font-bold text-gray-900">{vouchers.length}</div>
+          {/* Estatísticas - Grid 2x2 mobile, 4 colunas desktop */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border-2 border-blue-200 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <Gift className="w-5 h-5 text-blue-600" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold text-blue-700 mb-1">{vouchers.length}</div>
+              <div className="text-xs sm:text-sm font-medium text-blue-600">Total</div>
             </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-              <div className="text-sm text-gray-600 mb-1">Ativos</div>
-              <div className="text-2xl font-bold text-green-600">
+            
+            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl border-2 border-green-200 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <Check className="w-5 h-5 text-green-600" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold text-green-700 mb-1">
                 {vouchers.filter(v => !v.isUsed && (!v.expiresAt || new Date(v.expiresAt) > new Date())).length}
               </div>
+              <div className="text-xs sm:text-sm font-medium text-green-600">Ativos</div>
             </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-              <div className="text-sm text-gray-600 mb-1">Usados</div>
-              <div className="text-2xl font-bold text-gray-600">
+            
+            <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border-2 border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <Sparkles className="w-5 h-5 text-gray-600" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold text-gray-700 mb-1">
                 {vouchers.filter(v => v.isUsed).length}
               </div>
+              <div className="text-xs sm:text-sm font-medium text-gray-600">Usados</div>
             </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-              <div className="text-sm text-gray-600 mb-1">Expirados</div>
-              <div className="text-2xl font-bold text-red-600">
+            
+            <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl border-2 border-red-200 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <X className="w-5 h-5 text-red-600" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold text-red-700 mb-1">
                 {vouchers.filter(v => !v.isUsed && v.expiresAt && new Date(v.expiresAt) < new Date()).length}
               </div>
+              <div className="text-xs sm:text-sm font-medium text-red-600">Expirados</div>
             </div>
           </div>
 
@@ -275,42 +290,44 @@ export default function VouchersPage() {
                   return (
                     <div
                       key={voucher.id}
-                      className="p-6 hover:bg-gray-50 transition-colors"
+                      className="p-4 sm:p-6 hover:bg-gray-50 transition-colors"
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start space-x-4 flex-1">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                        <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
                           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center flex-shrink-0">
                             <Gift className="w-6 h-6 text-white" />
                           </div>
                           
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h3 className="font-semibold text-gray-900 text-lg">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
+                              <h3 className="font-semibold text-gray-900 text-base sm:text-lg truncate">
                                 {voucher.userName}
                               </h3>
-                              <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getVoucherTypeColor(voucher.type)}`}>
+                              <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getVoucherTypeColor(voucher.type)}`}>
                                 {getVoucherTypeName(voucher.type)}
                               </span>
                               {getStatusBadge(voucher)}
+                              </div>
                             </div>
                             
-                            <p className="text-gray-600 mb-2">{voucher.description}</p>
+                            <p className="text-sm sm:text-base text-gray-600 mb-2">{voucher.description}</p>
                             
-                            <div className="flex items-center gap-4 text-sm text-gray-500">
-                              <span>{voucher.userEmail}</span>
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-500">
+                              <span className="truncate">{voucher.userEmail}</span>
                               {voucher.discountPercent && (
-                                <span className="text-blue-600 font-medium">
-                                  {voucher.discountPercent}% de desconto
+                                <span className="text-blue-600 font-medium text-xs sm:text-sm">
+                                  {voucher.discountPercent}% desconto
                                 </span>
                               )}
                               {voucher.discountAmount && (
-                                <span className="text-blue-600 font-medium">
-                                  R$ {voucher.discountAmount.toFixed(2).replace('.', ',')} de desconto
+                                <span className="text-blue-600 font-medium text-xs sm:text-sm">
+                                  R$ {voucher.discountAmount.toFixed(2).replace('.', ',')} desconto
                                 </span>
                               )}
                             </div>
                             
-                            <div className="flex items-center gap-4 text-xs text-gray-500 mt-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-xs text-gray-500 mt-2">
                               <span>Criado: {formatTimeAgo(voucher.createdAt)}</span>
                               {voucher.expiresAt && (
                                 <span className={isExpired ? 'text-red-600 font-medium' : ''}>
@@ -319,7 +336,7 @@ export default function VouchersPage() {
                               )}
                               {voucher.usedAt && (
                                 <span className="text-green-600">
-                                  ✓ Usado em: {new Date(voucher.usedAt).toLocaleDateString('pt-BR')}
+                                  ✓ Usado: {new Date(voucher.usedAt).toLocaleDateString('pt-BR')}
                                 </span>
                               )}
                             </div>
@@ -333,7 +350,7 @@ export default function VouchersPage() {
                         </div>
                         
                         {/* Ações */}
-                        <div className="flex items-center space-x-2 ml-4">
+                        <div className="flex sm:flex-col items-center gap-2 sm:ml-4">
                           {!voucher.isUsed && !isExpired && (
                             <button
                               onClick={() => handleDeleteVoucher(voucher.id)}

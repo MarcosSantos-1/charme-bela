@@ -326,50 +326,52 @@ export default function AdminDashboard() {
                     return (
                     <div
                       key={appointment.id}
-                        className={`flex items-center justify-between p-4 rounded-xl border-2 hover:shadow-md transition-all ${bgGradient} ${borderColor}`}
+                        className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 rounded-xl border-2 hover:shadow-md transition-all min-h-[100px] sm:min-h-[90px] ${bgGradient} ${borderColor}`}
                     >
-                      <div className="flex items-center space-x-4 flex-1">
-                          <div className={`text-center min-w-[60px] rounded-lg p-2 ${timeBg}`}>
-                            <div className={`text-lg font-bold ${timeColor}`}>{appointment.time}</div>
+                      <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                          <div className={`text-center min-w-[56px] rounded-lg p-2 flex-shrink-0 ${timeBg}`}>
+                            <div className={`text-base sm:text-lg font-bold ${timeColor}`}>{appointment.time}</div>
                         </div>
-                          <div className="h-12 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent"></div>
-                        <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <div className="font-semibold text-gray-900">{appointment.clientName}</div>
+                          <div className="hidden sm:block h-12 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent flex-shrink-0"></div>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                              <div className="font-semibold text-gray-900 text-sm sm:text-base truncate">{appointment.clientName}</div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
                               {isAdminPending && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-200 text-yellow-800">
-                                  💰 Pagar na clínica
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-yellow-200 text-yellow-800 whitespace-nowrap">
+                                  💰 Pagar
                                 </span>
                               )}
                               {isSubscription && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-purple-200 text-purple-800">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-purple-200 text-purple-800 whitespace-nowrap">
                                   ✨ Plano
                                 </span>
                               )}
                               {isClientSingle && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-blue-200 text-blue-800">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-blue-200 text-blue-800 whitespace-nowrap">
                                   💳 Avulso
                                 </span>
                               )}
+                              </div>
                             </div>
-                            <div className="text-sm text-gray-600 flex items-center mt-1">
-                              <Sparkles className="w-3 h-3 mr-1 text-pink-500" />
-                            {appointment.service}
+                            <div className="text-xs sm:text-sm text-gray-600 flex items-center mt-1 truncate">
+                              <Sparkles className="w-3 h-3 mr-1 text-pink-500 flex-shrink-0" />
+                              <span className="truncate">{appointment.service}</span>
                           </div>
                         </div>
                       </div>
                       
                       {/* Status e Ações */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 mt-3 sm:mt-0 sm:ml-3 flex-shrink-0">
                         {appointment.status === 'completed' ? (
-                          <span className="flex items-center px-3 py-2 bg-green-100 text-green-700 rounded-lg text-xs font-semibold shadow-sm">
+                          <span className="flex items-center px-2.5 sm:px-3 py-1.5 sm:py-2 bg-green-100 text-green-700 rounded-lg text-xs font-semibold shadow-sm">
                             <CheckCircle className="w-4 h-4 mr-1.5" />
                             Concluído
                           </span>
                         ) : (
                           <>
-                            {/* Badge de Status */}
-                            <span className={`flex items-center px-3 py-2 rounded-lg text-xs font-semibold shadow-sm ${
+                            {/* Badge de Status - apenas desktop */}
+                            <span className={`hidden sm:flex items-center px-3 py-2 rounded-lg text-xs font-semibold shadow-sm ${
                               appointment.status === 'pending' 
                                 ? 'bg-yellow-100 text-yellow-700' 
                                 : 'bg-blue-100 text-blue-700'
@@ -379,7 +381,7 @@ export default function AdminDashboard() {
                             </span>
                             
                             {/* Botões de Ação */}
-                            <div className="flex gap-2 ml-2">
+                            <div className="flex gap-2">
                               {isAdminPending ? (
                                 <button
                                   onClick={() => handleCompletePaid(appointment)}

@@ -11,10 +11,9 @@ interface CriarAnamneseModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess?: () => void
-  editingAnamnese?: any
 }
 
-export function CriarAnamneseModal({ isOpen, onClose, onSuccess, editingAnamnese }: CriarAnamneseModalProps) {
+export function CriarAnamneseModal({ isOpen, onClose, onSuccess }: CriarAnamneseModalProps) {
   const [clienteId, setClienteId] = useState('')
   const [clienteNome, setClienteNome] = useState('')
   const [buscaCliente, setBuscaCliente] = useState('')
@@ -25,13 +24,8 @@ export function CriarAnamneseModal({ isOpen, onClose, onSuccess, editingAnamnese
   useEffect(() => {
     if (isOpen) {
       loadClientes()
-      // Se estiver editando, preencher dados do cliente
-      if (editingAnamnese) {
-        setClienteId(editingAnamnese.userId)
-        setClienteNome(editingAnamnese.user?.name || editingAnamnese.personalData?.fullName || '')
-      }
     }
-  }, [isOpen, editingAnamnese])
+  }, [isOpen])
 
   const loadClientes = async () => {
     try {
@@ -73,44 +67,6 @@ export function CriarAnamneseModal({ isOpen, onClose, onSuccess, editingAnamnese
     try {
       const clienteSelecionado = clientes.find(c => c.id === clienteId)
       
-      // Se estiver editando
-      if (editingAnamnese) {
-        // Atualizar anamnese existente
-        const anamneseData = {
-          userId: clienteId,
-          personalData: {
-            fullName: clienteNome,
-            email: clienteSelecionado?.email || editingAnamnese.personalData?.email || '',
-            phone: clienteSelecionado?.phone || editingAnamnese.personalData?.phone || '',
-            // Manter birthDate vazio se termos não foram aceitos
-            birthDate: editingAnamnese.termsAccepted ? editingAnamnese.personalData?.birthDate || '' : '',
-            address: editingAnamnese.personalData?.address || {
-              cep: '',
-              street: '',
-              number: '',
-              neighborhood: '',
-              city: '',
-              state: ''
-            }
-          },
-          lifestyleData: editingAnamnese.lifestyleData || {},
-          healthData: editingAnamnese.healthData || {},
-          objectivesData: editingAnamnese.objectivesData || {},
-          termsAccepted: editingAnamnese.termsAccepted || false
-        }
-
-        console.log('📤 Atualizando anamnese para:', clienteNome)
-        await api.updateAnamnesis(clienteId, anamneseData)
-        
-        toast.success(`Anamnese de ${clienteNome} atualizada com sucesso!`)
-        
-        if (onSuccess) onSuccess()
-        resetForm()
-        onClose()
-        return
-      }
-      
-      // Se não estiver editando, criar nova
       // Verificar se cliente já tem anamnese
       if (clienteSelecionado?.hasAnamnese) {
         toast.error(
@@ -128,7 +84,7 @@ export function CriarAnamneseModal({ isOpen, onClose, onSuccess, editingAnamnese
           fullName: clienteNome,
           email: clienteSelecionado?.email || '',
           phone: clienteSelecionado?.phone || '',
-          birthDate: '', // Deixar vazio até cliente preencher
+          birthDate: '', // Deixar vazio até cliente/admin preencher
           address: {
             cep: '',
             street: '',
@@ -147,13 +103,13 @@ export function CriarAnamneseModal({ isOpen, onClose, onSuccess, editingAnamnese
       console.log('📤 Criando anamnese para:', clienteNome)
       await api.createAnamnesis(anamneseData)
       
-      toast.success(`Anamnese criada para ${clienteNome}! Cliente pode preencher pelo app.`)
+      toast.success(`Anamnese criada para ${clienteNome}! Você pode editar para preencher os dados.`)
       
       if (onSuccess) onSuccess()
       resetForm()
       onClose()
     } catch (error: any) {
-      console.error('❌ Erro ao criar/atualizar anamnese:', error)
+      console.error('❌ Erro ao criar anamnese:', error)
       
       // Mensagem específica se já existir
       if (error.message?.includes('já existe') || error.message?.includes('Use PUT')) {
@@ -162,7 +118,7 @@ export function CriarAnamneseModal({ isOpen, onClose, onSuccess, editingAnamnese
           { duration: 5000, icon: '⚠️' }
         )
       } else {
-        toast.error(error.message || 'Erro ao processar anamnese')
+        toast.error(error.message || 'Erro ao criar anamnese')
       }
     } finally {
       setLoading(false)
@@ -175,22 +131,18 @@ export function CriarAnamneseModal({ isOpen, onClose, onSuccess, editingAnamnese
     setBuscaCliente('')
   }
 
-  const isEditing = !!editingAnamnese
-
   return (
     <Modal 
       isOpen={isOpen} 
       onClose={() => { resetForm(); onClose(); }} 
-      title={isEditing ? "Editar Anamnese" : "Nova Anamnese"} 
+      title="Nova Anamnese" 
       size="md"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="text-center py-3">
           <FileText className="w-12 h-12 text-pink-600 mx-auto mb-3" />
           <p className="text-sm text-gray-700">
-            {isEditing 
-              ? 'Editando ficha de anamnese' 
-              : 'Selecione o cliente para criar uma nova ficha de anamnese'}
+            Selecione o cliente para criar uma nova ficha de anamnese
           </p>
         </div>
 
@@ -206,16 +158,14 @@ export function CriarAnamneseModal({ isOpen, onClose, onSuccess, editingAnamnese
               type="text"
               value={buscaCliente || clienteNome}
               onChange={(e) => {
-                if (isEditing) return // Não permitir mudança ao editar
                 setBuscaCliente(e.target.value)
                 setShowClientesList(true)
                 setClienteId('')
                 setClienteNome('')
               }}
-              onFocus={() => !isEditing && setShowClientesList(true)}
+              onFocus={() => setShowClientesList(true)}
               placeholder="Digite nome, email ou telefone..."
-              disabled={isEditing}
-              className="w-full pl-9 pr-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-sm text-gray-900 placeholder:text-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="w-full pl-9 pr-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-sm text-gray-900 placeholder:text-gray-400"
             />
           </div>
 
@@ -272,7 +222,7 @@ export function CriarAnamneseModal({ isOpen, onClose, onSuccess, editingAnamnese
                 <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm text-green-900 truncate">{clienteNome}</div>
-                  {!isEditing && clientes.find(c => c.id === clienteId)?.hasAnamnese && (
+                  {clientes.find(c => c.id === clienteId)?.hasAnamnese && (
                     <div className="text-xs text-orange-700 mt-0.5 flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" />
                       Cliente já possui anamnese
@@ -286,9 +236,7 @@ export function CriarAnamneseModal({ isOpen, onClose, onSuccess, editingAnamnese
 
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
           <p className="text-xs text-blue-800">
-            <strong>Nota:</strong> {isEditing 
-              ? 'As informações da anamnese serão atualizadas. O email do cliente será preenchido automaticamente.'
-              : 'Uma anamnese inicial será criada. O cliente poderá preenchê-la completamente pelo app ou você pode editar manualmente.'}
+            <strong>Nota:</strong> Uma anamnese inicial será criada com email e telefone do cliente. Use o botão "Editar" para preencher os demais campos.
           </p>
         </div>
 
@@ -308,9 +256,7 @@ export function CriarAnamneseModal({ isOpen, onClose, onSuccess, editingAnamnese
             className="flex-1"
             disabled={!clienteId || loading}
           >
-            {loading 
-              ? (isEditing ? 'Atualizando...' : 'Criando...') 
-              : (isEditing ? 'Atualizar Anamnese' : 'Criar Anamnese')}
+            {loading ? 'Criando...' : 'Criar Anamnese'}
           </Button>
         </div>
       </form>

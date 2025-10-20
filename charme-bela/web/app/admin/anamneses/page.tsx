@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Search, FileText, Eye, Download, Plus, Calendar, AlertCircle, User, Edit2, Mail } from 'lucide-react'
 import { Button } from '@/components/Button'
 import { CriarAnamneseModal } from '@/components/admin/CriarAnamneseModal'
+import { EditarAnamneseModal } from '@/components/admin/EditarAnamneseModal'
 import * as api from '@/lib/api'
 import toast from 'react-hot-toast'
 
@@ -570,15 +571,17 @@ export default function AnamnesesPage() {
         onSuccess={loadAnamneses}
       />
 
-      <CriarAnamneseModal 
-        isOpen={!!editingAnamnese}
-        onClose={() => setEditingAnamnese(null)}
-        onSuccess={() => {
-          loadAnamneses()
-          setEditingAnamnese(null)
-        }}
-        editingAnamnese={editingAnamnese}
-      />
+      {editingAnamnese && (
+        <EditarAnamneseModal 
+          isOpen={!!editingAnamnese}
+          onClose={() => setEditingAnamnese(null)}
+          onSuccess={() => {
+            loadAnamneses()
+            setEditingAnamnese(null)
+          }}
+          anamnese={editingAnamnese}
+        />
+      )}
     </div>
   )
 }

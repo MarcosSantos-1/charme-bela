@@ -100,7 +100,7 @@ export default function DatePicker({
                 display: none;
               }
               .rdp-head_cell {
-                color: #be185d !important;
+                color: #111827 !important;
                 font-weight: 700 !important;
                 text-transform: uppercase;
                 font-size: 13px;

@@ -26,8 +26,7 @@ export function AdicionarClienteModal({ isOpen, onClose, editingClient }: Adicio
     email: '',
     telefone: '',
     endereco: '',
-    dataNascimento: undefined as Date | undefined,
-    observacoes: ''
+    dataNascimento: undefined as Date | undefined
   })
 
   const [loading, setLoading] = useState(false)
@@ -40,8 +39,7 @@ export function AdicionarClienteModal({ isOpen, onClose, editingClient }: Adicio
         email: editingClient.email,
         telefone: editingClient.phone,
         endereco: '',
-        dataNascimento: undefined,
-        observacoes: ''
+        dataNascimento: undefined
       })
     } else if (!isOpen) {
       resetForm()
@@ -101,8 +99,7 @@ export function AdicionarClienteModal({ isOpen, onClose, editingClient }: Adicio
       email: '', 
       telefone: '', 
       endereco: '', 
-      dataNascimento: undefined, 
-      observacoes: '' 
+      dataNascimento: undefined
     })
   }
 
@@ -188,20 +185,6 @@ export function AdicionarClienteModal({ isOpen, onClose, editingClient }: Adicio
             onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
             placeholder="Rua, número, bairro, cidade"
             className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 placeholder:text-gray-400"
-          />
-        </div>
-
-        {/* Observações */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Observações
-          </label>
-          <textarea
-            value={formData.observacoes}
-            onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
-            placeholder="Alergias, preferências, histórico..."
-            rows={3}
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
           />
         </div>
 

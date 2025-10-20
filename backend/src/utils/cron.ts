@@ -2,7 +2,7 @@ import { logger } from './logger'
 
 // Função para executar tarefas periódicas
 export function setupCronJobs() {
-  // Cancela agendamentos expirados a cada 5 minutos
+  // Cancela agendamentos expirados a cada 30 minutos (otimizado para economizar Neon compute)
   setInterval(async () => {
     try {
       logger.info('🕐 Verificando agendamentos expirados...')
@@ -22,7 +22,7 @@ export function setupCronJobs() {
     } catch (error) {
       logger.error('Erro no cron de cancelamento:', error)
     }
-  }, 5 * 60 * 1000) // 5 minutos
+  }, 30 * 60 * 1000) // 30 minutos (era 5)
   
   // Auto-completa tratamentos do dia anterior (roda à meia-noite)
   const scheduleAutoComplete = () => {
@@ -63,7 +63,7 @@ export function setupCronJobs() {
   
   scheduleVoucherCheck()
   
-  // Cron Job 4: Expirar assinaturas de mês grátis (a cada hora)
+  // Cron Job 4: Expirar assinaturas de mês grátis (a cada 6 horas - otimizado)
   setInterval(async () => {
     try {
       logger.info('🎁 Verificando assinaturas de mês grátis expiradas...')
@@ -120,13 +120,13 @@ export function setupCronJobs() {
     } catch (error) {
       logger.error('Erro ao expirar meses grátis:', error)
     }
-  }, 60 * 60 * 1000) // A cada 1 hora
+  }, 6 * 60 * 60 * 1000) // A cada 6 horas (era 1)
   
-  logger.success('✅ Cron jobs iniciados:')
-  logger.info('   - Cancelamento automático: a cada 5min')
+  logger.success('✅ Cron jobs iniciados (otimizados para Neon):')
+  logger.info('   - Cancelamento automático: a cada 30min (economiza compute)')
   logger.info('   - Auto-completar tratamentos: diariamente à meia-noite')
   logger.info('   - Notificar vouchers expirando: diariamente às 10:00')
-  logger.info('   - Expirar meses grátis: a cada 1 hora')
+  logger.info('   - Expirar meses grátis: a cada 6 horas (economiza compute)')
 }
 
 // Função para notificar vouchers expirando

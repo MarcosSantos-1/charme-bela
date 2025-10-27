@@ -113,19 +113,6 @@ npm run dev
 
 ---
 
-## 🔐 Credenciais de Teste
-
-### Admin
-- **URL**: `http://localhost:3000/admin-login`
-- **Username**: `sonia.santana`
-- **Senha**: `2020`
-
-### Cliente (Criar novo)
-- **URL**: `http://localhost:3000/cadastro`
-- Use qualquer email válido
-
----
-
 ## 🌐 Deploy
 
 ### Backend (Render)
@@ -158,11 +145,11 @@ npm run dev
 - Agendamentos admin (pagamento na clínica)
 
 ### 💳 Planos de Assinatura
-- **Bronze**: 4 sessões/mês - R$ 119,90
-- **Prata**: 4 sessões + 2 faciais/mês - R$ 139,90
-- **Ouro**: 6 sessões + 2 faciais/mês - R$ 169,90
+- **Bronze**: 4 sessões/mês - R$ 200,00
+- **Prata**: 4 sessões/mês - R$ 300,00
+- **Ouro**: 6 sessões/mês - R$ 450,00
 - Controle de uso mensal
-- Preços dinâmicos (configuráveis pelo admin)
+- Preços dinâmicos (futuramente configuráveis pelo admin)
 
 ### 📋 Anamnese Digital
 - 5 etapas completas

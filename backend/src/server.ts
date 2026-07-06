@@ -17,7 +17,12 @@ import { stripeRoutes } from './routes/stripe'
 import { notificationRoutes } from './routes/notifications'
 import { setupCronJobs } from './utils/cron'
 
-const PORT = Number(process.env.PORT) || 3333
+// Fly injeta PORT=8080; local usa 3333. Se PORT=3333 vazou do .env nos secrets, corrige.
+const rawPort = Number(process.env.PORT)
+const PORT =
+  process.env.FLY_APP_NAME && (!rawPort || rawPort === 3333)
+    ? 8080
+    : rawPort || 3333
 const HOST = '0.0.0.0'
 
 function getAllowedOrigins(): string[] {
@@ -90,7 +95,7 @@ async function start() {
     setupCronJobs()
     
     console.log('\n' + '='.repeat(50))
-    logger.success(`Servidor rodando em http://localhost:${PORT}`)
+    logger.success(`Servidor rodando em http://${HOST}:${PORT}`)
     logger.info(`Ambiente: ${process.env.NODE_ENV}`)
     logger.info(`Frontend URL: ${process.env.FRONTEND_URL}`)
     console.log('='.repeat(50) + '\n')

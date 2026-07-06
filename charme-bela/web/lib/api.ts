@@ -1,6 +1,6 @@
 // Cliente da API - centraliza todas as chamadas ao backend
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333'
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333').replace(/\/$/, '')
 
 // ============================================
 // TYPES (importados de types/index.ts)

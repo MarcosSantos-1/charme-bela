@@ -22,8 +22,8 @@ RUN npm run build
 # Remover devDependencies após build (economizar espaço)
 RUN npm prune --production
 
-# Expor porta
-EXPOSE 10000
+# Fly injeta PORT=8080; fallback local continua 3333
+EXPOSE 8080
 
 # Start
 CMD ["npm", "start"]

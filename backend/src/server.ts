@@ -20,6 +20,25 @@ import { setupCronJobs } from './utils/cron'
 const PORT = Number(process.env.PORT) || 3333
 const HOST = '0.0.0.0'
 
+function getAllowedOrigins(): string[] {
+  const origins = new Set<string>()
+
+  for (const value of [process.env.FRONTEND_URL, process.env.ALLOWED_ORIGINS]) {
+    if (!value) continue
+
+    for (const origin of value.split(',')) {
+      const trimmed = origin.trim().replace(/\/$/, '')
+      if (trimmed) origins.add(trimmed)
+    }
+  }
+
+  if (origins.size === 0) {
+    origins.add('http://localhost:3000')
+  }
+
+  return [...origins]
+}
+
 // Criando a instância do Fastify
 const app = Fastify({
   logger: false // Desabilitamos o logger padrão para usar nosso custom logger
@@ -30,13 +49,22 @@ async function start() {
   try {
     logger.info('🚀 Iniciando servidor Charme & Bela API...')
     
-    // Configurando CORS
+    // Configurando CORS (FRONTEND_URL + ALLOWED_ORIGINS separados por vírgula)
+    const allowedOrigins = getAllowedOrigins()
     await app.register(cors, {
-      origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ''))) {
+          callback(null, true)
+          return
+        }
+
+        logger.warning(`CORS bloqueou origem: ${origin}`)
+        callback(null, false)
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
     })
-    logger.success('CORS configurado com métodos: GET, POST, PUT, DELETE, PATCH')
+    logger.success(`CORS configurado para: ${allowedOrigins.join(', ')}`)
     
     // Registrando rotas
     logger.info('📝 Registrando rotas...')

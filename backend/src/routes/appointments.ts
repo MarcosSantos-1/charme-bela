@@ -10,7 +10,6 @@ import {
   notifyAdminNewAppointmentRequest,
   notifyAdminClientCanceled
 } from '../utils/notifications'
-import { hoursUntilStoredStart, wallClockNowAsStoredUtc } from '../utils/wallClock'
 
 // Função auxiliar para verificar e atualizar uso mensal
 async function updateMonthlyUsage(userId: string, appointmentDate: Date) {

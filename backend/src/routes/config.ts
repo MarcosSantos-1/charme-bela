@@ -16,11 +16,12 @@ export async function configRoutes(app: FastifyInstance) {
         logger.warning('Configuração não encontrada, criando com valores padrão...')
         config = await prisma.systemConfig.create({
           data: {
-            minCancellationHours: 8,
-            minRescheduleHours: 8,
+            minCancellationHours: 4,
+            minRescheduleHours: 4,
             defaultStartTime: '09:00',
             defaultEndTime: '18:00',
-            slotDuration: 60,
+            slotDuration: 30,
+            maxSimultaneous: 1,
             minimumCommitmentMonths: 3,
             enableEmailNotifications: true,
             enableSmsNotifications: false,
@@ -54,6 +55,7 @@ export async function configRoutes(app: FastifyInstance) {
         defaultStartTime,
         defaultEndTime,
         slotDuration,
+        maxSimultaneous,
         minimumCommitmentMonths,
         enableEmailNotifications,
         enableSmsNotifications,
@@ -81,6 +83,7 @@ export async function configRoutes(app: FastifyInstance) {
         defaultStartTime?: string
         defaultEndTime?: string
         slotDuration?: number
+        maxSimultaneous?: number
         minimumCommitmentMonths?: number
         enableEmailNotifications?: boolean
         enableSmsNotifications?: boolean
@@ -111,11 +114,12 @@ export async function configRoutes(app: FastifyInstance) {
         // Se não existir, cria
         config = await prisma.systemConfig.create({
           data: {
-            minCancellationHours: minCancellationHours || 8,
-            minRescheduleHours: minRescheduleHours || 8,
+            minCancellationHours: minCancellationHours || 4,
+            minRescheduleHours: minRescheduleHours || 4,
             defaultStartTime: defaultStartTime || '09:00',
             defaultEndTime: defaultEndTime || '18:00',
-            slotDuration: slotDuration || 60,
+            slotDuration: slotDuration || 30,
+            maxSimultaneous: maxSimultaneous || 1,
             minimumCommitmentMonths: minimumCommitmentMonths || 3,
             enableEmailNotifications: enableEmailNotifications ?? true,
             enableSmsNotifications: enableSmsNotifications ?? false,
@@ -134,6 +138,7 @@ export async function configRoutes(app: FastifyInstance) {
             ...(defaultStartTime && { defaultStartTime }),
             ...(defaultEndTime && { defaultEndTime }),
             ...(slotDuration !== undefined && { slotDuration }),
+            ...(maxSimultaneous !== undefined && { maxSimultaneous }),
             ...(minimumCommitmentMonths !== undefined && { minimumCommitmentMonths }),
             ...(enableEmailNotifications !== undefined && { enableEmailNotifications }),
             ...(enableSmsNotifications !== undefined && { enableSmsNotifications }),

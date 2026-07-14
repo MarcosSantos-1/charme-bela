@@ -2,23 +2,96 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 
-// Função auxiliar para gerar slots de horário
-function generateTimeSlots(start: string, end: string, duration: number): string[] {
+// ============================================================================
+// Helpers de horário (slots dinâmicos)
+//
+// Convenção de fuso: o rótulo "HH:MM" é sempre tratado no MESMO referencial em
+// que os agendamentos são persistidos. O frontend envia startTime como
+// `${data}T${slot}:00.000Z`, então montamos os slots com o mesmo sufixo ".000Z".
+// Isso garante que a comparação de conflito entre slots e agendamentos seja
+// exata (mesmo instante = mesmo getTime()). Não convertemos para America/Sao_Paulo
+// aqui para não dessincronizar dos dados já gravados e do frontend.
+// ============================================================================
+
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number)
+  return h * 60 + m
+}
+
+function minutesToTime(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60).toString().padStart(2, '0')
+  const minutes = (totalMinutes % 60).toString().padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
+// Converte um rótulo "HH:MM" numa data (mesmo referencial dos agendamentos)
+function slotToDate(date: string, time: string): Date {
+  return new Date(`${date}T${time}:00.000Z`)
+}
+
+// Gera horários de INÍCIO candidatos numa grade de `step` minutos, garantindo que
+// um serviço de `serviceDuration` minutos caiba INTEIRO dentro do período.
+function generateSlotStarts(
+  start: string,
+  end: string,
+  step: number,
+  serviceDuration: number
+): string[] {
   const slots: string[] = []
-  const [startHour, startMin] = start.split(':').map(Number)
-  const [endHour, endMin] = end.split(':').map(Number)
-  
-  let currentTime = startHour * 60 + startMin
-  const endTime = endHour * 60 + endMin
-  
-  while (currentTime + duration <= endTime) {
-    const hours = Math.floor(currentTime / 60).toString().padStart(2, '0')
-    const minutes = (currentTime % 60).toString().padStart(2, '0')
-    slots.push(`${hours}:${minutes}`)
-    currentTime += duration
+  const periodStart = timeToMinutes(start)
+  const periodEnd = timeToMinutes(end)
+
+  for (let t = periodStart; t + serviceDuration <= periodEnd; t += step) {
+    slots.push(minutesToTime(t))
   }
-  
+
   return slots
+}
+
+// Compat: grade simples de slots (usada quando não há duração de serviço)
+function generateTimeSlots(start: string, end: string, duration: number): string[] {
+  return generateSlotStarts(start, end, duration, duration)
+}
+
+// Conta quantos agendamentos existentes se sobrepõem ao intervalo [slotStart, slotEnd)
+function countOverlaps(
+  slotStart: Date,
+  slotEnd: Date,
+  appointments: Array<{ startTime: Date; endTime: Date }>
+): number {
+  const startMs = slotStart.getTime()
+  const endMs = slotEnd.getTime()
+  return appointments.filter(
+    (apt) => apt.startTime.getTime() < endMs && apt.endTime.getTime() > startMs
+  ).length
+}
+
+// A partir de horários candidatos, separa entre disponíveis e ocupados aplicando
+// a capacidade (maxSimultaneous). Um slot fica ocupado quando o intervalo do serviço
+// colide com >= maxSimultaneous agendamentos existentes.
+function splitAvailability(
+  date: string,
+  candidateSlots: string[],
+  serviceDuration: number,
+  appointments: Array<{ startTime: Date; endTime: Date }>,
+  maxSimultaneous: number
+): { available: string[]; booked: string[] } {
+  const available: string[] = []
+  const booked: string[] = []
+
+  for (const slot of candidateSlots) {
+    const slotStart = slotToDate(date, slot)
+    const slotEnd = new Date(slotStart.getTime() + serviceDuration * 60000)
+    const overlaps = countOverlaps(slotStart, slotEnd, appointments)
+
+    if (overlaps >= maxSimultaneous) {
+      booked.push(slot)
+    } else {
+      available.push(slot)
+    }
+  }
+
+  return { available, booked }
 }
 
 export async function scheduleRoutes(app: FastifyInstance) {
@@ -73,7 +146,8 @@ export async function scheduleRoutes(app: FastifyInstance) {
       
       // 1. Busca configurações
       const config = await prisma.systemConfig.findFirst()
-      const slotDuration = config?.slotDuration || 60
+      const slotDuration = config?.slotDuration || 30
+      const maxSimultaneous = config?.maxSimultaneous || 1
       
       // 2. Verifica se há override para esta data específica (feriado, folga, etc)
       const override = await prisma.scheduleOverride.findUnique({
@@ -124,17 +198,8 @@ export async function scheduleRoutes(app: FastifyInstance) {
         availableSlots = managerSchedule.availableSlots as any[]
       }
       
-      // 4. Gera todos os slots possíveis
-      let allSlots: string[] = []
-      for (const period of availableSlots) {
-        const slots = generateTimeSlots(period.start, period.end, slotDuration)
-        allSlots = [...allSlots, ...slots]
-      }
-      
-      logger.debug(`Períodos configurados: ${JSON.stringify(availableSlots)}`)
-      logger.debug(`Slots gerados (allSlots): ${allSlots.join(', ')}`)
-      
-      // 5. Se foi informado um serviço, ajusta pela duração do serviço
+      // 4. Determina a duração do serviço (define quanto tempo cada slot ocupa).
+      // Sem serviço informado, assume a granularidade da grade.
       let serviceDuration = slotDuration
       if (serviceId) {
         const service = await prisma.service.findUnique({
@@ -145,8 +210,20 @@ export async function scheduleRoutes(app: FastifyInstance) {
         }
       }
       
-      // 6. Busca agendamentos do dia (UTC-safe)
-      // Forçamos a data para UTC para evitar problemas de timezone
+      // 5. Gera horários de INÍCIO candidatos numa grade de `slotDuration` (30min),
+      // garantindo que o serviço inteiro caiba dentro do período de atendimento.
+      let candidateSlots: string[] = []
+      for (const period of availableSlots) {
+        const slots = generateSlotStarts(period.start, period.end, slotDuration, serviceDuration)
+        candidateSlots = [...candidateSlots, ...slots]
+      }
+      // Remove duplicatas e ordena (períodos não deveriam se sobrepor, mas garantimos)
+      candidateSlots = Array.from(new Set(candidateSlots)).sort()
+      
+      logger.debug(`Períodos configurados: ${JSON.stringify(availableSlots)}`)
+      logger.debug(`Grade ${slotDuration}min, serviço ${serviceDuration}min → candidatos: ${candidateSlots.join(', ')}`)
+      
+      // 6. Busca agendamentos do dia (mesmo referencial UTC dos rótulos de slot)
       const startOfDay = new Date(date + 'T00:00:00.000Z')
       const endOfDay = new Date(date + 'T23:59:59.999Z')
       
@@ -174,30 +251,20 @@ export async function scheduleRoutes(app: FastifyInstance) {
         logger.debug(`  - Agendamento ${apt.id}: ${apt.startTime.toISOString()} - ${apt.endTime.toISOString()} (${apt.status}, ${apt.origin})`)
       })
       
-      // 7. Todos os slots são sempre disponíveis (não bloqueia por conflito de horário)
-      const availableTimes = allSlots
+      // 7. Aplica detecção real de conflito por interseção de intervalos.
+      // Um horário só é oferecido se o intervalo [início, início + duração) couber
+      // sem colidir com >= maxSimultaneous agendamentos existentes (capacidade).
+      // Serviços longos (ex: 1h30) exigem naturalmente 3 slots de 30min livres,
+      // pois qualquer sobreposição no intervalo os torna indisponíveis.
+      const { available: availableTimes, booked: bookedSlots } = splitAvailability(
+        date,
+        candidateSlots,
+        serviceDuration,
+        appointments,
+        maxSimultaneous
+      )
       
-      // 8. Calcula slots OCUPADOS apenas para UI mostrar quantos agendamentos já existem no horário
-      // IMPORTANTE: Bloqueia apenas o horário EXATO de início se já existe agendamento
-      // NÃO bloqueia horários subsequentes mesmo que o serviço ainda esteja acontecendo
-      // Isso permite múltiplas clientes no mesmo período (várias macas)
-      const bookedSlots: string[] = []
-      
-      allSlots.forEach(slot => {
-        const slotStart = new Date(date + 'T' + slot + ':00.000Z')
-        
-        // Verifica se já existe agendamento COMEÇANDO neste horário exato
-        const hasExactMatch = appointments.find(apt => {
-          return apt.startTime.getTime() === slotStart.getTime()
-        })
-        
-        if (hasExactMatch) {
-          bookedSlots.push(slot)
-          logger.debug(`  ⚠️ Slot ${slot} tem agendamento começando (${hasExactMatch.id})`)
-        }
-      })
-      
-      logger.success(`${availableTimes.length} horários disponíveis em ${date}`)
+      logger.success(`${availableTimes.length} horários disponíveis em ${date} (capacidade ${maxSimultaneous})`)
       logger.debug(`Slots ocupados: ${bookedSlots.join(', ')}`)
       logger.debug(`Slots disponíveis: ${availableTimes.join(', ')}`)
       
@@ -210,7 +277,9 @@ export async function scheduleRoutes(app: FastifyInstance) {
           slots: availableTimes,
           totalSlots: availableTimes.length,
           serviceDuration,
-          bookedSlots,  // Slots já ocupados (para debug)
+          slotDuration,
+          maxSimultaneous,
+          bookedSlots,  // Slots indisponíveis por conflito de horário
           totalAppointments: appointments.length
         }
       })
@@ -289,9 +358,25 @@ export async function scheduleRoutes(app: FastifyInstance) {
       
       logger.info(`✅ Dia ${date} está configurado para atender`)
       
-      // 3. ADMIN: horários fixos das 6h às 21h (horários estendidos)
-      const slotDuration = 60 // 60 minutos
-      const adminSlots = generateTimeSlots('06:00', '21:00', slotDuration)
+      // 3. Config: mesma grade e capacidade da área do cliente
+      const config = await prisma.systemConfig.findFirst()
+      const slotDuration = config?.slotDuration || 30
+      const maxSimultaneous = config?.maxSimultaneous || 1
+      
+      // Duração do serviço (define o intervalo ocupado por cada slot)
+      let serviceDuration = slotDuration
+      if (serviceId) {
+        const service = await prisma.service.findUnique({
+          where: { id: serviceId }
+        })
+        if (service) {
+          serviceDuration = service.duration
+        }
+      }
+      
+      // ADMIN: horários estendidos das 6h às 21h, mas na mesma grade de `slotDuration`,
+      // garantindo que o serviço inteiro caiba na janela.
+      let candidateSlots = generateSlotStarts('06:00', '21:00', slotDuration, serviceDuration)
       
       // 4. Se for hoje (usando horário de São Paulo), filtrar horários que já passaram
       const now = new Date()
@@ -309,7 +394,6 @@ export async function scheduleRoutes(app: FastifyInstance) {
       // Comparar com horário de São Paulo
       const isToday = date === saoPauloDateStr
       
-      let availableSlots = adminSlots
       if (isToday) {
         // Obter hora atual em São Paulo
         const saoPauloTime = now.toLocaleString('en-US', { 
@@ -323,14 +407,13 @@ export async function scheduleRoutes(app: FastifyInstance) {
         
         logger.debug(`⏰ Hora atual em SP: ${saoPauloTime} (${currentTimeInMinutes} minutos)`)
         
-        availableSlots = adminSlots.filter(slot => {
-          const [hour, minute] = slot.split(':').map(Number)
-          const slotTimeInMinutes = hour * 60 + minute
+        candidateSlots = candidateSlots.filter(slot => {
+          const slotTimeInMinutes = timeToMinutes(slot)
           // Pelo menos 30min de antecedência
           return slotTimeInMinutes > currentTimeInMinutes + 30
         })
         
-        logger.debug(`✅ Slots após filtro de hoje: ${availableSlots.length} disponíveis`)
+        logger.debug(`✅ Slots após filtro de hoje: ${candidateSlots.length} disponíveis`)
       }
       
       // 5. Buscar agendamentos do dia
@@ -349,17 +432,14 @@ export async function scheduleRoutes(app: FastifyInstance) {
       
       logger.debug(`📋 Encontrados ${appointments.length} agendamentos em ${date}`)
       
-      // 6. Calcular slots ocupados
-      const bookedSlots: string[] = []
-      availableSlots.forEach(slot => {
-        const slotStart = new Date(date + 'T' + slot + ':00.000Z')
-        const hasExactMatch = appointments.find(apt => {
-          return apt.startTime.getTime() === slotStart.getTime()
-        })
-        if (hasExactMatch) {
-          bookedSlots.push(slot)
-        }
-      })
+      // 6. Detecção de conflito por interseção de intervalos (mesma regra do cliente)
+      const { available: availableSlots, booked: bookedSlots } = splitAvailability(
+        date,
+        candidateSlots,
+        serviceDuration,
+        appointments,
+        maxSimultaneous
+      )
       
       logger.success(`✅ Admin slots para ${date}: ${availableSlots.length} disponíveis, ${bookedSlots.length} ocupados`)
       
@@ -369,6 +449,9 @@ export async function scheduleRoutes(app: FastifyInstance) {
           date,
           available: true,
           slots: availableSlots,
+          serviceDuration,
+          slotDuration,
+          maxSimultaneous,
           bookedSlots,
           totalAppointments: appointments.length
         }

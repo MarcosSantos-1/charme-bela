@@ -1,0 +1,285 @@
+// API client para mobile
+import axios from 'axios';
+import { auth } from './firebase';
+import { signOut as firebaseSignOut } from 'firebase/auth';
+import { Platform } from 'react-native';
+import type {
+  Appointment,
+  AvailableSlots,
+  PaymentHistoryItem,
+  PaymentMethod,
+  Plan,
+  Service,
+  Subscription,
+  Voucher,
+} from '../types/commercial';
+
+// Base do backend (rotas são "flat", sem prefixo /api).
+// Dev: iOS simulator usa localhost; em device físico/Android troque por IP da máquina.
+// Prod: deploy no Fly.io.
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '');
+export const API_URL = configuredApiUrl || (__DEV__
+  ? Platform.OS === 'android' ? 'http://10.0.2.2:3333' : 'http://localhost:3333'
+  : 'https://charme-bela.fly.dev');
+
+const api = axios.create({
+  baseURL: API_URL,
+  timeout: 15000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Anexa o ID token do Firebase (quando houver usuário logado)
+api.interceptors.request.use(
+  async (config) => {
+    try {
+      const current = auth.currentUser;
+      if (current) {
+        const token = await current.getIdToken();
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch {
+      // segue sem token
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Em 401, encerra a sessão Firebase (o AuthContext reage via onAuthStateChanged)
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401 && auth.currentUser) {
+      try {
+        await firebaseSignOut(auth);
+      } catch {
+        // ignora
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string;
+  role: 'CLIENT' | 'ADMIN' | 'MANAGER';
+  isActive: boolean;
+  firebaseUid?: string;
+  profileImageUrl?: string;
+  subscription?: any;
+  anamnesisForm?: any;
+}
+
+// ============================================
+// USUÁRIOS / SYNC COM FIREBASE
+// ============================================
+
+function unwrap<T = any>(data: any): T {
+  // Backend responde ora { success, data }, ora o objeto direto
+  if (data && typeof data === 'object' && 'data' in data && 'success' in data) {
+    return data.data as T;
+  }
+  return data as T;
+}
+
+export async function getUserByFirebaseUid(firebaseUid: string): Promise<User> {
+  const response = await api.get(`/users/firebase/${firebaseUid}`);
+  return unwrap<User>(response.data);
+}
+
+export async function createUser(data: {
+  name: string;
+  email: string;
+  phone?: string;
+  firebaseUid?: string;
+  role?: 'CLIENT' | 'MANAGER';
+}): Promise<User> {
+  const response = await api.post('/users', data);
+  return unwrap<User>(response.data);
+}
+
+// Busca o usuário no backend pelo UID do Firebase; se não existir, cria.
+export async function getOrCreateUserFromFirebase(firebaseUser: {
+  uid: string;
+  email: string;
+  displayName?: string;
+  phone?: string;
+}): Promise<User> {
+  try {
+    return await getUserByFirebaseUid(firebaseUser.uid);
+  } catch (error: any) {
+    if (error?.response?.status && error.response.status !== 404) {
+      throw error;
+    }
+    const name = firebaseUser.displayName || firebaseUser.email.split('@')[0];
+    return await createUser({
+      name,
+      email: firebaseUser.email,
+      phone: firebaseUser.phone,
+      firebaseUid: firebaseUser.uid,
+    });
+  }
+}
+
+// ============================================
+// AGENDAMENTOS
+// ============================================
+export async function getAppointments(params?: { userId?: string; excludeHidden?: boolean }): Promise<Appointment[]> {
+  const response = await api.get('/appointments', { params });
+  return unwrap<Appointment[]>(response.data);
+}
+
+export async function createAppointment(data: {
+  userId: string;
+  serviceId: string;
+  startTime: string;
+  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER';
+  voucherId?: string;
+  paymentAmount?: number;
+  notes?: string;
+}): Promise<Appointment> {
+  const response = await api.post('/appointments', data);
+  return unwrap<Appointment>(response.data);
+}
+
+export async function cancelAppointment(id: string, cancelReason?: string): Promise<any> {
+  const response = await api.put(`/appointments/${id}/cancel`, { canceledBy: 'client', cancelReason });
+  return response.data;
+}
+
+export async function rescheduleAppointment(id: string, newStartTime: string): Promise<Appointment> {
+  const response = await api.put(`/appointments/${id}/reschedule`, { newStartTime });
+  return unwrap<Appointment>(response.data);
+}
+
+// ============================================
+// SERVIÇOS / PLANOS
+// ============================================
+export async function getServices(): Promise<Service[]> {
+  const response = await api.get('/services');
+  return unwrap<Service[]>(response.data);
+}
+
+export async function getPlans(): Promise<Plan[]> {
+  const response = await api.get('/plans');
+  return unwrap<Plan[]>(response.data);
+}
+
+export async function getAvailableSlots(date: string, serviceId?: string): Promise<AvailableSlots> {
+  const response = await api.get('/schedule/available', { params: { date, serviceId } });
+  return unwrap<AvailableSlots>(response.data);
+}
+
+export async function getSubscription(userId: string): Promise<Subscription | null> {
+  try {
+    const response = await api.get(`/subscriptions/user/${userId}`);
+    return unwrap<Subscription>(response.data);
+  } catch (error: any) {
+    if (error?.response?.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function getVouchers(userId: string): Promise<Voucher[]> {
+  const response = await api.get(`/vouchers/user/${userId}`);
+  return unwrap<Voucher[]>(response.data);
+}
+
+export async function createCheckoutSession(userId: string, planId: string) {
+  const response = await api.post('/stripe/create-checkout-session', { userId, planId });
+  return unwrap<{ sessionId: string; url: string }>(response.data);
+}
+
+export async function createPaymentSession(
+  userId: string,
+  serviceId: string,
+  appointmentId: string,
+  customAmount?: number,
+  customDescription?: string,
+) {
+  const response = await api.post('/stripe/create-payment-session', {
+    userId,
+    serviceId,
+    appointmentId,
+    customAmount,
+    customDescription,
+  });
+  return unwrap<{ sessionId: string; url: string }>(response.data);
+}
+
+export async function changePlan(userId: string, newPlanId: string): Promise<Subscription> {
+  const response = await api.put(`/subscriptions/${userId}/change-plan`, { newPlanId });
+  return unwrap<Subscription>(response.data);
+}
+
+export async function cancelSubscription(userId: string, cancelReason?: string): Promise<Subscription> {
+  const response = await api.put(`/subscriptions/${userId}/cancel`, { cancelReason });
+  return unwrap<Subscription>(response.data);
+}
+
+export async function reactivateSubscription(userId: string): Promise<Subscription> {
+  const response = await api.put(`/subscriptions/${userId}/reactivate`);
+  return unwrap<Subscription>(response.data);
+}
+
+export async function pauseSubscription(userId: string): Promise<Subscription> {
+  const response = await api.put(`/subscriptions/${userId}/pause`);
+  return unwrap<Subscription>(response.data);
+}
+
+export async function createPortalSession(userId: string) {
+  const response = await api.post('/stripe/create-portal-session', { userId });
+  return unwrap<{ url: string }>(response.data);
+}
+
+export async function getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
+  try {
+    const response = await api.get(`/stripe/payment-methods/${userId}`);
+    return unwrap<PaymentMethod[]>(response.data);
+  } catch (error: any) {
+    if (error?.response?.status === 404) return [];
+    throw error;
+  }
+}
+
+export async function getPaymentHistory(userId: string): Promise<PaymentHistoryItem[]> {
+  try {
+    const response = await api.get(`/stripe/payment-history/${userId}`);
+    return unwrap<PaymentHistoryItem[]>(response.data);
+  } catch (error: any) {
+    if (error?.response?.status === 404) return [];
+    throw error;
+  }
+}
+
+export async function getAnamnesis(userId: string): Promise<any | null> {
+  try {
+    const response = await api.get(`/anamnesis/user/${userId}`);
+    return unwrap(response.data);
+  } catch (error: any) {
+    if (error?.response?.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function saveMinimalAnamnesis(userId: string, data: Record<string, any>) {
+  const current = await getAnamnesis(userId);
+  const payload = {
+    personalData: data.personalData || {},
+    lifestyleData: data.lifestyleData || {},
+    healthData: data.healthData || {},
+    objectivesData: data.objectivesData || {},
+    termsAccepted: true,
+  };
+  const response = current
+    ? await api.put(`/anamnesis/user/${userId}`, payload)
+    : await api.post('/anamnesis', { userId, ...payload });
+  return unwrap(response.data);
+}
+
+export default api;

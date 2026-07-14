@@ -329,13 +329,14 @@ model SystemConfig {
   id                          String   @id @default(cuid())
   
   // Regras de agendamento
-  minCancellationHours        Int      @default(8)  // Mínimo de horas para cancelamento sem perda
-  minRescheduleHours          Int      @default(8)  // Mínimo de horas para reagendamento
+  minCancellationHours        Int      @default(4)  // Mínimo de horas para cancelamento sem perda
+  minRescheduleHours          Int      @default(4)  // Mínimo de horas para reagendamento
   
   // Horários padrão
   defaultStartTime            String   @default("09:00")
   defaultEndTime              String   @default("18:00")
-  slotDuration                Int      @default(60) // Duração padrão dos slots em minutos
+  slotDuration                Int      @default(30) // Granularidade da grade de horários em minutos (slots dinâmicos)
+  maxSimultaneous             Int      @default(1)  // Capacidade: quantos atendimentos podem se sobrepor no mesmo intervalo
   
   // Regras de assinatura
   minimumCommitmentMonths     Int      @default(3)  // Fidelidade mínima

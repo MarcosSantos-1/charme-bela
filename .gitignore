@@ -50,3 +50,6 @@ backend/node_modules/
 # Vercel
 .vercel
 
+# Docs locais (notas operacionais / runbooks)
+docs/
+

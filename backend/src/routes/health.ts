@@ -3,15 +3,23 @@ import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 
 export async function healthRoutes(app: FastifyInstance) {
-  // Rota de health check - verifica se o servidor e o banco estão funcionando
+  // Liveness leve para o Fly (não toca o Neon — evita acordar o banco a cada check)
   app.get('/health', async (request, reply) => {
-    logger.route('GET', '/health')
-    
+    const deep = (request.query as { deep?: string }).deep === '1'
+
+    if (!deep) {
+      return reply.status(200).send({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        service: 'Charme & Bela API'
+      })
+    }
+
+    logger.route('GET', '/health?deep=1')
+
     try {
-      // Testa a conexão com o banco de dados
       await prisma.$queryRaw`SELECT 1`
-      
-      logger.success('Health check passou - sistema operacional')
+
       return reply.status(200).send({
         status: 'ok',
         timestamp: new Date().toISOString(),
@@ -19,7 +27,7 @@ export async function healthRoutes(app: FastifyInstance) {
         service: 'Charme & Bela API'
       })
     } catch (error) {
-      logger.error('Health check falhou:', error)
+      logger.error('Health check profundo falhou:', error)
       return reply.status(503).send({
         status: 'error',
         timestamp: new Date().toISOString(),
@@ -29,4 +37,3 @@ export async function healthRoutes(app: FastifyInstance) {
     }
   })
 }
-

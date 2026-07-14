@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
+import { hoursUntilStoredStart, wallClockNowAsStoredUtc } from '../utils/wallClock'
 import {
   notifyAppointmentConfirmed,
   notifyAppointmentCanceled,
@@ -9,6 +10,7 @@ import {
   notifyAdminNewAppointmentRequest,
   notifyAdminClientCanceled
 } from '../utils/notifications'
+import { hoursUntilStoredStart, wallClockNowAsStoredUtc } from '../utils/wallClock'
 
 // Função auxiliar para verificar e atualizar uso mensal
 async function updateMonthlyUsage(userId: string, appointmentDate: Date) {
@@ -198,13 +200,30 @@ export async function appointmentsRoutes(app: FastifyInstance) {
     logger.route('GET', '/appointments')
     
     try {
-      const { userId, status, startDate, endDate } = request.query as {
+      const { userId, status, startDate, endDate, excludeHidden } = request.query as {
         userId?: string
         status?: string
         startDate?: string
         endDate?: string
+        excludeHidden?: string
       }
       
+      const wallNow = wallClockNowAsStoredUtc()
+
+      // Recupera PENDING/CONFIRMED futuros que foram ocultados por engano
+      // (ex.: clear-history comparava UTC real com hora de parede).
+      if (excludeHidden === 'true') {
+        await prisma.appointment.updateMany({
+          where: {
+            ...(userId && { userId }),
+            hiddenFromHistory: true,
+            status: { in: ['PENDING', 'CONFIRMED'] },
+            startTime: { gt: wallNow }
+          },
+          data: { hiddenFromHistory: false }
+        })
+      }
+
       const appointments = await prisma.appointment.findMany({
         where: {
           ...(userId && { userId }),
@@ -215,9 +234,16 @@ export async function appointmentsRoutes(app: FastifyInstance) {
               lte: new Date(endDate)
             }
           }),
-          // Se buscar por userId (cliente), não mostra os ocultos do histórico
-          // TEMPORÁRIO: descomentar após regenerar Prisma
-          // ...(userId && { hiddenFromHistory: false })
+          // Cliente: oculta só histórico limpo; futuros nunca somem da lista
+          ...(excludeHidden === 'true' && {
+            OR: [
+              { hiddenFromHistory: false },
+              {
+                status: { in: ['PENDING', 'CONFIRMED'] },
+                startTime: { gt: wallNow }
+              }
+            ]
+          })
         },
         include: {
           user: {
@@ -367,40 +393,27 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       const appointmentStart = new Date(startTime)
       const appointmentEnd = new Date(appointmentStart.getTime() + service.duration * 60000)
       
-      // 6. Verifica se já existe agendamento NO MESMO HORÁRIO EXATO (não bloqueia por duração)
-      // NOTA: Clínica tem múltiplas macas, então apenas avisa se já existe outro agendamento
-      // começando no mesmo horário, mas NÃO impede (permite atendimento simultâneo)
-      const sameTimeAppointment = await prisma.appointment.findFirst({
-        where: {
-          startTime: appointmentStart,
-          status: { not: 'CANCELED' }
-        }
-      })
+      // 6. Detecção real de conflito por interseção de intervalos [início, fim).
+      // A capacidade (maxSimultaneous) define quantos atendimentos podem coexistir
+      // no mesmo intervalo. Com capacidade 1 (padrão), qualquer sobreposição bloqueia.
+      const conflictConfig = await prisma.systemConfig.findFirst()
+      const maxSimultaneous = conflictConfig?.maxSimultaneous || 1
       
-      if (sameTimeAppointment) {
-        logger.warning(`⚠️ Já existe agendamento no horário ${startTime}, mas permitindo (múltiplas macas)`)
-      }
-      
-      /* VALIDAÇÃO DE CONFLITO TOTAL DESABILITADA - Múltiplas macas
-      const conflictingAppointment = await prisma.appointment.findFirst({
+      const overlappingCount = await prisma.appointment.count({
         where: {
           status: { not: 'CANCELED' },
-          OR: [
-            { AND: [{ startTime: { lte: appointmentStart } }, { endTime: { gt: appointmentStart } }] },
-            { AND: [{ startTime: { lt: appointmentEnd } }, { endTime: { gte: appointmentEnd } }] },
-            { AND: [{ startTime: { gte: appointmentStart } }, { endTime: { lte: appointmentEnd } }] }
-          ]
+          startTime: { lt: appointmentEnd },
+          endTime: { gt: appointmentStart }
         }
       })
       
-      if (conflictingAppointment) {
+      if (overlappingCount >= maxSimultaneous) {
+        logger.warning(`❌ Conflito de horário em ${startTime}: ${overlappingCount}/${maxSimultaneous} ocupados`)
         return reply.status(400).send({
           success: false,
-          error: 'Já existe um agendamento neste horário',
-          conflictWith: conflictingAppointment.id
+          error: 'Já existe um agendamento neste horário'
         })
       }
-      */
       
       // 7. Se for de assinatura, valida limites do plano
       if (origin === 'SUBSCRIPTION') {
@@ -771,11 +784,10 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       
       // Busca configurações
       const config = await prisma.systemConfig.findFirst()
-      const minHours = config?.minCancellationHours || 8
+      const minHours = config?.minCancellationHours || 4
       
-      // Calcula diferença de horas
-      const now = new Date()
-      const hoursDiff = (appointment.startTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+      // Calcula diferença de horas (hora de parede, mesma convenção dos slots)
+      const hoursDiff = hoursUntilStoredStart(appointment.startTime)
       
       // Se cliente cancelar com menos de X horas, perde o tratamento (só se for de assinatura)
       let lostTreatment = false
@@ -1032,11 +1044,10 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         })
       }
       
-      // Verifica se pode reagendar (tempo mínimo)
+      // Verifica se pode reagendar (tempo mínimo, hora de parede)
       const config = await prisma.systemConfig.findFirst()
-      const minHours = config?.minRescheduleHours || 8
-      const now = new Date()
-      const hoursDiff = (appointment.startTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+      const minHours = config?.minRescheduleHours || 4
+      const hoursDiff = hoursUntilStoredStart(appointment.startTime)
       
       if (hoursDiff < minHours) {
         return reply.status(400).send({
@@ -1064,39 +1075,26 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       
       const newEnd = endTime ? new Date(endTime) : new Date(newStart.getTime() + appointment.service.duration * 60000)
       
-      // Verifica se já existe agendamento NO MESMO HORÁRIO EXATO (não bloqueia por duração)
-      // Permite múltiplas clientes, apenas avisa se já existe outro começando no mesmo horário
-      const sameTimeAppointment = await prisma.appointment.findFirst({
-        where: {
-          id: { not: id },
-          startTime: newStart,
-          status: { not: 'CANCELED' }
-        }
-      })
+      // Detecção real de conflito por interseção de intervalos (ignorando o próprio agendamento).
+      // Respeita a capacidade configurada (maxSimultaneous).
+      const maxSimultaneous = config?.maxSimultaneous || 1
       
-      if (sameTimeAppointment) {
-        logger.warning(`⚠️ Já existe agendamento no horário ${newStart.toISOString()}, mas permitindo (múltiplas macas)`)
-      }
-      
-      /* VALIDAÇÃO DE CONFLITO TOTAL DESABILITADA - Múltiplas macas
-      const conflictingAppointment = await prisma.appointment.findFirst({
+      const overlappingCount = await prisma.appointment.count({
         where: {
           id: { not: id },
           status: { not: 'CANCELED' },
-          OR: [
-            { AND: [{ startTime: { lte: newStart } }, { endTime: { gt: newStart } }] },
-            { AND: [{ startTime: { lt: newEnd } }, { endTime: { gte: newEnd } }] }
-          ]
+          startTime: { lt: newEnd },
+          endTime: { gt: newStart }
         }
       })
       
-      if (conflictingAppointment) {
+      if (overlappingCount >= maxSimultaneous) {
+        logger.warning(`❌ Conflito ao reagendar ${id} para ${newStart.toISOString()}: ${overlappingCount}/${maxSimultaneous} ocupados`)
         return reply.status(400).send({
           success: false,
           error: 'Já existe um agendamento no novo horário'
         })
       }
-      */
       
       const updatedAppointment = await prisma.appointment.update({
         where: { id },
@@ -1186,25 +1184,17 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       
       logger.success(`✅ Status aceito para deletar: ${appointment.status}`)
       
-      // Soft delete: apenas marca como oculto
-      // TEMPORÁRIO: rode npx prisma generate após parar o backend
-      try {
-        await prisma.appointment.update({
-          where: { id },
-          data: {
-            // hiddenFromHistory: true  // Descomentar após regenerar Prisma
-            notes: appointment.notes // Workaround: atualiza algo para não dar erro
-          }
-        })
-      } catch (updateError) {
-        // Ignora erro temporariamente
-        logger.warning('⚠️ Campo hiddenFromHistory ainda não disponível. Rode: npx prisma generate')
-      }
+      // Soft delete: apenas marca como oculto para o cliente
+      await prisma.appointment.update({
+        where: { id },
+        data: { hiddenFromHistory: true }
+      })
       
-      logger.success(`👻 Agendamento ocultado do histórico: ${id} (soft delete simulado)`)
+      logger.success(`👻 Agendamento ocultado do histórico: ${id}`)
       return reply.status(200).send({
         success: true,
-        message: 'Tratamento removido do histórico (temporário - ative soft delete)'
+        data: { id, hiddenFromHistory: true },
+        message: 'Tratamento removido do histórico'
       })
     } catch (error) {
       logger.error('Erro ao ocultar agendamento:', error)
@@ -1215,49 +1205,41 @@ export async function appointmentsRoutes(app: FastifyInstance) {
     }
   })
   
-  // PUT - Limpar histórico completo (ocultar todos concluídos/cancelados)
+  // PUT - Limpar histórico completo (ocultar todos concluídos/cancelados/passados)
   app.put('/appointments/clear-history/:userId', async (request, reply) => {
     const { userId } = request.params as { userId: string }
     logger.route('PUT', `/appointments/clear-history/${userId}`)
     
     try {
-      // Oculta todos os agendamentos concluídos/cancelados do usuário
-      // TEMPORÁRIO: rode npx prisma generate após parar o backend
-      let count = 0
-      
-      try {
-        const result = await prisma.appointment.updateMany({
-          where: {
-            userId,
-            status: {
-              in: ['COMPLETED', 'CANCELED', 'NO_SHOW']
+      const wallNow = wallClockNowAsStoredUtc()
+      const result = await prisma.appointment.updateMany({
+        where: {
+          userId,
+          hiddenFromHistory: false,
+          OR: [
+            {
+              status: {
+                in: ['COMPLETED', 'CANCELED', 'NO_SHOW']
+              }
             },
-            // hiddenFromHistory: false  // Descomentar após regenerar Prisma
-          },
-          data: {
-            // hiddenFromHistory: true  // Descomentar após regenerar Prisma
-          }
-        })
-        count = result.count
-      } catch (updateError) {
-        // Conta quantos seriam ocultados (workaround temporário)
-        const appointments = await prisma.appointment.count({
-          where: {
-            userId,
-            status: {
-              in: ['COMPLETED', 'CANCELED', 'NO_SHOW']
+            {
+              status: {
+                in: ['PENDING', 'CONFIRMED']
+              },
+              startTime: { lte: wallNow }
             }
-          }
-        })
-        count = appointments
-        logger.warning('⚠️ Campo hiddenFromHistory ainda não disponível. Rode: npx prisma generate')
-      }
+          ]
+        },
+        data: {
+          hiddenFromHistory: true
+        }
+      })
       
-      logger.success(`🧹 ${count} agendamento(s) ocultado(s) do histórico do usuário: ${userId} (soft delete simulado)`)
+      logger.success(`🧹 ${result.count} agendamento(s) ocultado(s) do histórico do usuário: ${userId}`)
       return reply.status(200).send({
         success: true,
-        count: count,
-        message: `${count} tratamento(s) removido(s) do histórico (temporário - ative soft delete)`
+        data: { count: result.count },
+        message: `${result.count} tratamento(s) removido(s) do histórico`
       })
     } catch (error) {
       logger.error('Erro ao limpar histórico:', error)

@@ -387,11 +387,12 @@ async function main() {
   
   const config = await prisma.systemConfig.create({
     data: {
-      minCancellationHours: 8,
-      minRescheduleHours: 8,
+      minCancellationHours: 4,
+      minRescheduleHours: 4,
       defaultStartTime: '09:00',
       defaultEndTime: '18:00',
-      slotDuration: 60,
+      slotDuration: 30,
+      maxSimultaneous: 1,
       minimumCommitmentMonths: 3,
       enableEmailNotifications: true,
       enableSmsNotifications: false,

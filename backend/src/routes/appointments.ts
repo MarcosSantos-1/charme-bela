@@ -1,107 +1,134 @@
 import { FastifyInstance } from 'fastify'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { hoursUntilStoredStart, wallClockNowAsStoredUtc } from '../utils/wallClock'
+import { newPaymentHoldExpiration, releaseExpiredPaymentHolds, countActivePaymentHolds, MAX_ACTIVE_PAYMENT_HOLDS_PER_USER, PAYMENT_HOLD_MINUTES } from '../utils/paymentHolds'
+import { assertStartTimeOnSchedule } from '../utils/scheduleValidation'
 import {
   notifyAppointmentConfirmed,
   notifyAppointmentCanceled,
   notifyAppointmentRescheduled,
   notifyAppointmentCompleted,
   notifyAdminNewAppointmentRequest,
-  notifyAdminClientCanceled
+  notifyAdminClientCanceled,
+  createNotification
 } from '../utils/notifications'
 
-// Função auxiliar para verificar e atualizar uso mensal
-async function updateMonthlyUsage(userId: string, appointmentDate: Date) {
-  const month = appointmentDate.getMonth() + 1
-  const year = appointmentDate.getFullYear()
-  
-  // Busca ou cria o registro de uso mensal
-  let monthlyUsage = await prisma.monthlyUsage.findUnique({
-    where: {
-      userId_month_year: { userId, month, year }
-    }
-  })
-  
-  if (!monthlyUsage) {
-    monthlyUsage = await prisma.monthlyUsage.create({
-      data: {
-        userId,
-        month,
-        year,
-        totalTreatments: 1,
-        facialTreatments: 0, // Mantém por compatibilidade, mas não usa mais
-        weeklyUsage: {} // Mantém por compatibilidade, mas não usa mais
-      }
-    })
-  } else {
-    // Atualiza contador
-    await prisma.monthlyUsage.update({
-      where: { id: monthlyUsage.id },
-      data: {
-        totalTreatments: monthlyUsage.totalTreatments + 1
-      }
-    })
+// Lançado dentro da transação quando o slot foi ocupado por outra requisição
+class SlotTakenError extends Error {
+  constructor() {
+    super('Slot ocupado')
+    this.name = 'SlotTakenError'
   }
 }
 
+// Função auxiliar para verificar e atualizar uso mensal.
+// Aceita um client transacional para rodar atomicamente com a criação do agendamento.
+async function updateMonthlyUsage(
+  userId: string,
+  appointmentDate: Date,
+  tx: Prisma.TransactionClient = prisma
+) {
+  const month = appointmentDate.getMonth() + 1
+  const year = appointmentDate.getFullYear()
+  
+  await tx.monthlyUsage.upsert({
+    where: {
+      userId_month_year: { userId, month, year }
+    },
+    create: {
+      userId,
+      month,
+      year,
+      totalTreatments: 1,
+      facialTreatments: 0, // Mantém por compatibilidade, mas não usa mais
+      weeklyUsage: {} // Mantém por compatibilidade, mas não usa mais
+    },
+    update: {
+      totalTreatments: { increment: 1 }
+    }
+  })
+}
+
 export async function appointmentsRoutes(app: FastifyInstance) {
-  // POST - Cancelar agendamentos expirados (chamado periodicamente)
+  // POST - Cancelar agendamentos com pagamento expirado (chamado pelo cron e no wake)
   app.post('/appointments/cancel-expired', async (request, reply) => {
     logger.route('POST', '/appointments/cancel-expired')
     
     try {
-      const now = new Date()
-      
-      // Busca agendamentos expirados
-      // TEMPORARIAMENTE COMENTADO - rode: npx prisma generate
-      const expiredAppointments: any[] = [] // await prisma.appointment.findMany({
-      //   where: {
-      //     origin: 'SINGLE',
-      //     paymentStatus: 'PENDING',
-      //     paymentExpiresAt: {
-      //       lt: now
-      //     },
-      //     status: 'PENDING'
-      //   }
-      // })
-      
-      if (expiredAppointments.length === 0) {
-        return reply.status(200).send({
-          success: true,
-          message: 'Nenhum agendamento expirado',
-          canceled: 0
-        })
-      }
-      
-      // Cancela todos
-      const canceledIds = []
-      for (const apt of expiredAppointments) {
-        await prisma.appointment.update({
-          where: { id: apt.id },
-          data: {
-            status: 'CANCELED',
-            canceledBy: 'system',
-            canceledAt: now,
-            cancelReason: 'Pagamento não realizado (15 min)'
-          }
-        })
-        
-        canceledIds.push(apt.id)
-      }
-      
-      logger.success(`✅ ${expiredAppointments.length} agendamento(s) expirado(s) cancelado(s)`)
+      const canceled = await releaseExpiredPaymentHolds()
       
       return reply.status(200).send({
         success: true,
-        canceled: expiredAppointments.length,
-        appointmentIds: canceledIds
+        canceled,
+        message: canceled === 0
+          ? 'Nenhum agendamento expirado'
+          : `${canceled} agendamento(s) com pagamento expirado cancelado(s)`
       })
     } catch (error) {
       logger.error('Erro ao cancelar expirados:', error)
       return reply.status(500).send({
         success: false,
         error: 'Erro ao cancelar agendamentos expirados'
+      })
+    }
+  })
+  
+  // PUT - Liberar reserva quando o cliente desiste do checkout (cancel_url do Stripe)
+  // Idempotente: só cancela se o agendamento ainda é um hold não pago.
+  app.put('/appointments/:id/release-hold', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    logger.route('PUT', `/appointments/${id}/release-hold`)
+    
+    try {
+      const appointment = await prisma.appointment.findUnique({
+        where: { id },
+        select: { id: true, status: true, paymentStatus: true, paymentExpiresAt: true }
+      })
+      
+      if (!appointment) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Agendamento não encontrado'
+        })
+      }
+      
+      // Só libera holds de checkout online, nunca agendamento já pago/confirmado
+      const isUnpaidHold =
+        appointment.status === 'PENDING' &&
+        appointment.paymentStatus === 'PENDING' &&
+        appointment.paymentExpiresAt !== null
+      
+      if (!isUnpaidHold) {
+        return reply.status(200).send({
+          success: true,
+          released: false,
+          message: 'Agendamento não está mais aguardando pagamento'
+        })
+      }
+      
+      await prisma.appointment.update({
+        where: { id },
+        data: {
+          status: 'CANCELED',
+          canceledBy: 'client',
+          canceledAt: new Date(),
+          cancelReason: 'Pagamento cancelado no checkout'
+        }
+      })
+      
+      logger.success(`🔓 Reserva liberada (checkout cancelado): ${id}`)
+      return reply.status(200).send({
+        success: true,
+        released: true,
+        message: 'Horário liberado'
+      })
+    } catch (error) {
+      logger.error('Erro ao liberar reserva:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao liberar reserva'
       })
     }
   })
@@ -391,8 +418,32 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       // 5. Calcula horário de término
       const appointmentStart = new Date(startTime)
       const appointmentEnd = new Date(appointmentStart.getTime() + service.duration * 60000)
+
+      if (isNaN(appointmentStart.getTime())) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Data/hora de início inválida'
+        })
+      }
+
+      // 5b. Valida se o horário está na grade de funcionamento (server-side)
+      const scheduleCheck = await assertStartTimeOnSchedule(
+        appointmentStart,
+        service.duration,
+        { adminExtended: origin === 'ADMIN_CREATED' }
+      )
+      if (!scheduleCheck.ok) {
+        return reply.status(400).send({
+          success: false,
+          error: scheduleCheck.error
+        })
+      }
       
-      // 6. Detecção real de conflito por interseção de intervalos [início, fim).
+      // 6. Libera holds de pagamento expirados antes de checar conflito
+      // (reservas de checkout abandonadas não devem bloquear o horário)
+      await releaseExpiredPaymentHolds()
+      
+      // Detecção real de conflito por interseção de intervalos [início, fim).
       // A capacidade (maxSimultaneous) define quantos atendimentos podem coexistir
       // no mesmo intervalo. Com capacidade 1 (padrão), qualquer sobreposição bloqueia.
       const conflictConfig = await prisma.systemConfig.findFirst()
@@ -550,52 +601,112 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         logger.info(`💳 Voucher aplicado: ${voucher.description} - Desconto: R$ ${appliedDiscount.toFixed(2)}`)
       }
       
-      // 9. Calcula expiração do pagamento (15min para SINGLE sem voucher)
-      // TEMPORARIAMENTE COMENTADO - rode: npx prisma generate
-      // const paymentExpiresAt = origin === 'SINGLE' 
-      //   ? new Date(Date.now() + 15 * 60 * 1000) // 15 minutos
-      //   : null
+      // 9. Status de pagamento efetivo + hold de checkout online.
+      // SINGLE e VOUCHER com valor restante pagam via Stripe: nascem PENDING com
+      // paymentExpiresAt (hold que reserva o horário até o pagamento confirmar).
+      // Voucher 100% já nasce PAID. Admin ("pagar na clínica") envia paymentStatus
+      // explícito e NUNCA recebe hold.
+      const effectivePaymentStatus = paymentStatus
+        ? (paymentStatus.toUpperCase() as any)
+        : (voucherApplied && finalPrice === 0)
+          ? 'PAID'
+          : (origin === 'SINGLE' || (voucherApplied && finalPrice > 0))
+            ? 'PENDING'
+            : null
       
-      // if (paymentExpiresAt) {
-      //   logger.info(`⏰ Agendamento expira em: ${paymentExpiresAt.toLocaleString('pt-BR')}`)
-      // }
-      
-      // 10. Cria o agendamento (aplicando preço final se houver voucher)
-      const appointment = await prisma.appointment.create({
-        data: {
-          userId,
-          serviceId,
-          startTime: appointmentStart,
-          endTime: appointmentEnd,
-          status: 'PENDING',
-          origin: origin.toUpperCase() as any,
-          voucherId,
-          paymentMethod,
-          // Se tem voucher, usa o preço final calculado, senão usa o paymentAmount fornecido
-          paymentAmount: voucherApplied ? finalPrice : paymentAmount,
-          // Se voucher torna grátis, marca como PAID. Se é parcial, ainda precisa pagar.
-          paymentStatus: paymentStatus ? paymentStatus.toUpperCase() as any : 
-            (voucherApplied && finalPrice === 0 ? 'PAID' : 
-              (origin === 'SINGLE' ? 'PENDING' : null)),
-          // paymentExpiresAt, // Expira em 15min se for SINGLE - TEMPORÁRIO: rode npx prisma generate
-          confirmedByAdmin: false,
-          notes
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true
-            }
-          },
-          service: true
+      const isOnlinePaymentHold =
+        !paymentStatus &&
+        effectivePaymentStatus === 'PENDING' &&
+        (origin === 'SINGLE' || origin === 'VOUCHER')
+
+      if (isOnlinePaymentHold) {
+        const activeHolds = await countActivePaymentHolds(userId)
+        if (activeHolds >= MAX_ACTIVE_PAYMENT_HOLDS_PER_USER) {
+          return reply.status(429).send({
+            success: false,
+            error: `Você já tem ${MAX_ACTIVE_PAYMENT_HOLDS_PER_USER} reservas aguardando pagamento. Conclua ou cancele uma antes de agendar outro horário.`
+          })
         }
-      })
+      }
       
-      // 11. Atualiza uso mensal se for de assinatura
-      if (origin === 'SUBSCRIPTION') {
-        await updateMonthlyUsage(userId, appointmentStart)
+      const paymentExpiresAt = isOnlinePaymentHold ? newPaymentHoldExpiration() : null
+      
+      if (paymentExpiresAt) {
+        logger.info(`⏰ Reserva expira se não pagar até: ${paymentExpiresAt.toISOString()}`)
+      }
+      
+      // 10. Cria o agendamento (aplicando preço final se houver voucher).
+      // A re-checagem de conflito, a criação e o uso mensal rodam em uma transação
+      // Serializable: impede double-booking quando duas requisições disputam o mesmo
+      // slot (a checagem do passo 6 sozinha tem race condition).
+      let appointment
+      try {
+        appointment = await prisma.$transaction(async (tx) => {
+          const overlappingNow = await tx.appointment.count({
+            where: {
+              status: { not: 'CANCELED' },
+              startTime: { lt: appointmentEnd },
+              endTime: { gt: appointmentStart }
+            }
+          })
+          
+          if (overlappingNow >= maxSimultaneous) {
+            throw new SlotTakenError()
+          }
+          
+          const created = await tx.appointment.create({
+            data: {
+              userId,
+              serviceId,
+              startTime: appointmentStart,
+              endTime: appointmentEnd,
+              status: 'PENDING',
+              origin: origin.toUpperCase() as any,
+              voucherId,
+              paymentMethod,
+              // Se tem voucher, usa o preço final calculado, senão usa o paymentAmount fornecido
+              paymentAmount: voucherApplied ? finalPrice : paymentAmount,
+              paymentStatus: effectivePaymentStatus,
+              paymentExpiresAt,
+              confirmedByAdmin: false,
+              notes
+            },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
+              },
+              service: true
+            }
+          })
+          
+          // Atualiza uso mensal se for de assinatura (atômico com a criação)
+          if (origin === 'SUBSCRIPTION') {
+            await updateMonthlyUsage(userId, appointmentStart, tx)
+          }
+          
+          return created
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+      } catch (txError: any) {
+        if (txError instanceof SlotTakenError) {
+          logger.warning(`❌ Conflito de horário em ${startTime} (detectado na transação)`)
+          return reply.status(400).send({
+            success: false,
+            error: 'Já existe um agendamento neste horário'
+          })
+        }
+        // P2034: conflito de serialização (outra transação gravou o mesmo slot primeiro)
+        if (txError?.code === 'P2034') {
+          logger.warning(`❌ Conflito de concorrência em ${startTime}`)
+          return reply.status(409).send({
+            success: false,
+            error: 'Este horário acabou de ser reservado. Por favor, escolha outro horário.'
+          })
+        }
+        throw txError
       }
       
       // 12. NÃO marca voucher como usado ainda - só quando COMPLETAR o tratamento!
@@ -611,6 +722,25 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           serviceName: appointment.service.name,
           startTime: appointmentStart,
           appointmentId: appointment.id
+        })
+      }
+
+      // 13b. Avisa o cliente que o pagamento está pendente (hold com timer)
+      if (isOnlinePaymentHold && paymentExpiresAt) {
+        await createNotification({
+          userId,
+          type: 'SYSTEM_MESSAGE',
+          title: 'Pagamento pendente ⏳',
+          message: `Seu horário de ${appointment.service.name} está reservado por ${PAYMENT_HOLD_MINUTES} minutos. Conclua o pagamento para confirmar — após esse prazo a reserva é cancelada automaticamente.`,
+          icon: 'CARD',
+          priority: 'URGENT',
+          actionUrl: '/cliente/agenda',
+          actionLabel: 'Pagar agora',
+          metadata: {
+            appointmentId: appointment.id,
+            paymentExpiresAt: paymentExpiresAt.toISOString()
+          },
+          expiresAt: paymentExpiresAt
         })
       }
       
@@ -1073,41 +1203,76 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       }
       
       const newEnd = endTime ? new Date(endTime) : new Date(newStart.getTime() + appointment.service.duration * 60000)
-      
-      // Detecção real de conflito por interseção de intervalos (ignorando o próprio agendamento).
-      // Respeita a capacidade configurada (maxSimultaneous).
-      const maxSimultaneous = config?.maxSimultaneous || 1
-      
-      const overlappingCount = await prisma.appointment.count({
-        where: {
-          id: { not: id },
-          status: { not: 'CANCELED' },
-          startTime: { lt: newEnd },
-          endTime: { gt: newStart }
-        }
-      })
-      
-      if (overlappingCount >= maxSimultaneous) {
-        logger.warning(`❌ Conflito ao reagendar ${id} para ${newStart.toISOString()}: ${overlappingCount}/${maxSimultaneous} ocupados`)
+
+      const scheduleCheck = await assertStartTimeOnSchedule(
+        newStart,
+        appointment.service.duration,
+        { adminExtended: appointment.origin === 'ADMIN_CREATED' }
+      )
+      if (!scheduleCheck.ok) {
         return reply.status(400).send({
           success: false,
-          error: 'Já existe um agendamento no novo horário'
+          error: scheduleCheck.error
         })
       }
       
-      const updatedAppointment = await prisma.appointment.update({
-        where: { id },
-        data: {
-          startTime: newStart,
-          endTime: newEnd,
-          status: 'PENDING',  // Volta para pendente
-          confirmedByAdmin: false
-        },
-        include: {
-          user: true,
-          service: true
+      // Libera holds de pagamento expirados antes de checar conflito
+      await releaseExpiredPaymentHolds()
+      
+      // Detecção real de conflito por interseção de intervalos (ignorando o próprio agendamento).
+      // Respeita a capacidade configurada (maxSimultaneous).
+      // Checagem + update em transação Serializable para impedir double-booking
+      // quando duas requisições disputam o mesmo slot.
+      const maxSimultaneous = config?.maxSimultaneous || 1
+      
+      let updatedAppointment
+      try {
+        updatedAppointment = await prisma.$transaction(async (tx) => {
+          const overlappingCount = await tx.appointment.count({
+            where: {
+              id: { not: id },
+              status: { not: 'CANCELED' },
+              startTime: { lt: newEnd },
+              endTime: { gt: newStart }
+            }
+          })
+          
+          if (overlappingCount >= maxSimultaneous) {
+            logger.warning(`❌ Conflito ao reagendar ${id} para ${newStart.toISOString()}: ${overlappingCount}/${maxSimultaneous} ocupados`)
+            throw new SlotTakenError()
+          }
+          
+          return tx.appointment.update({
+            where: { id },
+            data: {
+              startTime: newStart,
+              endTime: newEnd,
+              status: 'PENDING',  // Volta para pendente
+              confirmedByAdmin: false
+            },
+            include: {
+              user: true,
+              service: true
+            }
+          })
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+      } catch (txError: any) {
+        if (txError instanceof SlotTakenError) {
+          return reply.status(400).send({
+            success: false,
+            error: 'Já existe um agendamento no novo horário'
+          })
         }
-      })
+        // P2034: conflito de serialização (outra transação gravou o mesmo slot primeiro)
+        if (txError?.code === 'P2034') {
+          logger.warning(`❌ Conflito de concorrência ao reagendar ${id}`)
+          return reply.status(409).send({
+            success: false,
+            error: 'Este horário acabou de ser reservado. Por favor, escolha outro horário.'
+          })
+        }
+        throw txError
+      }
       
       // Notifica cliente sobre reagendamento
       await notifyAppointmentRescheduled(updatedAppointment.userId, {

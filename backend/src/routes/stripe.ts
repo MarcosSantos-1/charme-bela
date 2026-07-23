@@ -1,8 +1,10 @@
 import { FastifyInstance } from 'fastify'
 import Stripe from 'stripe'
+import { Prisma } from '@prisma/client'
 import { stripe, STRIPE_CONFIG, PLAN_TIERS, reaisToCents } from '../lib/stripe'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
+import { stripeCheckoutExpiresAtUnix } from '../utils/paymentHolds'
 import {
   notifyPaymentSucceeded,
   notifyPaymentFailed,
@@ -288,6 +290,29 @@ export async function stripeRoutes(app: FastifyInstance) {
         })
       }
       
+      // Se há agendamento vinculado, ele precisa ser um hold ativo (reserva ainda
+      // aguardando pagamento). Evita criar checkout para reserva expirada/cancelada.
+      if (appointmentId) {
+        const appointment = await prisma.appointment.findUnique({
+          where: { id: appointmentId },
+          select: { status: true, paymentStatus: true }
+        })
+        
+        if (!appointment) {
+          return reply.status(404).send({
+            success: false,
+            error: 'Agendamento não encontrado'
+          })
+        }
+        
+        if (appointment.status !== 'PENDING' || appointment.paymentStatus !== 'PENDING') {
+          return reply.status(409).send({
+            success: false,
+            error: 'Esta reserva não está mais aguardando pagamento. Faça um novo agendamento.'
+          })
+        }
+      }
+      
       // Cria ou busca customer no Stripe
       let stripeCustomerId = user.stripeCustomerId
       
@@ -354,7 +379,13 @@ export async function stripeRoutes(app: FastifyInstance) {
         ],
         mode: 'payment', // Pagamento ÚNICO (não recorrente)
         success_url: `${STRIPE_CONFIG.successUrl}&appointmentId=${appointmentId || ''}`,
-        cancel_url: STRIPE_CONFIG.cancelUrl,
+        // appointmentId no cancel_url: o frontend libera a reserva imediatamente
+        // quando o cliente desiste do checkout
+        cancel_url: `${STRIPE_CONFIG.cancelUrl}&appointmentId=${appointmentId || ''}`,
+        
+        // Stripe Checkout exige expires_at ≥ 30 min. O hold interno é mais curto
+        // (5 min); se pagar depois do hold, o webhook revive-ou-reembolsa.
+        expires_at: stripeCheckoutExpiresAtUnix(),
         
         // Português
         locale: 'pt-BR',
@@ -780,6 +811,7 @@ export async function stripeRoutes(app: FastifyInstance) {
     logger.route('POST', '/stripe/webhook')
     
     const sig = request.headers['stripe-signature'] as string
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
     
     if (!sig) {
       return reply.status(400).send({ error: 'Missing stripe-signature header' })
@@ -788,26 +820,26 @@ export async function stripeRoutes(app: FastifyInstance) {
     let event: Stripe.Event
     
     try {
-      // Em desenvolvimento, o Stripe CLI envia o body já parseado
-      // então vamos usar o body diretamente sem validação de assinatura
-      if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      // Body bruto (Buffer) capturado pelo content-type parser do server.ts.
+      // NÃO usar JSON.stringify(request.body) — a assinatura é do payload original.
+      const rawBody = (request as any).rawBody as Buffer | string | undefined
+      
+      if (webhookSecret) {
+        if (!rawBody) {
+          logger.error('Webhook sem rawBody — configure o content-type parser')
+          return reply.status(500).send({ error: 'Webhook misconfigured (raw body missing)' })
+        }
+        event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret)
+      } else if (process.env.NODE_ENV !== 'production' && !process.env.FLY_APP_NAME) {
+        // Só em dev local sem secret: aceita o body parseado (Stripe CLI / testes)
+        logger.warning('⚠️ STRIPE_WEBHOOK_SECRET ausente — aceitando webhook sem validação (dev)')
         event = request.body as Stripe.Event
       } else {
-        // Em produção, valida a assinatura
-        // Reconstrói o body como string para validação
-        const rawBody = JSON.stringify(request.body)
-        
-        event = stripe.webhooks.constructEvent(
-          rawBody,
-          sig,
-          process.env.STRIPE_WEBHOOK_SECRET
-        )
+        return reply.status(500).send({ error: 'STRIPE_WEBHOOK_SECRET não configurado' })
       }
     } catch (err: any) {
       logger.error(`Webhook signature verification failed: ${err.message}`)
-      // Em desenvolvimento, aceita sem validação
-      logger.warning('⚠️ Aceitando webhook sem validação (desenvolvimento)')
-      event = request.body as Stripe.Event
+      return reply.status(400).send({ error: `Webhook Error: ${err.message}` })
     }
     
     logger.info(`🎣 Webhook recebido: ${event.type}`)
@@ -822,6 +854,14 @@ export async function stripeRoutes(app: FastifyInstance) {
             await handleCheckoutCompleted(session)
           } else if (session.mode === 'payment') {
             await handlePaymentCompleted(session)
+          }
+          break
+        }
+        
+        case 'checkout.session.expired': {
+          const session = event.data.object as Stripe.Checkout.Session
+          if (session.mode === 'payment') {
+            await handlePaymentSessionExpired(session)
           }
           break
         }
@@ -885,20 +925,12 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     return
   }
   
-  // Busca configurações para pegar fidelidade mínima
-  const config = await prisma.systemConfig.findFirst()
-  const commitmentMonths = config?.minimumCommitmentMonths || 3
-  
-  // Calcula data de compromisso mínimo
-  const minimumCommitmentEnd = new Date()
-  minimumCommitmentEnd.setMonth(minimumCommitmentEnd.getMonth() + commitmentMonths)
-  
   // Busca plano
   const plan = await prisma.subscriptionPlan.findUnique({
     where: { id: planId }
   })
   
-  // Cria ou atualiza assinatura no banco
+  // Cria ou atualiza assinatura no banco (sem fidelidade / compromisso mínimo)
   await prisma.subscription.upsert({
     where: { userId },
     update: {
@@ -906,7 +938,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       stripeSubscriptionId,
       status: 'ACTIVE',
       startDate: new Date(),
-      minimumCommitmentEnd,
+      minimumCommitmentEnd: null,
       endDate: null,
       canceledAt: null,
       cancelReason: null
@@ -916,8 +948,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       planId,
       stripeSubscriptionId,
       status: 'ACTIVE',
-      startDate: new Date(),
-      minimumCommitmentEnd
+      startDate: new Date()
     }
   })
   
@@ -1099,6 +1130,32 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   }
 }
 
+// Sessão de checkout expirou sem pagamento → libera a reserva (se ainda for hold)
+async function handlePaymentSessionExpired(session: Stripe.Checkout.Session) {
+  const appointmentId = session.metadata?.appointmentId
+  if (!appointmentId) return
+  
+  logger.info(`⏰ Checkout expirado sem pagamento: ${session.id} (agendamento ${appointmentId})`)
+  
+  const released = await prisma.appointment.updateMany({
+    where: {
+      id: appointmentId,
+      status: 'PENDING',
+      paymentStatus: 'PENDING'
+    },
+    data: {
+      status: 'CANCELED',
+      canceledBy: 'system',
+      canceledAt: new Date(),
+      cancelReason: 'Checkout expirado sem pagamento'
+    }
+  })
+  
+  if (released.count > 0) {
+    logger.success(`🔓 Reserva ${appointmentId} liberada (checkout expirado)`)
+  }
+}
+
 async function handlePaymentCompleted(session: Stripe.Checkout.Session) {
   logger.info('💳 Pagamento único completado:', session.id)
   
@@ -1107,18 +1164,137 @@ async function handlePaymentCompleted(session: Stripe.Checkout.Session) {
   const serviceName = session.metadata?.serviceName
   
   if (appointmentId) {
-    // Atualiza status do agendamento para PAID e LIMPA EXPIRAÇÃO
-    await prisma.appointment.update({
+    const appointment = await prisma.appointment.findUnique({
       where: { id: appointmentId },
-      data: {
-        paymentStatus: 'PAID',
-        paymentMethod: 'credit_card',
-        paymentAmount: (session.amount_total || 0) / 100,
-        // paymentExpiresAt: null, // Remove expiração (pagamento confirmado!) - temporariamente comentado até regenerar Prisma
-      }
+      include: { service: { select: { name: true } } }
     })
     
-    logger.success(`✅ Agendamento ${appointmentId} pago e confirmado`)
+    if (!appointment) {
+      logger.error(`❌ Webhook de pagamento para agendamento inexistente: ${appointmentId}`)
+      return
+    }
+    
+    // Idempotência: o Stripe pode reenviar o mesmo evento
+    if (appointment.paymentStatus === 'PAID') {
+      logger.info(`ℹ️ Agendamento ${appointmentId} já estava pago (webhook repetido)`)
+      return
+    }
+    
+    const paidAmount = (session.amount_total || 0) / 100
+    
+    if (appointment.status !== 'CANCELED') {
+      // Caminho normal: reserva ainda ativa → confirma pagamento e remove o hold
+      await prisma.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          paymentStatus: 'PAID',
+          paymentMethod: 'credit_card',
+          paymentAmount: paidAmount,
+          paymentExpiresAt: null
+        }
+      })
+      
+      logger.success(`✅ Agendamento ${appointmentId} pago e confirmado`)
+    } else {
+      // A reserva foi cancelada (hold expirou) antes do pagamento confirmar.
+      // Tenta reviver o agendamento se o horário AINDA estiver livre;
+      // se outro cliente ocupou o horário nesse meio-tempo, reembolsa.
+      const config = await prisma.systemConfig.findFirst()
+      const maxSimultaneous = config?.maxSimultaneous || 1
+      
+      let revived = false
+      try {
+        await prisma.$transaction(async (tx) => {
+          const overlapping = await tx.appointment.count({
+            where: {
+              id: { not: appointmentId },
+              status: { not: 'CANCELED' },
+              startTime: { lt: appointment.endTime },
+              endTime: { gt: appointment.startTime }
+            }
+          })
+          
+          if (overlapping >= maxSimultaneous) {
+            throw new Error('SLOT_TAKEN')
+          }
+          
+          await tx.appointment.update({
+            where: { id: appointmentId },
+            data: {
+              status: 'PENDING',
+              paymentStatus: 'PAID',
+              paymentMethod: 'credit_card',
+              paymentAmount: paidAmount,
+              paymentExpiresAt: null,
+              canceledBy: null,
+              canceledAt: null,
+              cancelReason: null
+            }
+          })
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+        
+        revived = true
+        logger.success(`♻️ Agendamento ${appointmentId} revivido: pagamento chegou após expirar, horário ainda livre`)
+      } catch {
+        revived = false
+      }
+      
+      if (!revived) {
+        // Horário ocupado por outro cliente → reembolso automático
+        logger.warning(`⚠️ Pagamento de ${appointmentId} chegou, mas o horário já foi ocupado. Reembolsando...`)
+        
+        try {
+          const paymentIntentId = session.payment_intent as string
+          if (!paymentIntentId) throw new Error('Sessão sem payment_intent')
+          
+          await stripe.refunds.create({
+            payment_intent: paymentIntentId,
+            reason: 'requested_by_customer',
+            metadata: {
+              appointmentId,
+              motivo: 'Horário ocupado antes da confirmação do pagamento'
+            }
+          })
+          
+          await prisma.appointment.update({
+            where: { id: appointmentId },
+            data: { paymentStatus: 'REFUNDED', paymentExpiresAt: null }
+          })
+          
+          if (userId) {
+            await createNotification({
+              userId,
+              type: 'PAYMENT_REFUNDED',
+              title: 'Horário Indisponível - Reembolso Automático',
+              message: `O horário do seu agendamento de ${serviceName || appointment.service.name} foi ocupado antes da confirmação do pagamento. Seu pagamento de R$ ${paidAmount.toFixed(2).replace('.', ',')} foi reembolsado automaticamente (estorno em até 10 dias úteis). Por favor, escolha um novo horário.`,
+              icon: 'ALERT',
+              priority: 'URGENT',
+              actionUrl: '/cliente/servicos',
+              actionLabel: 'Agendar Novamente'
+            })
+          }
+          
+          logger.success(`💸 Reembolso automático processado para ${appointmentId}`)
+        } catch (refundError: any) {
+          // Reembolso falhou: alerta o admin para resolver manualmente
+          logger.error(`❌ Falha no reembolso automático de ${appointmentId}:`, refundError.message)
+          
+          await createNotification({
+            userId: null, // Admin
+            type: 'SYSTEM_MESSAGE',
+            title: '⚠️ Reembolso Manual Necessário',
+            message: `Pagamento recebido para agendamento ${appointmentId} (${serviceName || appointment.service.name}), mas o horário já estava ocupado e o reembolso automático FALHOU. Faça o reembolso manualmente no Stripe Dashboard.`,
+            icon: 'ALERT',
+            priority: 'URGENT',
+            actionUrl: '/admin/agendamentos',
+            actionLabel: 'Ver Agendamentos',
+            metadata: { appointmentId, sessionId: session.id }
+          })
+        }
+        
+        return // Não envia notificação de "pagamento aprovado"
+      }
+    }
     
     // Notifica pagamento bem-sucedido
     if (userId) {

@@ -298,7 +298,7 @@ export default function PlanosPage() {
         {/* Info Footer */}
         <div className="mt-16 text-center space-y-4">
           <p className="text-sm text-gray-600">
-            🎁 <strong>Sem taxas ocultas.</strong> Contrato mínimo de 3 meses • Cancele online quando quiser
+            🎁 <strong>Sem taxas ocultas.</strong> Cancele online quando quiser — você usa o plano até o fim do período já pago.
           </p>
           
           <p className="text-xs text-gray-500">

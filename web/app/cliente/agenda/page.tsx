@@ -3,6 +3,7 @@
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { ClientLayout } from '@/components/ClientLayout'
 import { BookingModal } from '@/components/BookingModal'
+import { PaymentHoldBanner, isOnlinePaymentHold } from '@/components/PaymentHoldBanner'
 import { Calendar as CalendarIcon, Clock, MapPin, User, Phone, X, AlertCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
@@ -357,12 +358,15 @@ export default function AgendaPage() {
                   
                   // Identificar se é agendamento do admin (pagar na clínica)
                   const isAdminPending = apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
+                  const needsOnlinePayment = isOnlinePaymentHold(apt)
                   
                   return (
                     <div
                       key={apt.id}
                       className={`rounded-xl p-4 border-2 ${
-                        isAdminPending 
+                        needsOnlinePayment
+                          ? 'bg-orange-50 border-orange-400'
+                          : isAdminPending 
                           ? 'bg-yellow-50 border-yellow-400' 
                           : 'bg-white border-gray-200'
                       }`}
@@ -385,18 +389,33 @@ export default function AgendaPage() {
                                 💰 Pagar na Clínica • Agendado pela Esteticista
                               </span>
                             )}
+                            {needsOnlinePayment && (
+                              <span className="text-xs px-2 py-0.5 bg-orange-200 text-orange-900 rounded-full font-medium">
+                                Aguardando pagamento
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
+
+                      {needsOnlinePayment && (
+                        <PaymentHoldBanner appointment={apt} onExpired={() => refetch()} />
+                      )}
                       
                       {/* Indicador do status */}
                       <div className="mb-3">
                         <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                          apt.status === 'CONFIRMED'
+                          needsOnlinePayment
+                            ? 'bg-orange-100 text-orange-800'
+                            : apt.status === 'CONFIRMED'
                             ? 'bg-green-100 text-green-700'
                             : 'bg-blue-100 text-blue-700'
                         }`}>
-                          {apt.status === 'CONFIRMED' ? 'Confirmado' : 'Agendado'}
+                          {needsOnlinePayment
+                            ? 'Pagamento pendente'
+                            : apt.status === 'CONFIRMED'
+                            ? 'Confirmado'
+                            : 'Agendado'}
                         </span>
                       </div>
 
@@ -469,21 +488,25 @@ export default function AgendaPage() {
                   const aptTime = `${aptDate.getUTCHours().toString().padStart(2, '0')}:${aptDate.getUTCMinutes().toString().padStart(2, '0')}`
                   const isAdminPending = apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
                   const canDoActions = canReschedule(apt.startTime)
+                  const needsOnlinePayment = isOnlinePaymentHold(apt)
                   
                   return (
                     <div
                       key={apt.id}
                       onClick={() => {
+                        if (needsOnlinePayment) return
                         if (canDoActions) {
                           setSelectedActionAppointment(apt)
                           setShowActionsModal(true)
                         }
                       }}
                       className={`rounded-xl p-4 border-2 hover:shadow-md transition-all ${
-                        isAdminPending 
+                        needsOnlinePayment
+                          ? 'bg-orange-50 border-orange-400'
+                          : isAdminPending 
                           ? 'bg-yellow-50 border-yellow-400' 
                           : 'bg-white border-gray-200'
-                      } ${canDoActions ? 'cursor-pointer hover:border-pink-400' : 'cursor-default'}`}
+                      } ${canDoActions && !needsOnlinePayment ? 'cursor-pointer hover:border-pink-400' : 'cursor-default'}`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-3">
@@ -512,24 +535,40 @@ export default function AgendaPage() {
                                   💰 Pagar na Clínica • Agendado pela Esteticista
                                 </span>
                               )}
+                              {needsOnlinePayment && (
+                                <span className="text-xs px-2 py-0.5 bg-orange-200 text-orange-900 rounded-full font-medium">
+                                  Aguardando pagamento
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-2">
                           <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            apt.status === 'CONFIRMED'
+                            needsOnlinePayment
+                              ? 'bg-orange-100 text-orange-800'
+                              : apt.status === 'CONFIRMED'
                               ? 'bg-green-100 text-green-700'
                               : 'bg-blue-100 text-blue-700'
                           }`}>
-                            {apt.status === 'CONFIRMED' ? 'Confirmado' : 'Agendado'}
+                            {needsOnlinePayment
+                              ? 'Pagar'
+                              : apt.status === 'CONFIRMED'
+                              ? 'Confirmado'
+                              : 'Agendado'}
                           </span>
-                          {canDoActions && (
+                          {canDoActions && !needsOnlinePayment && (
                             <span className="text-xs text-pink-600 font-medium">
                               Clique para gerenciar
                             </span>
                           )}
                         </div>
                       </div>
+                      {needsOnlinePayment && (
+                        <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                          <PaymentHoldBanner appointment={apt} onExpired={() => refetch()} compact />
+                        </div>
+                      )}
                     </div>
                   )
                 })}

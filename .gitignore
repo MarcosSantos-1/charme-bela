@@ -52,4 +52,5 @@ backend/node_modules/
 
 # Docs locais (notas operacionais / runbooks)
 docs/
+AGENTS.md
 

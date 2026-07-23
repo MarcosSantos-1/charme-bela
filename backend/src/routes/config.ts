@@ -22,7 +22,7 @@ export async function configRoutes(app: FastifyInstance) {
             defaultEndTime: '18:00',
             slotDuration: 30,
             maxSimultaneous: 1,
-            minimumCommitmentMonths: 3,
+            minimumCommitmentMonths: 0,
             enableEmailNotifications: true,
             enableSmsNotifications: false,
             maintenanceMode: false
@@ -120,7 +120,7 @@ export async function configRoutes(app: FastifyInstance) {
             defaultEndTime: defaultEndTime || '18:00',
             slotDuration: slotDuration || 30,
             maxSimultaneous: maxSimultaneous || 1,
-            minimumCommitmentMonths: minimumCommitmentMonths || 3,
+            minimumCommitmentMonths: minimumCommitmentMonths ?? 0,
             enableEmailNotifications: enableEmailNotifications ?? true,
             enableSmsNotifications: enableSmsNotifications ?? false,
             maintenanceMode: maintenanceMode ?? false,

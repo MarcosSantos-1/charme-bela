@@ -108,8 +108,8 @@ model Subscription {
   // Status e datas
   status                SubscriptionStatus  @default(ACTIVE)
   startDate             DateTime            @default(now())
-  endDate               DateTime?           // Data de cancelamento agendado
-  minimumCommitmentEnd  DateTime?           // Data mínima de compromisso (3 meses)
+  endDate               DateTime?           // Fim do acesso (ex.: cancel_at_period_end)
+  minimumCommitmentEnd  DateTime?           // LEGADO — fidelidade removida; não usar
   
   // Controle
   canceledAt            DateTime?
@@ -172,7 +172,7 @@ model Appointment {
   paymentStatus   PaymentStatus?    // Null se for de assinatura/voucher
   paymentMethod   String?           // "pix", "credit_card", "debit_card"
   paymentAmount   Float?
-  paymentExpiresAt DateTime?        // Expira em 15min se não pagar (SINGLE)
+  paymentExpiresAt DateTime?        // Hold de checkout online (expira em N min se não pagar)
   
   // Voucher (se aplicável)
   voucherId       String?
@@ -339,7 +339,7 @@ model SystemConfig {
   maxSimultaneous             Int      @default(1)  // Capacidade: quantos atendimentos podem se sobrepor no mesmo intervalo
   
   // Regras de assinatura
-  minimumCommitmentMonths     Int      @default(3)  // Fidelidade mínima
+  minimumCommitmentMonths     Int      @default(0)  // LEGADO — fidelidade removida; manter 0
   
   // Notificações
   enableEmailNotifications    Boolean  @default(true)

@@ -118,6 +118,7 @@ async function cancelExpiredAppointments() {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(process.env.CRON_SECRET ? { 'X-Cron-Secret': process.env.CRON_SECRET } : {}),
     }
   })
 
@@ -228,6 +229,7 @@ async function autoCompletePreviousDayAppointments() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(process.env.CRON_SECRET ? { 'X-Cron-Secret': process.env.CRON_SECRET } : {}),
       }
     })
 

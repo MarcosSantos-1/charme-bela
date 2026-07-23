@@ -66,18 +66,11 @@ export default function PlanosAdminPage() {
 
     setActivating(true)
     try {
-      // Criar assinatura
-      const now = new Date()
-      const oneYear = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
-      const threeMonths = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000)
-
       await api.createSubscription({
         userId: selectedUser.id,
         planId: selectedPlan,
         status: 'ACTIVE',
-        startDate: now.toISOString(),
-        endDate: oneYear.toISOString(),
-        minimumCommitmentEnd: threeMonths.toISOString()
+        startDate: new Date().toISOString()
       })
 
       toast.success('Plano ativado com sucesso!')
@@ -256,9 +249,7 @@ export default function PlanosAdminPage() {
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
               <p className="text-xs text-blue-800">
                 <Calendar className="w-3 h-3 inline mr-1" />
-                <strong>Duração:</strong> 1 ano (365 dias)
-                <br />
-                <strong>Fidelidade:</strong> 3 meses
+                A cliente poderá cancelar a qualquer momento e continua usando o plano até o fim do período já pago.
               </p>
             </div>
 

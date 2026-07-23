@@ -74,6 +74,7 @@ export interface Appointment {
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
   paymentMethod?: string
   paymentAmount?: number
+  paymentExpiresAt?: string | null
   confirmedByAdmin: boolean
   canceledBy?: string
   canceledAt?: string

@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
+import { releaseExpiredPaymentHolds } from '../utils/paymentHolds'
 
 // ============================================================================
 // Helpers de horário (slots dinâmicos)
@@ -224,6 +225,10 @@ export async function scheduleRoutes(app: FastifyInstance) {
       logger.debug(`Grade ${slotDuration}min, serviço ${serviceDuration}min → candidatos: ${candidateSlots.join(', ')}`)
       
       // 6. Busca agendamentos do dia (mesmo referencial UTC dos rótulos de slot)
+      // Antes, libera holds de pagamento expirados para não mostrar como ocupado
+      // um horário de checkout abandonado.
+      await releaseExpiredPaymentHolds()
+      
       const startOfDay = new Date(date + 'T00:00:00.000Z')
       const endOfDay = new Date(date + 'T23:59:59.999Z')
       
@@ -416,7 +421,9 @@ export async function scheduleRoutes(app: FastifyInstance) {
         logger.debug(`✅ Slots após filtro de hoje: ${candidateSlots.length} disponíveis`)
       }
       
-      // 5. Buscar agendamentos do dia
+      // 5. Buscar agendamentos do dia (liberando antes os holds de pagamento expirados)
+      await releaseExpiredPaymentHolds()
+      
       const startOfDay = new Date(date + 'T00:00:00.000Z')
       const endOfDay = new Date(date + 'T23:59:59.999Z')
       

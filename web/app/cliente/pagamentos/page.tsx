@@ -26,6 +26,7 @@ import {
   getPaymentMethods, 
   getPaymentHistory, 
   createCustomerPortalSession,
+  releaseAppointmentHold,
   PaymentMethod,
   PaymentHistory
 } from '@/lib/api'
@@ -35,14 +36,20 @@ function PaymentAlerts() {
   const searchParams = useSearchParams()
   const success = searchParams.get('success')
   const canceled = searchParams.get('canceled')
+  const appointmentId = searchParams.get('appointmentId')
 
   useEffect(() => {
     if (success === 'true') {
       toast.success('Pagamento confirmado com sucesso! 🎉', { duration: 5000 })
     } else if (canceled === 'true') {
-      toast.error('Pagamento cancelado. Nenhuma cobrança foi feita.', { duration: 5000 })
+      // Libera imediatamente o horário que estava reservado para este checkout.
+      // Se a chamada falhar, sem problema: o hold expira sozinho no backend.
+      if (appointmentId) {
+        releaseAppointmentHold(appointmentId).catch(() => {})
+      }
+      toast.error('Pagamento cancelado. O horário reservado foi liberado.', { duration: 5000 })
     }
-  }, [success, canceled])
+  }, [success, canceled, appointmentId])
 
   return (
     <>
@@ -67,7 +74,7 @@ function PaymentAlerts() {
             <div>
               <h3 className="font-semibold text-orange-900 mb-1">Pagamento Cancelado</h3>
               <p className="text-sm text-orange-800">
-                Você cancelou o processo de pagamento. Nenhuma cobrança foi realizada.
+                Você cancelou o processo de pagamento. Nenhuma cobrança foi realizada e o horário reservado foi liberado.
               </p>
             </div>
           </div>

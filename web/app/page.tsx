@@ -460,7 +460,7 @@ export default function LandingPage() {
               <ul className="space-y-2 mb-6">
                 {[
                   'Sem taxa de adesão',
-                  'Cancele quando quiser após 3 meses',
+                  'Cancele quando quiser',
                   'Agende online 24/7',
                   'Tratamentos exclusivos para assinantes'
                 ].map((item, index) => (
@@ -636,7 +636,7 @@ export default function LandingPage() {
 
           <div className="text-center mt-12">
             <p className="text-sm text-gray-600">
-              🎁 <strong>Sem taxas ocultas.</strong> Contrato mínimo de 3 meses • Cancele online quando quiser
+              🎁 <strong>Sem taxas ocultas.</strong> Cancele online quando quiser — você usa o plano até o fim do período já pago.
             </p>
           </div>
         </div>

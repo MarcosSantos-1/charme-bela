@@ -62,26 +62,8 @@ export default function PlanoPage() {
     }
   }
   
-  // Verificar se pode cancelar
-  // ⚠️ TEMPORÁRIO: Sempre pode cancelar (fidelidade desabilitada para testes)
-  const canCancelPlan = () => {
-    return true // Sempre pode cancelar agora
-    // TODO: Reativar verificação de fidelidade para produção
-    // if (!subscription?.minimumCommitmentEnd) return true
-    // return new Date() >= new Date(subscription.minimumCommitmentEnd)
-  }
+  // Cancelamento livre: cliente usa o plano até o fim do período já pago
   
-  // Calcular quando poderá cancelar
-  const getMonthsUntilCancel = () => {
-    if (!subscription?.minimumCommitmentEnd) return 0
-    const now = new Date()
-    const end = new Date(subscription.minimumCommitmentEnd)
-    if (now >= end) return 0
-    
-    const months = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24 * 30))
-    return months
-  }
-
   const handleUpgrade = async (planId: string) => {
     if (!user) return
     
@@ -359,13 +341,8 @@ export default function PlanoPage() {
                 <div>
                   <h3 className="font-semibold text-gray-900">Cancelar assinatura</h3>
                   <p className="text-sm text-gray-600 mt-1">
-                    Você perderá acesso aos benefícios do seu plano.
+                    Você pode cancelar a qualquer momento. Continua usando o plano até o fim do período já pago — sem novas cobranças.
                   </p>
-                  {subscription.minimumCommitmentEnd && (
-                    <p className="text-xs text-red-600 mt-2">
-                      ⚠️ Compromisso mínimo até: {new Date(subscription.minimumCommitmentEnd).toLocaleDateString('pt-BR')}
-                    </p>
-                  )}
                 </div>
               </div>
               
@@ -384,82 +361,41 @@ export default function PlanoPage() {
         {showCancelModal && subscription && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
             <div className="bg-white w-full md:max-w-lg md:rounded-2xl rounded-t-2xl p-6">
-              {canCancelPlan() ? (
-                /* Pode cancelar */
-                <>
-                  <div className="text-center mb-6">
-                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <AlertCircle className="w-8 h-8 text-red-600" />
-                    </div>
-                    <h2 className="text-xl font-bold text-gray-900 mb-2">Cancelar Assinatura?</h2>
-                    <p className="text-gray-600 mb-4">
-                      Você perderá acesso aos {subscription.plan.services.length} tratamentos inclusos no plano {subscription.plan.name}.
-                    </p>
-                    
-                    {/* Info sobre acesso restante */}
-                    <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded text-left">
-                      <p className="text-sm text-blue-900">
-                        <strong>📅 Importante:</strong> Você ainda poderá usar seu plano até <strong>{getNextBillingDate()}</strong> (fim do período já pago).
-                      </p>
-                      <p className="text-xs text-blue-700 mt-2">
-                        Após essa data, seu plano será encerrado e você voltará ao status "sem plano".
-                      </p>
-                    </div>
-                  </div>
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-8 h-8 text-red-600" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900 mb-2">Cancelar Assinatura?</h2>
+                <p className="text-gray-600 mb-4">
+                  Você deixa de renovar o plano {subscription.plan.name}. Os {subscription.plan.services.length} tratamentos inclusos ficam disponíveis até o fim do período já pago.
+                </p>
+                
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded text-left">
+                  <p className="text-sm text-blue-900">
+                    <strong>📅 Importante:</strong> Você ainda poderá usar seu plano até <strong>{getNextBillingDate()}</strong> (fim do período já pago).
+                  </p>
+                  <p className="text-xs text-blue-700 mt-2">
+                    Depois disso não haverá novas cobranças e o plano será encerrado.
+                  </p>
+                </div>
+              </div>
 
-                  <div className="space-y-3">
-                    <Button
-                      variant="outline"
-                      className="w-full text-red-600 border-red-300 hover:bg-red-50"
-                      onClick={handleCancelSubscription}
-                    >
-                      Sim, cancelar plano
-                    </Button>
-                    <Button
-                      variant="primary"
-                      className="w-full"
-                      onClick={() => setShowCancelModal(false)}
-                    >
-                      Manter meu plano
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                /* NÃO pode cancelar - compromisso mínimo não cumprido */
-                <>
-                  <div className="text-center mb-6">
-                    <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <AlertCircle className="w-8 h-8 text-orange-600" />
-                    </div>
-                    <h2 className="text-xl font-bold text-gray-900 mb-2">Não é Possível Cancelar</h2>
-                    <p className="text-gray-600 mb-4">
-                      Você ainda está no período de compromisso mínimo de 3 meses do Charme & Bela Club.
-                    </p>
-                    
-                    <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded text-left">
-                      <p className="text-sm text-orange-900">
-                        <strong>📅 Compromisso até:</strong><br />
-                        {subscription.minimumCommitmentEnd && new Date(subscription.minimumCommitmentEnd).toLocaleDateString('pt-BR', { 
-                          day: '2-digit', 
-                          month: 'long', 
-                          year: 'numeric' 
-                        })}
-                      </p>
-                      <p className="text-xs text-orange-700 mt-2">
-                        Faltam aproximadamente <strong>{getMonthsUntilCancel()} mês(es)</strong> para você poder cancelar.
-                      </p>
-                    </div>
-                  </div>
-
-                  <Button
-                    variant="primary"
-                    className="w-full"
-                    onClick={() => setShowCancelModal(false)}
-                  >
-                    Entendi
-                  </Button>
-                </>
-              )}
+              <div className="space-y-3">
+                <Button
+                  variant="outline"
+                  className="w-full text-red-600 border-red-300 hover:bg-red-50"
+                  onClick={handleCancelSubscription}
+                >
+                  Sim, cancelar plano
+                </Button>
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  onClick={() => setShowCancelModal(false)}
+                >
+                  Manter meu plano
+                </Button>
+              </div>
             </div>
           </div>
         )}

@@ -40,6 +40,7 @@ export interface Appointment {
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
   paymentMethod?: string
   paymentAmount?: number
+  paymentExpiresAt?: string | null
   confirmedByAdmin: boolean
   canceledBy?: string
   canceledAt?: string
@@ -138,6 +139,17 @@ async function apiRequest<T>(
     const headers: Record<string, string> = { ...options.headers as Record<string, string> }
     if (options.body) {
       headers['Content-Type'] = 'application/json'
+    }
+
+    // Anexa Firebase ID token quando houver sessão (auth do backend)
+    try {
+      const { auth } = await import('./firebase')
+      const token = await auth.currentUser?.getIdToken()
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+    } catch {
+      // segue sem token (rotas públicas / SSR)
     }
     
     const response = await fetch(fullUrl, {
@@ -525,6 +537,14 @@ export async function cancelAppointment(
   return apiRequest(`/appointments/${id}/cancel`, {
     method: 'PUT',
     body: JSON.stringify(data || { canceledBy: 'admin' }),
+  })
+}
+
+// Liberar reserva quando o cliente desiste do checkout do Stripe
+// (idempotente: só cancela se ainda estiver aguardando pagamento)
+export async function releaseAppointmentHold(id: string): Promise<any> {
+  return apiRequest(`/appointments/${id}/release-hold`, {
+    method: 'PUT',
   })
 }
 

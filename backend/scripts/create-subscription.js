@@ -37,8 +37,7 @@ async function createSubscription() {
           planId: goldPlan.id,
           status: 'ACTIVE',
           startDate: new Date(),
-          endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 ano
-          minimumCommitmentEnd: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) // 3 meses
+          endDate: null,
         }
       })
       

@@ -151,12 +151,6 @@ export default function ClientePage() {
                   Restam: {remainingTreatments} tratamentos
             </div>
           </div>
-
-              {subscription.minimumCommitmentEnd && new Date(subscription.minimumCommitmentEnd) > new Date() && (
-                <div className="text-xs text-pink-200 mt-3">
-                  Compromisso até: {new Date(subscription.minimumCommitmentEnd).toLocaleDateString('pt-BR')}
-            </div>
-          )} 
         </div>
           ) : (
             /* Sem assinatura */

@@ -2,6 +2,20 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 
+/** Fim do ciclo já pago a partir do dia de aniversário da assinatura (fallback sem Stripe). */
+function computeAccessUntilFromStartDate(startDate: Date, now: Date = new Date()): Date {
+  const dayOfMonth = startDate.getDate()
+  const nextBillingDate = new Date(now)
+  nextBillingDate.setDate(dayOfMonth)
+  if (now.getDate() >= dayOfMonth) {
+    nextBillingDate.setMonth(nextBillingDate.getMonth() + 1)
+  }
+  const accessUntil = new Date(nextBillingDate)
+  accessUntil.setDate(accessUntil.getDate() - 1)
+  accessUntil.setHours(23, 59, 59, 999)
+  return accessUntil
+}
+
 export async function subscriptionsRoutes(app: FastifyInstance) {
   // GET - Listar todas as assinaturas
   app.get('/subscriptions', async (request, reply) => {
@@ -164,15 +178,7 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         })
       }
       
-      // Busca configurações para pegar fidelidade mínima
-      const config = await prisma.systemConfig.findFirst()
-      const commitmentMonths = config?.minimumCommitmentMonths || 3
-      
-      // Calcula data de compromisso mínimo
-      const minimumCommitmentEnd = new Date()
-      minimumCommitmentEnd.setMonth(minimumCommitmentEnd.getMonth() + commitmentMonths)
-      
-      // Cria ou atualiza assinatura
+      // Cria ou atualiza assinatura (sem fidelidade / compromisso mínimo)
       const subscription = await prisma.subscription.upsert({
         where: { userId },
         update: {
@@ -180,7 +186,7 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           stripeSubscriptionId,
           status: 'ACTIVE',
           startDate: new Date(),
-          minimumCommitmentEnd,
+          minimumCommitmentEnd: null,
           endDate: null,
           canceledAt: null,
           cancelReason: null
@@ -190,8 +196,7 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           planId,
           stripeSubscriptionId,
           status: 'ACTIVE',
-          startDate: new Date(),
-          minimumCommitmentEnd
+          startDate: new Date()
         },
         include: {
           user: {
@@ -209,7 +214,7 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
       return reply.status(201).send({
         success: true,
         data: subscription,
-        message: `Assinatura ${plan.name} ativada com sucesso! Compromisso mínimo de ${commitmentMonths} meses.`
+        message: `Assinatura ${plan.name} ativada com sucesso!`
       })
     } catch (error) {
       logger.error('Erro ao criar assinatura:', error)
@@ -247,42 +252,27 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         })
       }
       
-      // ⚠️ TEMPORÁRIO: Fidelidade desabilitada para testes
-      // TODO: Reativar após testes
-      /*
-      const now = new Date()
-      if (subscription.minimumCommitmentEnd && now < subscription.minimumCommitmentEnd) {
-        const monthsRemaining = Math.ceil(
-          (subscription.minimumCommitmentEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24 * 30)
-        )
-        
-        return reply.status(400).send({
-          success: false,
-          error: `Ainda faltam ${monthsRemaining} mês(es) para completar o período mínimo de compromisso`,
-          minimumCommitmentEnd: subscription.minimumCommitmentEnd,
-          canCancelAfter: subscription.minimumCommitmentEnd
-        })
-      }
-      */
       const now = new Date()
       
-      // Calcula a data de término do período já pago (próximo ciclo)
-      const startDate = subscription.startDate
-      const dayOfMonth = startDate.getDate()
-      
-      // Próxima data de cobrança
-      let nextBillingDate = new Date()
-      nextBillingDate.setDate(dayOfMonth)
-      
-      // Se já passou o dia do mês atual, vai para o próximo mês
-      if (now.getDate() >= dayOfMonth) {
-        nextBillingDate.setMonth(nextBillingDate.getMonth() + 1)
+      // Fim do período já pago: usa current_period_end do Stripe se houver;
+      // senão calcula pelo dia do startDate (assinatura mock / mês grátis).
+      let accessUntil: Date
+
+      if (subscription.stripeSubscriptionId) {
+        try {
+          const { stripe } = await import('../lib/stripe')
+          const stripeSub = await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+            cancel_at_period_end: true
+          })
+          accessUntil = new Date(stripeSub.current_period_end * 1000)
+          logger.info(`Stripe: cancel_at_period_end até ${accessUntil.toISOString()}`)
+        } catch (stripeError: any) {
+          logger.error('Erro ao cancelar no Stripe (seguindo com cálculo local):', stripeError.message)
+          accessUntil = computeAccessUntilFromStartDate(subscription.startDate, now)
+        }
+      } else {
+        accessUntil = computeAccessUntilFromStartDate(subscription.startDate, now)
       }
-      
-      // Define como fim do dia anterior à próxima cobrança
-      const accessUntil = new Date(nextBillingDate)
-      accessUntil.setDate(accessUntil.getDate() - 1)
-      accessUntil.setHours(23, 59, 59, 999)
       
       // Cancela a assinatura mas mantém acesso até o fim do período pago
       const updatedSubscription = await prisma.subscription.update({
@@ -291,7 +281,8 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           status: 'CANCELED',
           canceledAt: now,
           cancelReason,
-          endDate: accessUntil  // ← Fim do período já pago, não imediato!
+          endDate: accessUntil,
+          minimumCommitmentEnd: null
         },
         include: {
           user: true,
@@ -306,7 +297,7 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         success: true,
         data: updatedSubscription,
         accessUntil: accessUntil,
-        message: `Assinatura cancelada. Você ainda pode usar seus benefícios até ${accessUntil.toLocaleDateString('pt-BR')}`
+        message: `Assinatura cancelada. Você ainda pode usar seus benefícios até ${accessUntil.toLocaleDateString('pt-BR')}. Não haverá novas cobranças.`
       })
     } catch (error) {
       logger.error('Erro ao cancelar assinatura:', error)

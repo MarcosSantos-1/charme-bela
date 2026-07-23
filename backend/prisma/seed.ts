@@ -393,7 +393,7 @@ async function main() {
       defaultEndTime: '18:00',
       slotDuration: 30,
       maxSimultaneous: 1,
-      minimumCommitmentMonths: 3,
+      minimumCommitmentMonths: 0,
       enableEmailNotifications: true,
       enableSmsNotifications: false,
       maintenanceMode: false
@@ -401,7 +401,7 @@ async function main() {
   })
   console.log(`  ✅ Configurações criadas com sucesso!`)
   console.log(`     └─ Cancelamento mínimo: ${config.minCancellationHours}h`)
-  console.log(`     └─ Fidelidade: ${config.minimumCommitmentMonths} meses`)
+  console.log(`     └─ Cancelamento de plano: livre (sem fidelidade)`)
 
   // ============================================
   // 9. DEPOIMENTOS

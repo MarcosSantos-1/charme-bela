@@ -89,6 +89,22 @@ export async function createNotification(params: CreateNotificationParams) {
 // AGENDAMENTOS
 // ============================================
 
+/**
+ * Horários de agendamento são gravados como "hora de parede" no campo UTC
+ * (ex.: 18:00 BRT → `T18:00:00.000Z`, não é instante UTC real — ver utils/wallClock.ts).
+ * Formatar sem `timeZone: 'UTC'` faz o runtime converter para o fuso do servidor
+ * e exibir o horário com -3h. Use SEMPRE este helper para startTime/endTime.
+ */
+function formatWallClockDate(date: Date): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC'
+  }).format(date)
+}
+
 export async function notifyAppointmentConfirmed(
   userId: string,
   appointmentData: {
@@ -96,12 +112,7 @@ export async function notifyAppointmentConfirmed(
     startTime: Date
   }
 ) {
-  const formattedDate = new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(appointmentData.startTime)
+  const formattedDate = formatWallClockDate(appointmentData.startTime)
   
   return createNotification({
     userId,
@@ -124,12 +135,7 @@ export async function notifyAppointmentCanceled(
     cancelReason?: string
   }
 ) {
-  const formattedDate = new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(appointmentData.startTime)
+  const formattedDate = formatWallClockDate(appointmentData.startTime)
   
   let message = `Seu agendamento de ${appointmentData.serviceName} para ${formattedDate} foi cancelado`
   if (appointmentData.cancelReason) {
@@ -157,19 +163,8 @@ export async function notifyAppointmentRescheduled(
     newStartTime: Date
   }
 ) {
-  const oldDate = new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(appointmentData.oldStartTime)
-  
-  const newDate = new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(appointmentData.newStartTime)
+  const oldDate = formatWallClockDate(appointmentData.oldStartTime)
+  const newDate = formatWallClockDate(appointmentData.newStartTime)
   
   return createNotification({
     userId,
@@ -191,12 +186,7 @@ export async function notifyAppointmentReminder(
     startTime: Date
   }
 ) {
-  const formattedDate = new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(appointmentData.startTime)
+  const formattedDate = formatWallClockDate(appointmentData.startTime)
   
   return createNotification({
     userId,
@@ -240,12 +230,7 @@ export async function notifyAdminNewAppointmentRequest(appointmentData: {
   startTime: Date
   appointmentId: string
 }) {
-  const formattedDate = new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(appointmentData.startTime)
+  const formattedDate = formatWallClockDate(appointmentData.startTime)
   
   return createNotification({
     userId: null, // Admin
@@ -266,12 +251,7 @@ export async function notifyAdminClientCanceled(appointmentData: {
   startTime: Date
   cancelReason?: string
 }) {
-  const formattedDate = new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(appointmentData.startTime)
+  const formattedDate = formatWallClockDate(appointmentData.startTime)
   
   let message = `${appointmentData.clientName} cancelou o agendamento de ${appointmentData.serviceName} para ${formattedDate}`
   if (appointmentData.cancelReason) {

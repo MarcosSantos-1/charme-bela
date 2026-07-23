@@ -38,6 +38,7 @@ export interface Appointment {
   origin: AppointmentOrigin;
   paymentStatus: PaymentStatus;
   paymentAmount?: number | null;
+  paymentExpiresAt?: string | null;
   voucher?: Voucher | null;
   cancelReason?: string | null;
 }

@@ -11,7 +11,7 @@ export default function App() {
         <CommercialProvider>
           <RootNavigator />
         </CommercialProvider>
-        <StatusBar style="auto" />
+        <StatusBar style="dark" />
       </AuthProvider>
     </SafeAreaProvider>
   );

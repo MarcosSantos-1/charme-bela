@@ -1,6 +1,7 @@
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { brand } from '../../theme/brand';
 import { logoSource } from '../../assets/brandAssets';
 import { PageIndicator } from './PageIndicator';
@@ -14,6 +15,8 @@ interface WelcomeStepProps {
 }
 
 export function WelcomeStep({ total, current, onNext, onSelect, width }: WelcomeStepProps) {
+  const insets = useSafeAreaInsets();
+
   return (
     <View style={[styles.slide, { width }]}>
       <LinearGradient
@@ -23,7 +26,7 @@ export function WelcomeStep({ total, current, onNext, onSelect, width }: Welcome
       <View style={[styles.orb, styles.orbLeft]} />
       <View style={[styles.orb, styles.orbRight]} />
 
-      <View style={styles.center}>
+      <View style={[styles.center, { paddingTop: insets.top }]}>
         <View style={styles.logoBox}>
           <Image source={logoSource} style={styles.logo} resizeMode="contain" />
         </View>
@@ -37,7 +40,7 @@ export function WelcomeStep({ total, current, onNext, onSelect, width }: Welcome
         </Text>
       </View>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 24 }]}>
         <PageIndicator total={total} current={current} onSelect={onSelect} />
         <TouchableOpacity style={styles.primaryBtn} onPress={onNext} activeOpacity={0.9}>
           <Text style={styles.primaryBtnText}>Começar</Text>
@@ -127,7 +130,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 24,
     paddingHorizontal: 32,
-    paddingBottom: 48,
   },
   primaryBtn: {
     width: '100%',

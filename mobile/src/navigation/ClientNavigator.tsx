@@ -1,6 +1,7 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ClientHomeScreen } from '../screens/client/ClientHomeScreen';
 import { AgendaScreen } from '../screens/client/AgendaScreen';
 import { ServicesScreen } from '../screens/client/ServicesScreen';
@@ -34,6 +35,10 @@ const ICONS: Record<keyof ClientTabParamList, keyof typeof Ionicons.glyphMap> = 
 };
 
 function ClientTabs() {
+  const insets = useSafeAreaInsets();
+  // Android edge-to-edge: sobe a tab bar acima do gesto/nav do sistema (+5px de folga)
+  const bottomPad = insets.bottom + 5;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -41,8 +46,16 @@ function ClientTabs() {
         tabBarActiveTintColor: '#ec4899',
         tabBarInactiveTintColor: '#9ca3af',
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
-        tabBarStyle: { borderTopWidth: 1, borderTopColor: '#f3f4f6', paddingTop: 6, height: 64 },
-        tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name]} size={size ?? 24} color={color} />,
+        tabBarStyle: {
+          borderTopWidth: 1,
+          borderTopColor: '#f3f4f6',
+          paddingTop: 6,
+          paddingBottom: bottomPad,
+          height: 56 + bottomPad,
+        },
+        tabBarIcon: ({ color, size }) => (
+          <Ionicons name={ICONS[route.name]} size={size ?? 24} color={color} />
+        ),
       })}
     >
       <Tab.Screen name="Home" component={ClientHomeScreen} options={{ title: 'Início' }} />
@@ -65,4 +78,3 @@ export function ClientNavigator() {
     </Stack.Navigator>
   );
 }
-

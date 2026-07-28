@@ -3,11 +3,11 @@ import {
   StyleSheet,
   Button,
   View,
-  SafeAreaView,
   Text,
   Modal,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { FirebaseRecaptcha } from './FirebaseRecaptcha';
 import type { FirebaseAuthApplicationVerifier, FirebaseWebConfig } from './types';
 

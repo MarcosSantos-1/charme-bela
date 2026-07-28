@@ -1,6 +1,7 @@
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { brand } from '../../theme/brand';
 import { PageIndicator } from './PageIndicator';
 
@@ -21,6 +22,8 @@ export function ExperienceStep({
   onSelect,
   width,
 }: ExperienceStepProps) {
+  const insets = useSafeAreaInsets();
+
   return (
     <View style={[styles.slide, { width }]}>
       <View style={styles.hero}>
@@ -34,7 +37,7 @@ export function ExperienceStep({
           style={StyleSheet.absoluteFill}
         />
 
-        <View style={[styles.floatCard, styles.floatLeft]}>
+        <View style={[styles.floatCard, styles.floatLeft, { top: insets.top + 48 }]}>
           <View style={styles.floatIcon}>
             <Ionicons name="time-outline" size={20} color={brand.rose} />
           </View>
@@ -50,7 +53,7 @@ export function ExperienceStep({
         </View>
       </View>
 
-      <View style={styles.body}>
+      <View style={[styles.body, { paddingBottom: Math.max(insets.bottom, 12) + 16 }]}>
         <View style={styles.badge}>
           <Ionicons name="heart-outline" size={14} color={brand.ink} />
           <Text style={styles.badgeText}>A experiência</Text>
@@ -180,7 +183,6 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
     alignItems: 'center',
     gap: 20,
-    paddingBottom: 40,
   },
   actions: {
     flexDirection: 'row',

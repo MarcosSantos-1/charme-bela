@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "690927382095",
+    "project_id": "charme-bela-33906",
+    "storage_bucket": "charme-bela-33906.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:690927382095:android:9d1c38c3a3b7d1853ac43a",
+        "android_client_info": {
+          "package_name": "com.charmebela.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "690927382095-nv3g5p6phrdsplopqa3ruh10liolvddf.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.charmebela.app",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "690927382095-91b3pvkoncgbsrbp0iubm8dlbtevpp2a.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDZvABf7oXJ4wcne46Htwu-vaWxkAPMvjo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "690927382095-91b3pvkoncgbsrbp0iubm8dlbtevpp2a.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "690927382095-2ahqe7aasq4ee5s6qt3bfongld9fhprf.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "br.com.charmebela.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

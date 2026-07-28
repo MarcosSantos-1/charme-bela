@@ -13,6 +13,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { FirebaseRecaptchaVerifierModal } from '../lib/phone-recaptcha';
@@ -20,6 +22,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { brand } from '../theme/brand';
 import { logoSource } from '../assets/brandAssets';
 import { firebaseConfig } from '../lib/firebase';
+import type { AuthStackParamList } from '../navigation/AuthNavigator';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -33,6 +36,7 @@ function maskPhone(value: string) {
 }
 
 export function AccessScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const { signInWithGoogleIdToken, sendPhoneVerification, confirmPhoneCode } = useAuth();
   const [step, setStep] = useState<Step>('methods');
   const [loading, setLoading] = useState(false);
@@ -46,12 +50,31 @@ export function AccessScreen() {
   const phoneComplete = phoneDigits.length === 11;
   const codeComplete = code.every((d) => d !== '');
 
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    // Web client = Firebase "Web client" (também usado como audience do id_token)
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+  const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+
+  // Google exige redirect nativo específico:
+  // - iOS: reversed client ID (com.googleusercontent.apps.<id>):/oauthredirect
+  // - Android: package name:/oauthredirect (com Custom URI scheme ligado no Cloud Console)
+  const iosReversedScheme = iosClientId
+    ? `com.googleusercontent.apps.${iosClientId.replace(/\.apps\.googleusercontent\.com$/, '')}`
+    : undefined;
+  const nativeRedirect = Platform.select({
+    ios: iosReversedScheme ? `${iosReversedScheme}:/oauthredirect` : undefined,
+    android: 'com.charmebela.app:/oauthredirect',
+    default: undefined,
   });
+
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest(
+    {
+      // Web client = Firebase "Web client" (audience do id_token)
+      webClientId,
+      iosClientId,
+      androidClientId,
+    },
+    { native: nativeRedirect }
+  );
 
   useEffect(() => {
     if (response?.type !== 'success') return;
@@ -73,19 +96,33 @@ export function AccessScreen() {
   }, [response, signInWithGoogleIdToken]);
 
   const handleGoogle = async () => {
-    if (!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID) {
+    if (!webClientId) {
       Alert.alert(
         'Configuração pendente',
         'Defina EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (e o iOS/Android Client ID) no .env.local.'
       );
       return;
     }
-    if (Platform.OS === 'ios' && !process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID) {
+    if (Platform.OS === 'ios' && !iosClientId) {
       Alert.alert(
         'Client ID iOS faltando',
         'Crie um OAuth Client do tipo iOS no Google Cloud (bundle br.com.charmebela.app) e defina EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID. Usar só o Web Client causa erro 400 invalid_request.'
       );
       return;
+    }
+    if (Platform.OS === 'android' && !androidClientId) {
+      Alert.alert(
+        'Client ID Android faltando',
+        'Crie um OAuth Client do tipo Android (package com.charmebela.app + SHA-1) e defina EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID. Ative também "Custom URI scheme" no Cloud Console.'
+      );
+      return;
+    }
+    if (__DEV__ && request?.redirectUri) {
+      console.log('[Google Auth] redirectUri=', request.redirectUri, 'clientIds=', {
+        web: !!webClientId,
+        ios: !!iosClientId,
+        android: !!androidClientId,
+      });
     }
     setLoading(true);
     try {
@@ -98,7 +135,7 @@ export function AccessScreen() {
         setLoading(false);
         Alert.alert(
           'Não foi possível entrar',
-          'Falha no Google Sign-In. No Expo Go o Google costuma falhar — use um dev build (npx expo run:ios) com Bundle ID br.com.charmebela.app e o iOS Client ID no .env.local.'
+          'Falha no Google Sign-In. Use um dev build (npx expo run:android / run:ios), não o Expo Go. No Cloud Console, ative Custom URI scheme no client Android.'
         );
       }
       // success: o useEffect completa o login e zera o loading
@@ -167,13 +204,22 @@ export function AccessScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <View style={styles.root}>
       <LinearGradient
         colors={[brand.blush, brand.background, brand.champagne]}
         style={StyleSheet.absoluteFill}
       />
       <View style={[styles.orb, styles.orbTop]} />
       <View style={[styles.orb, styles.orbBottom]} />
+
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      {/* DEBUG: reabrir onboarding — remover depois dos testes de UI */}
+      <TouchableOpacity
+        style={styles.debugOnboardingBtn}
+        onPress={() => navigation.navigate('Onboarding')}
+        hitSlop={16}
+        accessibilityLabel="Debug onboarding"
+      />
 
       <FirebaseRecaptchaVerifierModal
         ref={recaptchaRef}
@@ -344,14 +390,28 @@ export function AccessScreen() {
           </View>
         </View>
       )}
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
+  root: {
     flex: 1,
     backgroundColor: brand.background,
+  },
+  safe: {
+    flex: 1,
+  },
+  debugOnboardingBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 16,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: 'rgba(120, 120, 120, 0.45)',
+    zIndex: 30,
   },
   orb: {
     position: 'absolute',

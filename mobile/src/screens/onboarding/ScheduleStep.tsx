@@ -1,6 +1,7 @@
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { brand } from '../../theme/brand';
 import { logoSource } from '../../assets/brandAssets';
 import { PageIndicator } from './PageIndicator';
@@ -22,6 +23,8 @@ export function ScheduleStep({
   onLogin,
   width,
 }: ScheduleStepProps) {
+  const insets = useSafeAreaInsets();
+
   return (
     <View style={[styles.slide, { width }]}>
       <LinearGradient
@@ -30,7 +33,15 @@ export function ScheduleStep({
       />
       <View style={styles.orb} />
 
-      <View style={styles.content}>
+      <View
+        style={[
+          styles.content,
+          {
+            paddingTop: insets.top + 24,
+            paddingBottom: Math.max(insets.bottom, 12) + 16,
+          },
+        ]}
+      >
         <View style={styles.badge}>
           <Ionicons name="notifications-outline" size={14} color={brand.ink} />
           <Text style={styles.badgeText}>A praticidade</Text>
@@ -111,7 +122,6 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 32,
-    paddingTop: 64,
   },
   badge: {
     alignSelf: 'flex-start',
@@ -233,7 +243,6 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
     alignItems: 'center',
     gap: 16,
-    paddingBottom: 40,
   },
   primaryBtn: {
     width: '100%',

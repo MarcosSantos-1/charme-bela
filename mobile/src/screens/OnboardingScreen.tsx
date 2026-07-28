@@ -9,15 +9,14 @@ import {
   type ViewToken,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { brand } from '../theme/brand';
 import { WelcomeStep } from './onboarding/WelcomeStep';
 import { ExperienceStep } from './onboarding/ExperienceStep';
 import { ClubStep } from './onboarding/ClubStep';
 import { ScheduleStep } from './onboarding/ScheduleStep';
 
-/** v2 = onboarding redesenhado (4 steps). Bump força reexibir para quem já viu o antigo. */
-export const ONBOARDING_SEEN_KEY = 'onboarding_v2_seen';
+/** v3 = safe-area fullscreen. Bump força reexibir para quem já viu em testes anteriores. */
+export const ONBOARDING_SEEN_KEY = 'onboarding_v3_seen';
 
 const TOTAL = 4;
 
@@ -115,8 +114,9 @@ export function OnboardingScreen({ onFinish }: OnboardingScreenProps) {
     },
   ];
 
+  // Fullscreen: background/orbs invadem a safe area; cada step aplica insets só no conteúdo.
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <View style={styles.container}>
       <FlatList
         ref={listRef}
         data={steps}
@@ -132,7 +132,7 @@ export function OnboardingScreen({ onFinish }: OnboardingScreenProps) {
         getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
         style={styles.list}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

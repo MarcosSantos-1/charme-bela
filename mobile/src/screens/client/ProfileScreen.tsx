@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
@@ -20,6 +20,7 @@ type SubScreen = 'main' | 'personal-data' | 'plan' | 'anamnesis' | 'history' | '
 
 export function ProfileScreen() {
   const { user, signOut } = useAuth();
+  const insets = useSafeAreaInsets();
   const route = useRoute<RouteProp<ClientTabParamList, 'Profile'>>();
   const navigation = useNavigation<any>();
   const [currentScreen, setCurrentScreen] = useState<SubScreen>('main');
@@ -72,10 +73,10 @@ export function ProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <View style={styles.container}>
       <ScrollView style={styles.scrollView}>
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Header rosa invade a safe area superior */}
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <View style={styles.profileHeader}>
             <View style={styles.avatarLarge}>
               <Text style={styles.avatarText}>
@@ -218,7 +219,7 @@ export function ProfileScreen() {
           onClose={() => setShowContactModal(false)}
         />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -268,7 +269,6 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#ec4899',
     paddingHorizontal: 24,
-    paddingTop: 16,
     paddingBottom: 48,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,

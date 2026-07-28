@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   onAuthStateChanged,
@@ -8,15 +8,21 @@ import {
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
   fetchSignInMethodsForEmail,
+  GoogleAuthProvider,
+  PhoneAuthProvider,
+  signInWithCredential,
   type User as FirebaseUser,
+  type ApplicationVerifier,
 } from 'firebase/auth';
+import * as WebBrowser from 'expo-web-browser';
 import { auth } from '../lib/firebase';
 import { getOrCreateUserFromFirebase, User } from '../lib/api';
+
+WebBrowser.maybeCompleteAuthSession();
 
 const USER_CACHE_KEY = 'user_data';
 const LAST_EMAIL_KEY = 'last_email';
 
-// Resultado do "email-first gate"
 export interface EmailCheckResult {
   exists: boolean;
   isPasswordAccount: boolean;
@@ -36,22 +42,37 @@ interface AuthContextType {
   checkEmail: (email: string) => Promise<EmailCheckResult>;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string, phone?: string) => Promise<void>;
+  /** Completa login Google a partir do id_token do expo-auth-session. */
+  signInWithGoogleIdToken: (idToken: string) => Promise<void>;
+  /** Envia SMS; retorna verificationId para confirmar depois. */
+  sendPhoneVerification: (
+    e164Phone: string,
+    verifier: ApplicationVerifier
+  ) => Promise<string>;
+  confirmPhoneCode: (verificationId: string, code: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function resolveAccountEmail(fbUser: FirebaseUser): string | null {
+  if (fbUser.email) return fbUser.email;
+  if (fbUser.phoneNumber) {
+    const digits = fbUser.phoneNumber.replace(/\D/g, '');
+    return `${digits}@phone.charmebela.local`;
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastEmail, setLastEmail] = useState<string | null>(null);
-  // Dados extras (nome/telefone) informados no cadastro, usados ao criar o user no backend
   const pendingProfile = useRef<PendingProfile | null>(null);
 
   useEffect(() => {
-    // Restaura rapidamente o último usuário em cache (evita "flash" de login)
     (async () => {
       try {
         const [cached, savedEmail] = await Promise.all([
@@ -68,7 +89,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
 
-      if (!fbUser || !fbUser.email) {
+      const email = fbUser ? resolveAccountEmail(fbUser) : null;
+      if (!fbUser || !email) {
         setUser(null);
         await AsyncStorage.removeItem(USER_CACHE_KEY);
         setLoading(false);
@@ -78,9 +100,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const backendUser = await getOrCreateUserFromFirebase({
           uid: fbUser.uid,
-          email: fbUser.email,
-          displayName: fbUser.displayName || pendingProfile.current?.name,
-          phone: pendingProfile.current?.phone,
+          email,
+          displayName:
+            fbUser.displayName ||
+            pendingProfile.current?.name ||
+            fbUser.phoneNumber ||
+            undefined,
+          phone: pendingProfile.current?.phone || fbUser.phoneNumber || undefined,
         });
         pendingProfile.current = null;
         setUser(backendUser);
@@ -97,8 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  // Descobre se o email já existe e por qual método (email-first gate)
-  const checkEmail = async (email: string): Promise<EmailCheckResult> => {
+  const checkEmail = useCallback(async (email: string): Promise<EmailCheckResult> => {
     const methods = await fetchSignInMethodsForEmail(auth, email.trim());
     const isPasswordAccount = methods.includes('password');
     let oauthProvider: EmailCheckResult['oauthProvider'] = null;
@@ -108,14 +133,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       else oauthProvider = 'other';
     }
     return { exists: methods.length > 0, isPasswordAccount, oauthProvider };
-  };
+  }, []);
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string) => {
     await signInWithEmailAndPassword(auth, email.trim(), password);
-    // onAuthStateChanged cuida da sincronização com o backend
-  };
+  }, []);
 
-  const signUp = async (email: string, password: string, name: string, phone?: string) => {
+  const signUp = useCallback(async (email: string, password: string, name: string, phone?: string) => {
     pendingProfile.current = { name, phone };
     const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
     if (name) {
@@ -125,14 +149,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // não crítico
       }
     }
-    // onAuthStateChanged cria o usuário no backend com nome/telefone pendentes
-  };
+  }, []);
 
-  const resetPassword = async (email: string) => {
+  const signInWithGoogleIdToken = useCallback(async (idToken: string) => {
+    const credential = GoogleAuthProvider.credential(idToken);
+    await signInWithCredential(auth, credential);
+  }, []);
+
+  const sendPhoneVerification = useCallback(
+    async (e164Phone: string, verifier: ApplicationVerifier): Promise<string> => {
+      pendingProfile.current = { phone: e164Phone };
+      const provider = new PhoneAuthProvider(auth);
+      return provider.verifyPhoneNumber(e164Phone, verifier);
+    },
+    []
+  );
+
+  const confirmPhoneCode = useCallback(async (verificationId: string, code: string) => {
+    const credential = PhoneAuthProvider.credential(verificationId, code.trim());
+    await signInWithCredential(auth, credential);
+  }, []);
+
+  const resetPassword = useCallback(async (email: string) => {
     await sendPasswordResetEmail(auth, email.trim());
-  };
+  }, []);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     try {
       await firebaseSignOut(auth);
     } finally {
@@ -140,7 +182,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setFirebaseUser(null);
     }
-  };
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -152,6 +194,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         checkEmail,
         signIn,
         signUp,
+        signInWithGoogleIdToken,
+        sendPhoneVerification,
+        confirmPhoneCode,
         resetPassword,
         signOut,
       }}

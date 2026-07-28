@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { AuthNavigator } from './AuthNavigator';
 import { ClientNavigator } from './ClientNavigator';
 import { ONBOARDING_SEEN_KEY } from '../screens/OnboardingScreen';
+import { brand } from '../theme/brand';
 
 export function RootNavigator() {
   const { user, loading } = useAuth();
@@ -20,7 +21,7 @@ export function RootNavigator() {
   if (loading || onboardingSeen === null) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#ec4899" />
+        <ActivityIndicator size="large" color={brand.rose} />
       </View>
     );
   }
@@ -30,7 +31,7 @@ export function RootNavigator() {
       {user ? (
         <ClientNavigator />
       ) : (
-        <AuthNavigator initialRouteName={onboardingSeen ? 'Welcome' : 'Onboarding'} />
+        <AuthNavigator initialRouteName={onboardingSeen ? 'Access' : 'Onboarding'} />
       )}
     </NavigationContainer>
   );
@@ -41,6 +42,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: brand.background,
   },
 });

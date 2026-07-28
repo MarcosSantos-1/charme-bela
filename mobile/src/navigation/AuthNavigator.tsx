@@ -1,11 +1,9 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
-import { WelcomeScreen } from '../screens/WelcomeScreen';
 import { AccessScreen } from '../screens/AccessScreen';
 
 export type AuthStackParamList = {
   Onboarding: undefined;
-  Welcome: undefined;
   Access: undefined;
 };
 
@@ -20,11 +18,8 @@ export function AuthNavigator({ initialRouteName }: AuthNavigatorProps) {
     <Stack.Navigator initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Onboarding">
         {({ navigation }) => (
-          <OnboardingScreen onFinish={() => navigation.replace('Welcome')} />
+          <OnboardingScreen onFinish={() => navigation.replace('Access')} />
         )}
-      </Stack.Screen>
-      <Stack.Screen name="Welcome">
-        {({ navigation }) => <WelcomeScreen onGetStarted={() => navigation.navigate('Access')} />}
       </Stack.Screen>
       <Stack.Screen name="Access" component={AccessScreen} />
     </Stack.Navigator>

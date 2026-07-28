@@ -1,8 +1,17 @@
-// Metro config do Expo com ajuste necessário para o Firebase JS SDK.
-// Sem isto, o Auth quebra em runtime ("Component auth has not been registered yet").
+const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
 
-const config = getDefaultConfig(__dirname);
+const projectRoot = __dirname;
+const monorepoRoot = path.resolve(projectRoot, '..');
+
+const config = getDefaultConfig(projectRoot);
+
+// Permite importar assets de referência em ../assets (logo.png / logo.svg)
+config.watchFolders = [monorepoRoot];
+config.resolver.nodeModulesPaths = [
+  path.resolve(projectRoot, 'node_modules'),
+  path.resolve(monorepoRoot, 'node_modules'),
+];
 
 config.resolver.sourceExts.push('cjs');
 config.resolver.unstable_enablePackageExports = false;

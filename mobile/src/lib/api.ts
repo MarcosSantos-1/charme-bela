@@ -13,6 +13,7 @@ import type {
   Subscription,
   Voucher,
 } from '../types/commercial';
+import { looksLikePhoneName } from './userDisplay';
 
 // Base do backend (rotas são "flat", sem prefixo /api).
 // Dev: iOS simulator usa localhost; em device físico/Android troque por IP da máquina.
@@ -103,6 +104,14 @@ export async function createUser(data: {
   return unwrap<User>(response.data);
 }
 
+export async function updateUser(
+  userId: string,
+  data: { name?: string; phone?: string; email?: string },
+): Promise<User> {
+  const response = await api.put(`/users/${userId}`, data);
+  return unwrap<User>(response.data);
+}
+
 // Busca o usuário no backend pelo UID do Firebase; se não existir, cria.
 export async function getOrCreateUserFromFirebase(firebaseUser: {
   uid: string;
@@ -116,7 +125,9 @@ export async function getOrCreateUserFromFirebase(firebaseUser: {
     if (error?.response?.status && error.response.status !== 404) {
       throw error;
     }
-    const name = firebaseUser.displayName || firebaseUser.email.split('@')[0];
+    const rawName = firebaseUser.displayName?.trim();
+    const name =
+      rawName && !looksLikePhoneName(rawName) ? rawName : 'Cliente';
     return await createUser({
       name,
       email: firebaseUser.email,
@@ -267,19 +278,39 @@ export async function getAnamnesis(userId: string): Promise<any | null> {
   }
 }
 
-export async function saveMinimalAnamnesis(userId: string, data: Record<string, any>) {
+export async function saveAnamnesis(
+  userId: string,
+  data: {
+    personalData?: Record<string, unknown>;
+    lifestyleData?: Record<string, unknown>;
+    healthData?: Record<string, unknown>;
+    objectivesData?: Record<string, unknown>;
+    termsAccepted?: boolean;
+    schemaVersion?: number;
+  },
+) {
   const current = await getAnamnesis(userId);
   const payload = {
     personalData: data.personalData || {},
     lifestyleData: data.lifestyleData || {},
     healthData: data.healthData || {},
     objectivesData: data.objectivesData || {},
-    termsAccepted: true,
+    termsAccepted: data.termsAccepted ?? true,
+    schemaVersion: data.schemaVersion ?? 2,
   };
   const response = current
     ? await api.put(`/anamnesis/user/${userId}`, payload)
     : await api.post('/anamnesis', { userId, ...payload });
   return unwrap(response.data);
+}
+
+/** @deprecated Prefer saveAnamnesis with schemaVersion 2 */
+export async function saveMinimalAnamnesis(userId: string, data: Record<string, any>) {
+  return saveAnamnesis(userId, {
+    ...data,
+    termsAccepted: true,
+    schemaVersion: 2,
+  });
 }
 
 export default api;

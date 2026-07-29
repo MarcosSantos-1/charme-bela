@@ -10,8 +10,7 @@ interface ScheduleStepProps {
   total: number;
   current: number;
   onSelect: (i: number) => void;
-  onCreateAccount: () => void;
-  onLogin: () => void;
+  onAccess: () => void;
   width: number;
 }
 
@@ -19,8 +18,7 @@ export function ScheduleStep({
   total,
   current,
   onSelect,
-  onCreateAccount,
-  onLogin,
+  onAccess,
   width,
 }: ScheduleStepProps) {
   const insets = useSafeAreaInsets();
@@ -90,13 +88,9 @@ export function ScheduleStep({
 
         <View style={styles.footer}>
           <PageIndicator total={total} current={current} onSelect={onSelect} />
-          <TouchableOpacity style={styles.primaryBtn} onPress={onCreateAccount} activeOpacity={0.9}>
-            <Text style={styles.primaryBtnText}>Criar minha conta</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onLogin} activeOpacity={0.7}>
-            <Text style={styles.loginLink}>
-              Já tenho conta? <Text style={styles.loginLinkAccent}>Entrar</Text>
-            </Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={onAccess} activeOpacity={0.9}>
+            <Text style={styles.primaryBtnText}>Acessar</Text>
+            <Ionicons name="arrow-forward" size={20} color={brand.white} />
           </TouchableOpacity>
         </View>
       </View>
@@ -246,8 +240,10 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     width: '100%',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
     backgroundColor: brand.rose,
     borderRadius: 999,
     paddingVertical: 16,
@@ -261,13 +257,5 @@ const styles = StyleSheet.create({
     color: brand.white,
     fontSize: 16,
     fontWeight: '600',
-  },
-  loginLink: {
-    fontSize: 14,
-    color: brand.muted,
-  },
-  loginLinkAccent: {
-    fontWeight: '600',
-    color: brand.rose,
   },
 });

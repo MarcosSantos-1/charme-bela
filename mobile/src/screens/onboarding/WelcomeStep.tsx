@@ -28,11 +28,16 @@ export function WelcomeStep({ total, current, onNext, onSelect, width }: Welcome
 
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <View style={styles.logoBox}>
-          <Image source={logoSource} style={styles.logo} resizeMode="contain" />
+          <Image
+            source={logoSource}
+            style={styles.logo}
+            resizeMode="contain"
+            fadeDuration={0}
+          />
         </View>
         <Text style={styles.eyebrow}>Bem-vinda</Text>
         <Text style={styles.title}>
-          Charme <Text style={styles.titleAccent}>&</Text> Bela
+           <Text style={styles.titleAccent}>Charme & Bela</Text> 
         </Text>
         <Text style={styles.body}>
           Sua beleza, nosso cuidado. Agende tratamentos, gerencie sua assinatura e muito mais —
@@ -85,21 +90,22 @@ const styles = StyleSheet.create({
     width: 128,
     height: 128,
     borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.65)',
+    backgroundColor: brand.blush,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.6)',
+    borderColor: 'rgba(236, 73, 152, 0.22)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 32,
+    // Sem elevation: no Android ele pinta um retângulo branco por baixo
     shadowColor: brand.rose,
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
   },
   logo: {
     width: 92,
     height: 92,
+    backgroundColor: 'transparent',
   },
   eyebrow: {
     fontSize: 12,

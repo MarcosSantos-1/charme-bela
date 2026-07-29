@@ -249,23 +249,26 @@ model AnamnesisForm {
   id           String   @id @default(cuid())
   userId       String   @unique
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   // Dados pessoais (Step 1)
   personalData Json     // Nome completo, data nascimento, endereço, etc
-  
+
   // Estilo de vida (Step 2)
   lifestyleData Json    // Alimentação, exercícios, sono, etc
-  
+
   // Saúde (Step 3)
   healthData   Json     // Alergias, medicamentos, doenças, etc
-  
+
   // Objetivos (Step 4)
   objectivesData Json   // O que espera dos tratamentos
-  
+
   // Termo (Step 5)
   termsAccepted Boolean @default(false)
   termsAcceptedAt DateTime?
-  
+
+  // 1 = wizard web legado | 2 = fluxo mobile Yazio-style
+  schemaVersion Int     @default(1)
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

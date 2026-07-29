@@ -391,12 +391,13 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         })
       }
       
-      // 3. Verifica se tem anamnese preenchida (OBRIGATÓRIO para primeiro agendamento)
+      // 3. Verifica se tem anamnese completa (OBRIGATÓRIO para primeiro agendamento)
       const hasAppointments = await prisma.appointment.count({
         where: { userId, status: { not: 'CANCELED' } }
       })
-      
-      if (hasAppointments === 0 && !user.anamnesisForm) {
+
+      const anamnesisComplete = Boolean(user.anamnesisForm?.termsAccepted)
+      if (hasAppointments === 0 && !anamnesisComplete) {
         return reply.status(400).send({
           success: false,
           error: 'É necessário preencher a ficha de anamnese antes do primeiro agendamento'

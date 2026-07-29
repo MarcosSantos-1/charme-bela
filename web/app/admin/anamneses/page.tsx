@@ -118,13 +118,94 @@ export default function AnamnesesPage() {
   // Helper para renderizar campos
   const renderField = (label: string, value: any, fullWidth = false) => {
     if (!value) return null
-    
+
     return (
       <div className={fullWidth ? 'col-span-2' : ''}>
         <span className="text-gray-600 text-xs block mb-1">{label}:</span>
         <p className="font-medium text-gray-900">{value}</p>
       </div>
     )
+  }
+
+  const formatBirthDate = (value?: string) => {
+    if (!value) return null
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) return value
+    const d = new Date(value)
+    return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString('pt-BR')
+  }
+  const formatSex = (value?: string) => {
+    const map: Record<string, string> = {
+      female: 'Feminino',
+      male: 'Masculino',
+      other: 'Outro',
+      prefer_not: 'Prefiro não informar',
+    }
+    return value ? map[value] || value : null
+  }
+  const formatYesNo = (value?: string) => {
+    if (value === 'yes') return 'Sim'
+    if (value === 'no') return 'Não'
+    return null
+  }
+  const formatYesNoUnknown = (value?: string) => {
+    if (value === 'yes') return 'Sim'
+    if (value === 'no') return 'Não'
+    if (value === 'unknown') return 'Não sei'
+    return null
+  }
+  const formatHabit = (value?: string) => {
+    if (value === 'never' || value === 'no') return 'Não'
+    if (value === 'socially') return 'Socialmente'
+    if (value === 'yes') return 'Sim'
+    return null
+  }
+  const formatWater = (value?: string) => {
+    const map: Record<string, string> = {
+      lessThan1: 'Menos de 1L',
+      between1and2: '1-2L',
+      moreThan2: 'Mais de 2L',
+      low: 'Pouca',
+      medium: 'Média',
+      high: 'Alta',
+    }
+    return value ? map[value] || value : null
+  }
+  const formatSkin = (value?: string) => {
+    const map: Record<string, string> = {
+      oily: 'Oleosa',
+      dry: 'Seca',
+      combination: 'Mista',
+      sensitive: 'Sensível',
+      unknown: 'Não sei',
+    }
+    return value ? map[value] || value : null
+  }
+  const formatGoal = (value: string) => {
+    const map: Record<string, string> = {
+      rejuvenation: 'Rejuvenescimento',
+      weight_loss: 'Emagrecimento',
+      localized_fat: 'Gordura localizada',
+      cellulite: 'Celulite',
+      sagging: 'Flacidez',
+      acne: 'Acne',
+      spots: 'Manchas',
+      hair_removal: 'Depilação',
+      relaxation: 'Relaxamento',
+      other: 'Outro',
+    }
+    return map[value] || value
+  }
+  const formatRegion = (value: string) => {
+    const map: Record<string, string> = {
+      face: 'Rosto',
+      abdomen: 'Abdômen',
+      legs: 'Pernas',
+      armpits: 'Axilas',
+      groin: 'Virilha',
+      back: 'Costas',
+      full_body: 'Corpo todo',
+    }
+    return map[value] || value
   }
 
   return (
@@ -330,12 +411,13 @@ export default function AnamnesesPage() {
                 Dados Pessoais
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                {renderField('Nome Completo', viewingAnamnese.personalData?.fullName)}
-                {renderField('Data de Nascimento', viewingAnamnese.personalData?.birthDate 
-                  ? new Date(viewingAnamnese.personalData.birthDate).toLocaleDateString('pt-BR')
-                  : null)}
+                {renderField('Nome Completo', viewingAnamnese.personalData?.fullName || viewingAnamnese.personalData?.name)}
+                {renderField('Data de Nascimento', formatBirthDate(viewingAnamnese.personalData?.birthDate))}
+                {renderField('Sexo', formatSex(viewingAnamnese.personalData?.sex))}
                 {renderField('Email', viewingAnamnese.personalData?.email)}
                 {renderField('Telefone', viewingAnamnese.personalData?.phone)}
+                {viewingAnamnese.schemaVersion != null &&
+                  renderField('Versão do formulário', `v${viewingAnamnese.schemaVersion}`)}
                 {viewingAnamnese.personalData?.address?.street && (
                   <div className="col-span-2">
                     <span className="text-gray-600 text-xs block mb-1">Endereço:</span>
@@ -363,22 +445,24 @@ export default function AnamnesesPage() {
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 {renderField('Pratica Exercícios', 
-                  viewingAnamnese.lifestyleData?.exerciseActivity === 'yes' ? 'Sim' :
-                  viewingAnamnese.lifestyleData?.exerciseActivity === 'no' ? 'Não' : null, true)}
+                  viewingAnamnese.lifestyleData?.exerciseActivity === 'yes' || viewingAnamnese.lifestyleData?.physicalActivity === true ? 'Sim' :
+                  viewingAnamnese.lifestyleData?.exerciseActivity === 'no' || viewingAnamnese.lifestyleData?.physicalActivity === false ? 'Não' : null, true)}
+                {viewingAnamnese.lifestyleData?.physicalActivityPerWeek != null &&
+                  renderField('Vezes por semana', String(viewingAnamnese.lifestyleData.physicalActivityPerWeek), true)}
                 {viewingAnamnese.lifestyleData?.exerciseType && 
                   renderField('Tipo de Exercício', viewingAnamnese.lifestyleData.exerciseType, true)}
                 {renderField('Nível de Stress', viewingAnamnese.lifestyleData?.stressLevel ? `${viewingAnamnese.lifestyleData.stressLevel}/10` : null)}
-                {renderField('Fumante', 
-                  viewingAnamnese.lifestyleData?.smoking === 'yes' 
-                    ? `Sim${viewingAnamnese.lifestyleData.smokingAmount ? ` (${viewingAnamnese.lifestyleData.smokingAmount})` : ''}`
-                    : viewingAnamnese.lifestyleData?.smoking === 'no' ? 'Não' : null, true)}
-                {renderField('Consumo de Álcool', 
-                  viewingAnamnese.lifestyleData?.alcohol === 'yes' ? 'Sim' :
-                  viewingAnamnese.lifestyleData?.alcohol === 'no' ? 'Não' : null, true)}
-                {renderField('Ingestão de Água', 
-                  viewingAnamnese.lifestyleData?.waterIntake === 'lessThan1' ? 'Menos de 1L' :
-                  viewingAnamnese.lifestyleData?.waterIntake === 'between1and2' ? '1-2L' :
-                  viewingAnamnese.lifestyleData?.waterIntake === 'moreThan2' ? 'Mais de 2L' : null, true)}
+                {renderField('Fumante', formatHabit(viewingAnamnese.lifestyleData?.smoking), true)}
+                {renderField('Consumo de Álcool', formatHabit(viewingAnamnese.lifestyleData?.alcohol), true)}
+                {renderField('Ingestão de Água', formatWater(viewingAnamnese.lifestyleData?.waterIntake), true)}
+                {renderField('Tipo de pele', formatSkin(viewingAnamnese.lifestyleData?.skinType), true)}
+                {renderField('Acne', viewingAnamnese.lifestyleData?.acne === true ? 'Sim' : viewingAnamnese.lifestyleData?.acne === false ? 'Não' : null)}
+                {renderField('Manchas', viewingAnamnese.lifestyleData?.spots === true
+                  ? `Sim${viewingAnamnese.lifestyleData.spotsDetails ? ` (${viewingAnamnese.lifestyleData.spotsDetails})` : ''}`
+                  : viewingAnamnese.lifestyleData?.spots === false ? 'Não' : null)}
+                {renderField('Procedimentos anteriores', viewingAnamnese.lifestyleData?.previousAesthetic === true
+                  ? (viewingAnamnese.lifestyleData.previousAestheticProcedures?.join(', ') || 'Sim')
+                  : viewingAnamnese.lifestyleData?.previousAesthetic === false ? 'Não' : null)}
                 {renderField('Função Intestinal', 
                   viewingAnamnese.lifestyleData?.intestine === 'regular' ? 'Regular' :
                   viewingAnamnese.lifestyleData?.intestine === 'constipated' ? 'Preso' :
@@ -402,11 +486,21 @@ export default function AnamnesesPage() {
                 🏥 Informações de Saúde
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                {renderField('Alergias', 
-                  viewingAnamnese.healthData?.allergies === 'yes' ? 'Sim' : 
-                  viewingAnamnese.healthData?.allergies === 'no' ? 'Não' : null, true)}
+                {renderField('Doença diagnosticada', formatYesNo(viewingAnamnese.healthData?.diagnosedDisease), true)}
+                {viewingAnamnese.healthData?.diagnosedDiseaseDetails &&
+                  renderField('Quais doenças', viewingAnamnese.healthData.diagnosedDiseaseDetails, true)}
+                {renderField('Tratamento médico', formatYesNo(viewingAnamnese.healthData?.medicalTreatment), true)}
+                {viewingAnamnese.healthData?.medicalTreatmentDetails &&
+                  renderField('Qual tratamento', viewingAnamnese.healthData.medicalTreatmentDetails, true)}
+                {renderField('Alergias', formatYesNo(viewingAnamnese.healthData?.allergies), true)}
                 {viewingAnamnese.healthData?.allergiesDetails && 
                   renderField('Detalhes Alergias', viewingAnamnese.healthData.allergiesDetails, true)}
+                {renderField('Alergia a cosméticos', formatYesNoUnknown(viewingAnamnese.healthData?.cosmeticAllergy), true)}
+                {viewingAnamnese.healthData?.cosmeticAllergyDetails &&
+                  renderField('Quais cosméticos', viewingAnamnese.healthData.cosmeticAllergyDetails, true)}
+                {renderField('Reação a procedimento', formatYesNo(viewingAnamnese.healthData?.aestheticReaction), true)}
+                {viewingAnamnese.healthData?.aestheticReactionDetails &&
+                  renderField('Qual reação', viewingAnamnese.healthData.aestheticReactionDetails, true)}
                 {renderField('Condições de Saúde', viewingAnamnese.healthData?.healthConditions?.length > 0 
                   ? viewingAnamnese.healthData.healthConditions.map((c: string) => {
                       const labels: any = {
@@ -422,22 +516,38 @@ export default function AnamnesesPage() {
                       return labels[c] || c
                     }).join(', ') : null, true)}
                 {renderField('Medicações em Uso', 
-                  viewingAnamnese.healthData?.medications === 'yes' ? 'Sim' :
-                  viewingAnamnese.healthData?.medications === 'no' ? 'Não' : null, true)}
-                {viewingAnamnese.healthData?.medicationsDetails && 
-                  renderField('Detalhes Medicamentos', viewingAnamnese.healthData.medicationsDetails, true)}
+                  formatYesNo(viewingAnamnese.healthData?.medications || viewingAnamnese.healthData?.continuousMedications), true)}
+                {(viewingAnamnese.healthData?.medicationsDetails || viewingAnamnese.healthData?.continuousMedicationsDetails) && 
+                  renderField('Detalhes Medicamentos', viewingAnamnese.healthData.medicationsDetails || viewingAnamnese.healthData.continuousMedicationsDetails, true)}
+                {renderField('Anticoagulantes', viewingAnamnese.healthData?.anticoagulants ? 'Sim' : null)}
+                {renderField('Roacutan', viewingAnamnese.healthData?.roacutan
+                  ? `Sim${viewingAnamnese.healthData.roacutanSince ? ` (${viewingAnamnese.healthData.roacutanSince})` : ''}`
+                  : null)}
+                {renderField('Corticoides', viewingAnamnese.healthData?.corticosteroids ? 'Sim' : null)}
                 {renderField('Possui Marcapasso', viewingAnamnese.healthData?.pacemaker ? 'Sim' : null)}
-                {renderField('Possui Implante Metálico', viewingAnamnese.healthData?.metalImplant ? 'Sim' : null)}
+                {renderField('Possui Implante Metálico', (viewingAnamnese.healthData?.metalImplant || viewingAnamnese.healthData?.metalImplants)
+                  ? `Sim${viewingAnamnese.healthData?.metalImplantsDetails ? ` (${viewingAnamnese.healthData.metalImplantsDetails})` : ''}`
+                  : null)}
+                {renderField('Diabetes', viewingAnamnese.healthData?.diabetes
+                  ? `Sim${viewingAnamnese.healthData.diabetesDetails ? ` (${viewingAnamnese.healthData.diabetesDetails})` : ''}`
+                  : null)}
+                {renderField('Hipertensão', viewingAnamnese.healthData?.hypertension ? 'Sim' : null)}
+                {renderField('Epilepsia', viewingAnamnese.healthData?.epilepsy ? 'Sim' : null)}
+                {renderField('Histórico de câncer', viewingAnamnese.healthData?.cancerHistory
+                  ? `Sim${viewingAnamnese.healthData.cancerHistoryDetails ? ` (${viewingAnamnese.healthData.cancerHistoryDetails})` : ''}`
+                  : null)}
                 {renderField('Gestante', 
-                  viewingAnamnese.healthData?.pregnant === 'yes' ? 'Sim' :
+                  viewingAnamnese.healthData?.pregnant === 'yes' ? `Sim${viewingAnamnese.healthData.pregnantWeeks ? ` (${viewingAnamnese.healthData.pregnantWeeks} sem.)` : ''}` :
+                  viewingAnamnese.healthData?.pregnant === 'suspect' ? 'Suspeita' :
                   viewingAnamnese.healthData?.pregnant === 'no' ? 'Não' : null, true)}
                 {renderField('Amamentando', 
-                  viewingAnamnese.healthData?.breastfeeding === 'yes' ? 'Sim' :
-                  viewingAnamnese.healthData?.breastfeeding === 'no' ? 'Não' : null, true)}
+                  viewingAnamnese.healthData?.breastfeeding === true || viewingAnamnese.healthData?.breastfeeding === 'yes' ? 'Sim' :
+                  viewingAnamnese.healthData?.breastfeeding === false || viewingAnamnese.healthData?.breastfeeding === 'no' ? 'Não' : null, true)}
+                {renderField('DIU', viewingAnamnese.healthData?.iud === true ? 'Sim' : viewingAnamnese.healthData?.iud === false ? 'Não' : null)}
                 {renderField('Usa Anticoncepcional', 
-                  viewingAnamnese.healthData?.birthControl === 'yes'
+                  viewingAnamnese.healthData?.birthControl === true || viewingAnamnese.healthData?.birthControl === 'yes'
                     ? `Sim${viewingAnamnese.healthData.birthControlType ? ` (${viewingAnamnese.healthData.birthControlType})` : ''}`
-                    : viewingAnamnese.healthData?.birthControl === 'no' ? 'Não' : null, true)}
+                    : viewingAnamnese.healthData?.birthControl === false || viewingAnamnese.healthData?.birthControl === 'no' ? 'Não' : null, true)}
               </div>
               {(!viewingAnamnese.healthData || Object.keys(viewingAnamnese.healthData).length === 0) && (
                 <p className="text-sm text-gray-500 italic">Nenhuma informação preenchida</p>
@@ -450,7 +560,13 @@ export default function AnamnesesPage() {
                 🎯 Objetivos e Expectativas
               </h3>
               <div className="space-y-3 text-sm">
-                {renderField('Objetivo Principal', viewingAnamnese.objectivesData?.mainGoal, true)}
+                {renderField('Objetivo Principal', viewingAnamnese.objectivesData?.mainGoal || viewingAnamnese.objectivesData?.objective, true)}
+                {viewingAnamnese.objectivesData?.goals?.length > 0 &&
+                  renderField('Objetivos', viewingAnamnese.objectivesData.goals.map(formatGoal).join(', '), true)}
+                {viewingAnamnese.objectivesData?.otherGoal &&
+                  renderField('Outro objetivo', viewingAnamnese.objectivesData.otherGoal, true)}
+                {viewingAnamnese.objectivesData?.regions?.length > 0 &&
+                  renderField('Regiões', viewingAnamnese.objectivesData.regions.map(formatRegion).join(', '), true)}
                 {viewingAnamnese.objectivesData?.faceIssues?.length > 0 && (
                   <div>
                     <span className="text-gray-600 text-xs block mb-2">Preocupações Faciais:</span>

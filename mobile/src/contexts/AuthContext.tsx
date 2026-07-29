@@ -16,7 +16,8 @@ import {
 } from 'firebase/auth';
 import * as WebBrowser from 'expo-web-browser';
 import { auth } from '../lib/firebase';
-import { getOrCreateUserFromFirebase, User } from '../lib/api';
+import { getOrCreateUserFromFirebase, getUserByFirebaseUid, User } from '../lib/api';
+import { looksLikePhoneName } from '../lib/userDisplay';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -52,6 +53,9 @@ interface AuthContextType {
   confirmPhoneCode: (verificationId: string, code: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Atualiza o usuário em memória + cache (ex.: após anamnese). */
+  setUserProfile: (next: User) => Promise<void>;
+  refreshUser: () => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -102,9 +106,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           uid: fbUser.uid,
           email,
           displayName:
-            fbUser.displayName ||
+            (fbUser.displayName && !looksLikePhoneName(fbUser.displayName)
+              ? fbUser.displayName
+              : undefined) ||
             pendingProfile.current?.name ||
-            fbUser.phoneNumber ||
             undefined,
           phone: pendingProfile.current?.phone || fbUser.phoneNumber || undefined,
         });
@@ -174,6 +179,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await sendPasswordResetEmail(auth, email.trim());
   }, []);
 
+  const setUserProfile = useCallback(async (next: User) => {
+    setUser(next);
+    await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(next));
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    const fb = auth.currentUser;
+    if (!fb) return null;
+    try {
+      const backendUser = await getUserByFirebaseUid(fb.uid);
+      await setUserProfile(backendUser);
+      return backendUser;
+    } catch {
+      return null;
+    }
+  }, [setUserProfile]);
+
   const signOut = useCallback(async () => {
     try {
       await firebaseSignOut(auth);
@@ -199,6 +221,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         confirmPhoneCode,
         resetPassword,
         signOut,
+        setUserProfile,
+        refreshUser,
       }}
     >
       {children}

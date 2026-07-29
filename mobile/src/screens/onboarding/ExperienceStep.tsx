@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { brand } from '../../theme/brand';
+import { heroAutocuidadoSource } from '../../assets/brandAssets';
 import { PageIndicator } from './PageIndicator';
 
 interface ExperienceStepProps {
@@ -28,7 +29,7 @@ export function ExperienceStep({
     <View style={[styles.slide, { width }]}>
       <View style={styles.hero}>
         <Image
-          source={require('../../../assets/hero-autocuidado.png')}
+          source={heroAutocuidadoSource}
           style={styles.heroImage}
           resizeMode="cover"
         />

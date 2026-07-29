@@ -240,9 +240,7 @@ export function AccessScreen() {
       {step === 'methods' && (
         <View style={styles.content}>
           <View style={styles.header}>
-            <View style={styles.logoBox}>
-              <Image source={logoSource} style={styles.logo} resizeMode="contain" />
-            </View>
+            <Image source={logoSource} style={styles.logo} resizeMode="contain" />
             <Text style={styles.title}>Acesse sua conta</Text>
             <Text style={styles.subtitle}>
               Entre para agendar, acompanhar sua ficha e aproveitar o Clube VIP.
@@ -459,25 +457,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 36,
   },
-  logoBox: {
-    width: 96,
-    height: 96,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.65)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.6)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-    shadowColor: brand.rose,
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
-  },
   logo: {
-    width: 68,
-    height: 68,
+    width: 132,
+    height: 132,
+    marginBottom: 20,
   },
   title: {
     fontSize: 28,

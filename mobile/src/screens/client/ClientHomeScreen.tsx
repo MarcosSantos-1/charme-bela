@@ -8,6 +8,7 @@ import { NotificationsPanel } from '../../components/NotificationsPanel';
 import { useNavigation } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { CATEGORY_META, type ServiceCategory } from '../../types/commercial';
+import { displayUserFirstName } from '../../lib/userDisplay';
 
 const { width } = Dimensions.get('window');
 
@@ -21,7 +22,7 @@ export function ClientHomeScreen() {
   const { user } = useAuth();
   const { services, appointments, subscription, refreshing, refresh } = useCommercial();
   const [notificationsVisible, setNotificationsVisible] = useState(false);
-  const firstName = (user?.name || 'Usuária').trim().split(/\s+/)[0];
+  const firstName = displayUserFirstName(user);
   const activePlan = subscription && (subscription.status !== 'CANCELED' || Boolean(subscription.endDate && new Date(subscription.endDate) > new Date())) ? {
     hasActivePlan: true,
     planName: subscription.plan.name,
@@ -111,7 +112,10 @@ export function ClientHomeScreen() {
         {/* Ações Rápidas */}
         <View style={styles.section}>
           <View style={styles.quickActionsGrid}>
-            <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: '#fce7f3' }]}>
+            <TouchableOpacity
+              style={[styles.quickActionCard, { backgroundColor: '#fce7f3' }]}
+              onPress={() => navigation.navigate('Profile', { openScreen: 'anamnesis' })}
+            >
               <View style={styles.quickActionIcon}>
                 <Ionicons name="clipboard-outline" size={32} color="#ec4899" />
               </View>

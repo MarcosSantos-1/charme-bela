@@ -1,6 +1,10 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
+import {
+  ANAMNESIS_SCHEMA_V2,
+  validateAnamnesisComplete,
+} from '../utils/anamnesisSchema'
 
 export async function anamnesisRoutes(app: FastifyInstance) {
   // GET - Listar todas as anamneses (apenas para gestores)
@@ -83,11 +87,12 @@ export async function anamnesisRoutes(app: FastifyInstance) {
     try {
       const { 
         userId, 
-        personalData,      // Step 1: Dados Pessoais
-        lifestyleData,     // Step 2: Estilo de Vida
-        healthData,        // Step 3: Saúde
-        objectivesData,    // Step 4: Objetivos
-        termsAccepted      // Step 5: Termos
+        personalData,
+        lifestyleData,
+        healthData,
+        objectivesData,
+        termsAccepted,
+        schemaVersion: rawVersion,
       } = request.body as {
         userId: string
         personalData: any
@@ -95,11 +100,24 @@ export async function anamnesisRoutes(app: FastifyInstance) {
         healthData: any
         objectivesData: any
         termsAccepted: boolean
+        schemaVersion?: number
       }
       
       logger.debug('Criando nova anamnese para usuário:', userId)
+
+      if (termsAccepted === true) {
+        const validationError = validateAnamnesisComplete({
+          personalData,
+          lifestyleData,
+          healthData,
+          objectivesData,
+          termsAccepted,
+        })
+        if (validationError) {
+          return reply.status(400).send({ success: false, error: validationError })
+        }
+      }
       
-      // Verifica se o usuário existe
       const user = await prisma.user.findUnique({
         where: { id: userId }
       })
@@ -112,7 +130,6 @@ export async function anamnesisRoutes(app: FastifyInstance) {
         })
       }
       
-      // Verifica se já existe uma anamnese para este usuário
       const existingAnamnesis = await prisma.anamnesisForm.findUnique({
         where: { userId }
       })
@@ -124,16 +141,24 @@ export async function anamnesisRoutes(app: FastifyInstance) {
           error: 'Anamnese já existe para este usuário. Use PUT para atualizar.'
         })
       }
+
+      const schemaVersion =
+        typeof rawVersion === 'number' && rawVersion >= 1
+          ? Math.floor(rawVersion)
+          : termsAccepted
+            ? ANAMNESIS_SCHEMA_V2
+            : 1
       
       const anamnesis = await prisma.anamnesisForm.create({
         data: {
           userId,
-          personalData,
-          lifestyleData,
-          healthData,
-          objectivesData,
-          termsAccepted,
-          termsAcceptedAt: termsAccepted ? new Date() : null
+          personalData: personalData ?? {},
+          lifestyleData: lifestyleData ?? {},
+          healthData: healthData ?? {},
+          objectivesData: objectivesData ?? {},
+          termsAccepted: Boolean(termsAccepted),
+          termsAcceptedAt: termsAccepted ? new Date() : null,
+          schemaVersion,
         },
         include: {
           user: {
@@ -171,18 +196,33 @@ export async function anamnesisRoutes(app: FastifyInstance) {
         lifestyleData,
         healthData,
         objectivesData,
-        termsAccepted
+        termsAccepted,
+        schemaVersion: rawVersion,
       } = request.body as {
         personalData?: any
         lifestyleData?: any
         healthData?: any
         objectivesData?: any
         termsAccepted?: boolean
+        schemaVersion?: number
       }
       
       logger.debug('Atualizando anamnese para usuário:', userId)
+
+      if (termsAccepted === true) {
+        const merged = {
+          personalData: personalData ?? {},
+          lifestyleData: lifestyleData ?? {},
+          healthData: healthData ?? {},
+          objectivesData: objectivesData ?? {},
+          termsAccepted: true,
+        }
+        const validationError = validateAnamnesisComplete(merged)
+        if (validationError) {
+          return reply.status(400).send({ success: false, error: validationError })
+        }
+      }
       
-      // Verifica se a anamnese existe
       const existingAnamnesis = await prisma.anamnesisForm.findUnique({
         where: { userId }
       })
@@ -194,14 +234,20 @@ export async function anamnesisRoutes(app: FastifyInstance) {
           error: 'Anamnese não encontrada'
         })
       }
+
+      const schemaVersion =
+        typeof rawVersion === 'number' && rawVersion >= 1
+          ? Math.floor(rawVersion)
+          : undefined
       
       const anamnesis = await prisma.anamnesisForm.update({
         where: { userId },
         data: {
-          ...(personalData && { personalData }),
-          ...(lifestyleData && { lifestyleData }),
-          ...(healthData && { healthData }),
-          ...(objectivesData && { objectivesData }),
+          ...(personalData !== undefined && { personalData }),
+          ...(lifestyleData !== undefined && { lifestyleData }),
+          ...(healthData !== undefined && { healthData }),
+          ...(objectivesData !== undefined && { objectivesData }),
+          ...(schemaVersion !== undefined && { schemaVersion }),
           ...(termsAccepted !== undefined && { 
             termsAccepted,
             termsAcceptedAt: termsAccepted ? new Date() : null
@@ -238,7 +284,6 @@ export async function anamnesisRoutes(app: FastifyInstance) {
     logger.route('DELETE', `/anamnesis/user/${userId}`)
     
     try {
-      // Verifica se a anamnese existe
       const existingAnamnesis = await prisma.anamnesisForm.findUnique({
         where: { userId }
       })
@@ -269,4 +314,3 @@ export async function anamnesisRoutes(app: FastifyInstance) {
     }
   })
 }
-

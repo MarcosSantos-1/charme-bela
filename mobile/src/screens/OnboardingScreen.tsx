@@ -106,8 +106,7 @@ export function OnboardingScreen({ onFinish }: OnboardingScreenProps) {
           total={TOTAL}
           current={index}
           onSelect={goTo}
-          onCreateAccount={finish}
-          onLogin={finish}
+          onAccess={finish}
           width={width}
         />
       ),

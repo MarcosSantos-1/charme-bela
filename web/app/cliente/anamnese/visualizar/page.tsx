@@ -28,9 +28,29 @@ const translateWaterIntake = (value: string | undefined): string => {
   const map: any = {
     'lessThan1': 'Menos de 1 litro',
     'between1and2': '1-2 litros',
-    'moreThan2': 'Mais de 2 litros'
+    'moreThan2': 'Mais de 2 litros',
+    'low': 'Pouca',
+    'medium': 'Média',
+    'high': 'Alta',
   }
   return map[value || ''] || '-'
+}
+
+const translateSex = (value: string | undefined): string => {
+  const map: any = {
+    female: 'Feminino',
+    male: 'Masculino',
+    other: 'Outro',
+    prefer_not: 'Prefiro não informar',
+  }
+  return map[value || ''] || '-'
+}
+
+const translateHabit = (value: string | undefined): string => {
+  if (value === 'never' || value === 'no') return 'Não'
+  if (value === 'socially') return 'Socialmente'
+  if (value === 'yes') return 'Sim'
+  return translateYesNo(value)
 }
 
 const translateIntestine = (value: string | undefined): string => {
@@ -153,6 +173,10 @@ export default function VisualizarAnamnesePage() {
                 </p>
               </div>
               <div>
+                <p className="text-sm text-gray-600">Sexo</p>
+                <p className="font-medium text-gray-900">{translateSex(data.sex)}</p>
+              </div>
+              <div>
                 <p className="text-sm text-gray-600">Telefone</p>
                 <p className="font-medium text-gray-900">{data.phone || '-'}</p>
               </div>
@@ -160,18 +184,22 @@ export default function VisualizarAnamnesePage() {
                 <p className="text-sm text-gray-600">E-mail</p>
                 <p className="font-medium text-gray-900">{data.email || '-'}</p>
               </div>
-              <div className="md:col-span-2">
-                <p className="text-sm text-gray-600">Endereço</p>
-                <p className="font-medium text-gray-900">
-                  {data.street}, {data.number} {data.complement && ` - ${data.complement}`}<br />
-                  {data.neighborhood} - {data.city}/{data.state}<br />
-                  CEP: {data.cep}
-                </p>
-              </div>
-              <div className="md:col-span-2">
-                <p className="text-sm text-gray-600">Como nos conheceu?</p>
-                <p className="font-medium text-gray-900">{translateHowKnew(data.howKnew)}</p>
-              </div>
+              {(data.street || data.cep) && (
+                <div className="md:col-span-2">
+                  <p className="text-sm text-gray-600">Endereço</p>
+                  <p className="font-medium text-gray-900">
+                    {data.street}, {data.number} {data.complement && ` - ${data.complement}`}<br />
+                    {data.neighborhood} - {data.city}/{data.state}<br />
+                    CEP: {data.cep}
+                  </p>
+                </div>
+              )}
+              {data.howKnew && (
+                <div className="md:col-span-2">
+                  <p className="text-sm text-gray-600">Como nos conheceu?</p>
+                  <p className="font-medium text-gray-900">{translateHowKnew(data.howKnew)}</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -201,12 +229,12 @@ export default function VisualizarAnamnesePage() {
                 <p className="font-medium text-gray-900">
                   {data.smoking === 'yes' && data.smokingAmount 
                     ? `Sim (${data.smokingAmount})`
-                    : translateYesNo(data.smoking)}
+                    : translateHabit(data.smoking)}
                 </p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Consumo de Álcool</p>
-                <p className="font-medium text-gray-900">{translateYesNo(data.alcohol)}</p>
+                <p className="font-medium text-gray-900">{translateHabit(data.alcohol)}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Ingestão de Água</p>
@@ -324,6 +352,45 @@ export default function VisualizarAnamnesePage() {
                 <div>
                   <p className="text-sm text-gray-600">Objetivo Principal</p>
                   <p className="font-medium text-gray-900">{data.mainGoal}</p>
+                </div>
+              )}
+
+              {data.goals && data.goals.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Objetivos</p>
+                  <div className="flex flex-wrap gap-2">
+                    {data.goals.map((goal, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-pink-100 text-pink-700 rounded-full text-sm font-medium"
+                      >
+                        {goal}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {data.otherGoal && (
+                <div>
+                  <p className="text-sm text-gray-600">Outro objetivo</p>
+                  <p className="font-medium text-gray-900">{data.otherGoal}</p>
+                </div>
+              )}
+
+              {data.regions && data.regions.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Regiões</p>
+                  <div className="flex flex-wrap gap-2">
+                    {data.regions.map((region, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-rose-100 text-rose-700 rounded-full text-sm font-medium"
+                      >
+                        {region}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
 

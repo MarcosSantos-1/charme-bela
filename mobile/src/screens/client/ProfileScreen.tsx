@@ -15,6 +15,7 @@ import { LanguageScreen } from './profile/LanguageScreen';
 import { HelpCenterScreen } from './profile/HelpCenterScreen';
 import { PrivacyScreen } from './profile/PrivacyScreen';
 import { ContactModal } from '../../components/ContactModal';
+import { displayUserContact, displayUserName } from '../../lib/userDisplay';
 
 type SubScreen = 'main' | 'personal-data' | 'plan' | 'anamnesis' | 'history' | 'notifications' | 'language' | 'help' | 'privacy';
 
@@ -28,8 +29,9 @@ export function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (route.params?.openScreen === 'history') {
-        setCurrentScreen('history');
+      const screen = route.params?.openScreen;
+      if (screen === 'history' || screen === 'anamnesis' || screen === 'plan') {
+        setCurrentScreen(screen);
         navigation.setParams({ openScreen: undefined });
       }
     }, [route.params?.openScreen, navigation])
@@ -80,11 +82,11 @@ export function ProfileScreen() {
           <View style={styles.profileHeader}>
             <View style={styles.avatarLarge}>
               <Text style={styles.avatarText}>
-                {user?.name?.charAt(0).toUpperCase() || 'U'}
+                {displayUserName(user).charAt(0).toUpperCase()}
               </Text>
             </View>
-            <Text style={styles.userName}>{user?.name || 'Usuário'}</Text>
-            <Text style={styles.userEmail}>{user?.email}</Text>
+            <Text style={styles.userName}>{displayUserName(user)}</Text>
+            <Text style={styles.userEmail}>{displayUserContact(user)}</Text>
             <TouchableOpacity style={styles.editButton} onPress={() => setCurrentScreen('personal-data')}>
               <Text style={styles.editButtonText}>Editar Perfil</Text>
             </TouchableOpacity>

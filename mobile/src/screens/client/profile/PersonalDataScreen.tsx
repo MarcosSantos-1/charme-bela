@@ -2,9 +2,17 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../contexts/AuthContext';
 import { ScreenHeader } from '../../../components/ScreenHeader';
+import {
+  displayUserContact,
+  displayUserName,
+  formatPhoneDisplay,
+  isPhoneLocalEmail,
+} from '../../../lib/userDisplay';
 
 export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth();
+  const contactEmail = user?.email && !isPhoneLocalEmail(user.email) ? user.email : '';
+  const contactPhone = formatPhoneDisplay(user?.phone) || displayUserContact(user);
 
   return (
     <View style={styles.container}>
@@ -21,7 +29,7 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
         <View style={styles.avatarSection}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
-              {user?.name?.charAt(0).toUpperCase() || 'U'}
+              {displayUserName(user).charAt(0).toUpperCase()}
             </Text>
           </View>
           <TouchableOpacity style={styles.editAvatarButton}>
@@ -37,9 +45,10 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
               <Ionicons name="person-outline" size={20} color="#6b7280" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                value={user?.name || ''}
+                value={displayUserName(user, '')}
                 placeholder="Seu nome completo"
                 placeholderTextColor="#9ca3af"
+                editable={false}
               />
             </View>
           </View>
@@ -50,10 +59,11 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
               <Ionicons name="mail-outline" size={20} color="#6b7280" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                value={user?.email || ''}
-                placeholder="seu@email.com"
+                value={contactEmail}
+                placeholder={isPhoneLocalEmail(user?.email) ? 'Conta por celular' : 'seu@email.com'}
                 keyboardType="email-address"
                 placeholderTextColor="#9ca3af"
+                editable={false}
               />
             </View>
           </View>
@@ -64,10 +74,11 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
               <Ionicons name="call-outline" size={20} color="#6b7280" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                value={user?.phone || '(11) 99999-9999'}
+                value={contactPhone}
                 placeholder="(11) 99999-9999"
                 keyboardType="phone-pad"
                 placeholderTextColor="#9ca3af"
+                editable={false}
               />
             </View>
           </View>

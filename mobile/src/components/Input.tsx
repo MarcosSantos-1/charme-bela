@@ -1,4 +1,5 @@
 import { View, Text, TextInput, TextInputProps } from 'react-native';
+import { dismissKeyboard } from './KeyboardForm';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -6,7 +7,16 @@ interface InputProps extends TextInputProps {
   icon?: string;
 }
 
-export function Input({ label, error, icon, ...props }: InputProps) {
+export function Input({
+  label,
+  error,
+  icon,
+  onSubmitEditing,
+  returnKeyType,
+  blurOnSubmit,
+  multiline,
+  ...props
+}: InputProps) {
   return (
     <View className="mb-4">
       {label && (
@@ -28,6 +38,10 @@ export function Input({ label, error, icon, ...props }: InputProps) {
             focus:border-pink-500
           `}
           placeholderTextColor="#9CA3AF"
+          multiline={multiline}
+          returnKeyType={returnKeyType ?? (multiline ? 'default' : 'done')}
+          blurOnSubmit={blurOnSubmit ?? !multiline}
+          onSubmitEditing={onSubmitEditing ?? (multiline ? undefined : dismissKeyboard)}
           {...props}
         />
       </View>
@@ -39,5 +53,3 @@ export function Input({ label, error, icon, ...props }: InputProps) {
     </View>
   );
 }
-
-

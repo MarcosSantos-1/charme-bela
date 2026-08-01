@@ -2,23 +2,27 @@ import { ReactNode } from 'react';
 import {
   View,
   Text,
+  Image,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
+  ImageSourcePropType,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { brand } from '../../../theme/brand';
+import { KeyboardForm, dismissKeyboard } from '../../../components/KeyboardForm';
 
 interface AnamnesisShellProps {
   badge: string;
   emoji?: string;
+  /** Ionicons name used in the badge (welcome screen). */
+  badgeIcon?: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle?: string;
+  /** Decorative image rendered beside the title (e.g. outline heart). */
+  titleAccessory?: ImageSourcePropType;
   stepIndex: number;
   stepTotal: number;
   children: ReactNode;
@@ -29,13 +33,17 @@ interface AnamnesisShellProps {
   nextLoading?: boolean;
   hideBack?: boolean;
   scrollable?: boolean;
+  /** Soft white + pink blobs — only used on the welcome step for now. */
+  variant?: 'default' | 'welcome';
 }
 
 export function AnamnesisShell({
   badge,
   emoji,
+  badgeIcon,
   title,
   subtitle,
+  titleAccessory,
   stepIndex,
   stepTotal,
   children,
@@ -45,96 +53,132 @@ export function AnamnesisShell({
   nextDisabled = false,
   nextLoading = false,
   hideBack = false,
-  scrollable = false,
+  variant = 'default',
 }: AnamnesisShellProps) {
   const insets = useSafeAreaInsets();
   const progress = Math.max(0.08, (stepIndex + 1) / stepTotal);
+  const isWelcome = variant === 'welcome';
 
-  const body = (
-    <View style={styles.content}>
-      <View style={styles.badge}>
-        {emoji ? <Text style={styles.badgeEmoji}>{emoji}</Text> : null}
-        <Text style={styles.badgeText}>{badge}</Text>
+  const handleNext = () => {
+    dismissKeyboard();
+    onNext();
+  };
+
+  const handleBack = () => {
+    dismissKeyboard();
+    onBack?.();
+  };
+
+  const footer = (
+    <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) + 16 }]}>
+      <View style={styles.actions}>
+        {!hideBack && onBack ? (
+          <TouchableOpacity
+            onPress={handleBack}
+            style={styles.backBtn}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.backText}>Voltar</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity
+          onPress={handleNext}
+          disabled={nextDisabled || nextLoading}
+          style={[
+            styles.nextBtn,
+            (nextDisabled || nextLoading) && styles.nextDisabled,
+          ]}
+          activeOpacity={0.9}
+        >
+          {nextLoading ? (
+            <ActivityIndicator color={brand.white} />
+          ) : (
+            <>
+              <Text style={styles.nextText}>{nextLabel}</Text>
+              <Ionicons name="arrow-forward" size={20} color={brand.white} />
+            </>
+          )}
+        </TouchableOpacity>
       </View>
-      <Text style={styles.title}>{title}</Text>
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-      <View style={styles.fields}>{children}</View>
     </View>
   );
 
   return (
-    <View style={styles.root}>
-      <LinearGradient
-        colors={[brand.blush, brand.background, brand.champagne]}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={[styles.orb, styles.orbRose]} />
-      <View style={[styles.orb, styles.orbGold]} />
+    <View style={[styles.root, isWelcome && styles.rootWelcome]}>
+      {isWelcome ? (
+        <>
+          <View style={[styles.blob, styles.blobTop]} />
+          <View style={[styles.blob, styles.blobBottom]} />
+        </>
+      ) : (
+        <>
+          <LinearGradient
+            colors={[brand.blush, brand.background, brand.champagne]}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={[styles.orb, styles.orbRose]} />
+          <View style={[styles.orb, styles.orbGold]} />
+        </>
+      )}
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={[styles.inner, { paddingTop: insets.top + 16 }]}>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-          </View>
-          <Text style={styles.progressLabel}>
-            {stepIndex + 1} de {stepTotal}
-          </Text>
-
-          {scrollable ? (
-            <ScrollView
-              style={styles.flex}
-              contentContainerStyle={styles.scrollContent}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              {body}
-            </ScrollView>
-          ) : (
-            <View style={styles.flex}>{body}</View>
-          )}
-
-          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) + 16 }]}>
-            <View style={styles.actions}>
-              {!hideBack && onBack ? (
-                <TouchableOpacity
-                  onPress={onBack}
-                  style={styles.backBtn}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.backText}>Voltar</Text>
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity
-                onPress={onNext}
-                disabled={nextDisabled || nextLoading}
-                style={[
-                  styles.nextBtn,
-                  (nextDisabled || nextLoading) && styles.nextDisabled,
-                ]}
-                activeOpacity={0.9}
-              >
-                {nextLoading ? (
-                  <ActivityIndicator color={brand.white} />
-                ) : (
-                  <>
-                    <Text style={styles.nextText}>{nextLabel}</Text>
-                    <Ionicons name="arrow-forward" size={20} color={brand.white} />
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
+      <View style={[styles.inner, { paddingTop: insets.top + 16 }]}>
+        <View style={[styles.progressTrack, isWelcome && styles.progressTrackWelcome]}>
+          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
         </View>
-      </KeyboardAvoidingView>
+        <Text style={styles.progressLabel}>
+          {stepIndex + 1} de {stepTotal}
+        </Text>
+
+        <KeyboardForm
+          style={styles.flex}
+          contentContainerStyle={styles.scrollContent}
+          footer={footer}
+        >
+          <View style={styles.content}>
+            <View style={[styles.badge, isWelcome && styles.badgeWelcome]}>
+              {badgeIcon ? (
+                <Ionicons name={badgeIcon} size={14} color={brand.rose} />
+              ) : emoji ? (
+                <Text style={styles.badgeEmoji}>{emoji}</Text>
+              ) : null}
+              <Text style={styles.badgeText}>{badge}</Text>
+            </View>
+
+            <View style={styles.titleRow}>
+              <Text
+                style={[
+                  styles.title,
+                  isWelcome && styles.titleWelcome,
+                  titleAccessory ? styles.titleFlex : null,
+                ]}
+              >
+                {title}
+              </Text>
+              {titleAccessory ? (
+                <Image
+                  source={titleAccessory}
+                  style={styles.titleAccessory}
+                  resizeMode="contain"
+                />
+              ) : null}
+            </View>
+
+            {subtitle ? (
+              <Text style={[styles.subtitle, isWelcome && styles.subtitleWelcome]}>
+                {subtitle}
+              </Text>
+            ) : null}
+            <View style={styles.fields}>{children}</View>
+          </View>
+        </KeyboardForm>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: brand.background },
+  rootWelcome: { backgroundColor: '#ffffff' },
   flex: { flex: 1 },
   inner: { flex: 1, paddingHorizontal: 28 },
   orb: {
@@ -153,12 +197,36 @@ const styles = StyleSheet.create({
     left: -100,
     backgroundColor: 'rgba(230, 201, 138, 0.22)',
   },
+  blob: {
+    position: 'absolute',
+    backgroundColor: 'rgba(253, 220, 233, 0.55)',
+  },
+  blobTop: {
+    width: 280,
+    height: 220,
+    borderRadius: 140,
+    top: -70,
+    right: -90,
+    transform: [{ rotate: '18deg' }],
+  },
+  blobBottom: {
+    width: 340,
+    height: 260,
+    borderRadius: 160,
+    bottom: 40,
+    left: -120,
+    backgroundColor: 'rgba(252, 228, 237, 0.7)',
+    transform: [{ rotate: '-12deg' }],
+  },
   progressTrack: {
     height: 6,
     borderRadius: 999,
     backgroundColor: 'rgba(236, 73, 152, 0.15)',
     overflow: 'hidden',
     marginBottom: 8,
+  },
+  progressTrackWelcome: {
+    backgroundColor: '#f8d7e6',
   },
   progressFill: {
     height: '100%',
@@ -172,7 +240,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   content: { flexGrow: 1 },
-  scrollContent: { flexGrow: 1, paddingBottom: 12 },
+  scrollContent: { flexGrow: 1, paddingBottom: 32 },
   badge: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
@@ -184,14 +252,33 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginBottom: 14,
   },
+  badgeWelcome: {
+    backgroundColor: '#fde8f1',
+  },
   badgeEmoji: { fontSize: 13 },
   badgeText: { fontSize: 12, fontWeight: '500', color: brand.ink },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 10,
+  },
   title: {
     fontSize: 28,
     fontWeight: '600',
     color: brand.ink,
     lineHeight: 34,
-    marginBottom: 10,
+  },
+  titleWelcome: {
+    fontSize: 26,
+    fontWeight: '700',
+    lineHeight: 32,
+  },
+  titleFlex: { flex: 1 },
+  titleAccessory: {
+    width: 56,
+    height: 48,
+    marginTop: 2,
   },
   subtitle: {
     fontSize: 15,
@@ -199,8 +286,11 @@ const styles = StyleSheet.create({
     color: brand.muted,
     marginBottom: 22,
   },
+  subtitleWelcome: {
+    marginBottom: 20,
+  },
   fields: { gap: 14 },
-  footer: { paddingTop: 12 },
+  footer: { paddingTop: 12, paddingHorizontal: 0 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   backBtn: {
     borderWidth: 1,

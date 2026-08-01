@@ -1,5 +1,6 @@
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { brand } from '../../../theme/brand';
+import { dismissKeyboard } from '../../../components/KeyboardForm';
 
 interface RevealInputProps {
   label?: string;
@@ -30,6 +31,9 @@ export function RevealInput({
         keyboardType={keyboardType}
         style={[styles.input, multiline && styles.multiline]}
         textAlignVertical={multiline ? 'top' : 'center'}
+        returnKeyType={multiline ? 'default' : 'done'}
+        blurOnSubmit={!multiline}
+        onSubmitEditing={multiline ? undefined : dismissKeyboard}
       />
     </View>
   );

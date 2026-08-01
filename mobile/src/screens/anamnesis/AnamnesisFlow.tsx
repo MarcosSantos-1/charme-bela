@@ -2,11 +2,13 @@ import { useMemo, useReducer, useState } from 'react';
 import { Alert, Text, View, StyleSheet, TouchableOpacity } from 'react-native';
 import type { Dispatch } from 'react';
 import { AnamnesisShell } from './components/AnamnesisShell';
+import { WelcomeIntro } from './components/WelcomeIntro';
 import { ChoiceCards } from './components/ChoiceCards';
 import { MultiSelectCards } from './components/MultiSelectCards';
 import { RevealInput } from './components/RevealInput';
 import { SwitchRow } from './components/SwitchRow';
 import { ConsentChecks } from './components/ConsentChecks';
+import { formHeartOutlineSource } from '../../assets/brandAssets';
 import {
   AnamnesisFormState,
   anamnesisReducer,
@@ -245,21 +247,26 @@ export function AnamnesisFlow({ user, onComplete, initialForm }: AnamnesisFlowPr
   const meta = STEP_META[step];
   const disabled = !canContinue(step, state);
 
+  const isWelcome = step === 'welcome';
+
   return (
     <AnamnesisShell
       badge={meta.badge}
-      emoji={meta.emoji}
+      emoji={isWelcome ? undefined : meta.emoji}
+      badgeIcon={isWelcome ? 'clipboard-outline' : undefined}
       title={meta.title}
       subtitle={meta.subtitle}
+      titleAccessory={isWelcome ? formHeartOutlineSource : undefined}
       stepIndex={stepIndex}
       stepTotal={steps.length}
       onBack={stepIndex > 0 ? goBack : undefined}
       hideBack={stepIndex === 0}
       onNext={goNext}
-      nextLabel={step === 'consent' ? 'Concluir minha ficha' : step === 'welcome' ? 'Vamos começar' : 'Continuar'}
+      nextLabel={step === 'consent' ? 'Concluir minha ficha' : isWelcome ? 'Vamos começar' : 'Continuar'}
       nextDisabled={disabled}
       nextLoading={saving}
       scrollable={SCROLLABLE_STEPS.has(step)}
+      variant={isWelcome ? 'welcome' : 'default'}
     >
       {renderStep(step, state, patch, dispatch)}
     </AnamnesisShell>
@@ -286,11 +293,11 @@ const STEP_META: Record<
   { badge: string; emoji: string; title: string; subtitle: string }
 > = {
   welcome: {
-    badge: 'Ficha de cuidado',
+    badge: 'Ficha de anamnese',
     emoji: '❤️',
-    title: 'Antes de cuidar da sua pele, vamos te conhecer',
+    title: 'Antes de tudo, queremos te conhecer melhor!',
     subtitle:
-      'São perguntinhas rápidas — uma de cada vez. Suas respostas ajudam a gente a indicar o tratamento certo, com segurança e carinho.',
+      'Responder algumas perguntas rápidas nos ajuda a entender suas necessidades e indicar os tratamentos mais seguros e eficazes para você.',
   },
   personal: {
     badge: 'Sobre você',
@@ -409,14 +416,7 @@ function renderStep(
 ) {
   switch (step) {
     case 'welcome':
-      return (
-        <View style={styles.welcomeCard}>
-          <Text style={styles.welcomeEmoji}>💖</Text>
-          <Text style={styles.welcomeText}>
-            Leva poucos minutos. Você pode voltar e ajustar respostas a qualquer momento.
-          </Text>
-        </View>
-      );
+      return <WelcomeIntro />;
 
     case 'personal':
       return (
@@ -1015,22 +1015,6 @@ function renderStep(
 }
 
 const styles = StyleSheet.create({
-  welcomeCard: {
-    backgroundColor: 'rgba(255,255,255,0.82)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: brand.border,
-    padding: 22,
-    alignItems: 'center',
-    gap: 12,
-  },
-  welcomeEmoji: { fontSize: 36 },
-  welcomeText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: brand.muted,
-    textAlign: 'center',
-  },
   question: {
     fontSize: 15,
     fontWeight: '600',

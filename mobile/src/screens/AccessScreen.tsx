@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +24,7 @@ import { brand } from '../theme/brand';
 import { logoSource } from '../assets/brandAssets';
 import { firebaseConfig } from '../lib/firebase';
 import type { AuthStackParamList } from '../navigation/AuthNavigator';
+import { KeyboardForm, dismissKeyboard } from '../components/KeyboardForm';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -33,6 +35,32 @@ function maskPhone(value: string) {
   if (digits.length <= 2) return digits.replace(/(\d{0,2})/, '($1');
   if (digits.length <= 7) return digits.replace(/(\d{2})(\d{0,5})/, '($1) $2');
   return digits.replace(/(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3');
+}
+
+function PhoneField({
+  value,
+  onChangeText,
+}: {
+  value: string;
+  onChangeText: (text: string) => void;
+}) {
+  return (
+    <View style={styles.phoneRow}>
+      <Text style={styles.phonePrefix}>+55</Text>
+      <TextInput
+        style={styles.phoneInput}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder="(11) 99999-9999"
+        placeholderTextColor="rgba(138,112,120,0.6)"
+        keyboardType="phone-pad"
+        returnKeyType="done"
+        blurOnSubmit
+        onSubmitEditing={dismissKeyboard}
+        autoFocus
+      />
+    </View>
+  );
 }
 
 export function AccessScreen() {
@@ -151,6 +179,7 @@ export function AccessScreen() {
 
   const handleSendCode = async () => {
     if (!phoneComplete || !recaptchaRef.current) return;
+    dismissKeyboard();
     setLoading(true);
     try {
       const e164 = `+55${phoneDigits}`;
@@ -173,6 +202,7 @@ export function AccessScreen() {
 
   const handleVerifyCode = async () => {
     if (!verificationId || !codeComplete) return;
+    dismissKeyboard();
     setLoading(true);
     try {
       await confirmPhoneCode(verificationId, code.join(''));
@@ -230,7 +260,10 @@ export function AccessScreen() {
       {step !== 'methods' && (
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => setStep(step === 'otp' ? 'phone' : 'methods')}
+          onPress={() => {
+            dismissKeyboard();
+            setStep(step === 'otp' ? 'phone' : 'methods');
+          }}
           hitSlop={12}
         >
           <Ionicons name="arrow-back" size={22} color={brand.ink} />
@@ -295,23 +328,17 @@ export function AccessScreen() {
       )}
 
       {step === 'phone' && (
-        <View style={styles.stepContent}>
+        <KeyboardForm
+          style={styles.stepForm}
+          contentContainerStyle={styles.stepContent}
+        >
           <Text style={styles.title}>Qual seu celular?</Text>
           <Text style={styles.subtitleLeft}>Enviaremos um código de verificação por SMS.</Text>
 
           <Text style={styles.fieldLabel}>Número de telefone</Text>
-          <View style={styles.phoneRow}>
-            <Text style={styles.phonePrefix}>+55</Text>
-            <TextInput
-              style={styles.phoneInput}
-              value={phone}
-              onChangeText={(t) => setPhone(maskPhone(t))}
-              placeholder="(11) 99999-9999"
-              placeholderTextColor="rgba(138,112,120,0.6)"
-              keyboardType="phone-pad"
-              autoFocus
-            />
-          </View>
+          <PhoneField value={phone} onChangeText={(t) => setPhone(maskPhone(t))} />
+
+          <Pressable style={styles.stepSpacer} onPress={dismissKeyboard} />
 
           <View style={styles.stepFooter}>
             <TouchableOpacity
@@ -330,11 +357,14 @@ export function AccessScreen() {
               )}
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardForm>
       )}
 
       {step === 'otp' && (
-        <View style={styles.stepContent}>
+        <KeyboardForm
+          style={styles.stepForm}
+          contentContainerStyle={styles.stepContent}
+        >
           <Text style={styles.title}>Digite o código</Text>
           <Text style={styles.subtitleLeft}>
             Enviamos um SMS para <Text style={styles.phoneHighlight}>+55 {phone}</Text>
@@ -369,6 +399,8 @@ export function AccessScreen() {
             </Text>
           </TouchableOpacity>
 
+          <Pressable style={styles.stepSpacer} onPress={dismissKeyboard} />
+
           <View style={styles.stepFooter}>
             <TouchableOpacity
               style={[styles.btn, styles.btnPhone, (!codeComplete || loading) && styles.btnDisabled]}
@@ -386,7 +418,7 @@ export function AccessScreen() {
               )}
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardForm>
       )}
       </SafeAreaView>
     </View>
@@ -448,10 +480,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     justifyContent: 'center',
   },
-  stepContent: {
+  stepForm: {
     flex: 1,
+  },
+  stepContent: {
+    flexGrow: 1,
     paddingHorizontal: 32,
     paddingTop: 16,
+  },
+  stepSpacer: {
+    flexGrow: 1,
+    minHeight: 24,
   },
   header: {
     alignItems: 'center',
@@ -594,8 +633,8 @@ const styles = StyleSheet.create({
     color: brand.ink,
   },
   stepFooter: {
-    marginTop: 'auto',
     paddingBottom: 24,
+    paddingTop: 12,
   },
   otpRow: {
     marginTop: 28,

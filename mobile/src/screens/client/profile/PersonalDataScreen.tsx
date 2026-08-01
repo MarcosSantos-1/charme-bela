@@ -1,13 +1,44 @@
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { type ComponentProps } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../contexts/AuthContext';
 import { ScreenHeader } from '../../../components/ScreenHeader';
+import { KeyboardForm, dismissKeyboard } from '../../../components/KeyboardForm';
 import {
   displayUserContact,
   displayUserName,
   formatPhoneDisplay,
   isPhoneLocalEmail,
 } from '../../../lib/userDisplay';
+
+function FormField({
+  label,
+  icon,
+  ...inputProps
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+} & ComponentProps<typeof TextInput>) {
+  const { editable = true, ...rest } = inputProps;
+
+  return (
+    <View style={styles.inputGroup}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.inputContainer}>
+        <Ionicons name={icon} size={20} color="#6b7280" style={styles.inputIcon} />
+        <TextInput
+          style={styles.input}
+          placeholderTextColor="#9ca3af"
+          editable={editable}
+          returnKeyType="done"
+          blurOnSubmit
+          onSubmitEditing={dismissKeyboard}
+          {...rest}
+        />
+      </View>
+    </View>
+  );
+}
 
 export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth();
@@ -24,8 +55,10 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
         <View style={{ width: 40 }} />
       </ScreenHeader>
 
-      <ScrollView style={styles.content}>
-        {/* Avatar */}
+      <KeyboardForm
+        style={styles.content}
+        contentContainerStyle={styles.scrollContent}
+      >
         <View style={styles.avatarSection}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
@@ -37,82 +70,47 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
           </TouchableOpacity>
         </View>
 
-        {/* Form */}
         <View style={styles.form}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Nome Completo</Text>
-            <View style={styles.inputContainer}>
-              <Ionicons name="person-outline" size={20} color="#6b7280" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                value={displayUserName(user, '')}
-                placeholder="Seu nome completo"
-                placeholderTextColor="#9ca3af"
-                editable={false}
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
-            <View style={styles.inputContainer}>
-              <Ionicons name="mail-outline" size={20} color="#6b7280" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                value={contactEmail}
-                placeholder={isPhoneLocalEmail(user?.email) ? 'Conta por celular' : 'seu@email.com'}
-                keyboardType="email-address"
-                placeholderTextColor="#9ca3af"
-                editable={false}
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Telefone</Text>
-            <View style={styles.inputContainer}>
-              <Ionicons name="call-outline" size={20} color="#6b7280" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                value={contactPhone}
-                placeholder="(11) 99999-9999"
-                keyboardType="phone-pad"
-                placeholderTextColor="#9ca3af"
-                editable={false}
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Data de Nascimento</Text>
-            <View style={styles.inputContainer}>
-              <Ionicons name="calendar-outline" size={20} color="#6b7280" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="DD/MM/AAAA"
-                placeholderTextColor="#9ca3af"
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>CPF</Text>
-            <View style={styles.inputContainer}>
-              <Ionicons name="card-outline" size={20} color="#6b7280" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="000.000.000-00"
-                keyboardType="number-pad"
-                placeholderTextColor="#9ca3af"
-              />
-            </View>
-          </View>
+          <FormField
+            label="Nome Completo"
+            icon="person-outline"
+            value={displayUserName(user, '')}
+            placeholder="Seu nome completo"
+            editable={false}
+          />
+          <FormField
+            label="Email"
+            icon="mail-outline"
+            value={contactEmail}
+            placeholder={isPhoneLocalEmail(user?.email) ? 'Conta por celular' : 'seu@email.com'}
+            keyboardType="email-address"
+            editable={false}
+          />
+          <FormField
+            label="Telefone"
+            icon="call-outline"
+            value={contactPhone}
+            placeholder="(11) 99999-9999"
+            keyboardType="phone-pad"
+            editable={false}
+          />
+          <FormField
+            label="Data de Nascimento"
+            icon="calendar-outline"
+            placeholder="DD/MM/AAAA"
+            keyboardType="number-pad"
+          />
+          <FormField
+            label="CPF"
+            icon="card-outline"
+            placeholder="000.000.000-00"
+            keyboardType="number-pad"
+          />
         </View>
 
-        {/* Security Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Segurança</Text>
-          
+
           <TouchableOpacity style={styles.securityButton}>
             <View style={styles.securityButtonContent}>
               <Ionicons name="lock-closed-outline" size={24} color="#6b7280" />
@@ -132,11 +130,10 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
           </TouchableOpacity>
         </View>
 
-        {/* Save Button */}
-        <TouchableOpacity style={styles.saveButton}>
+        <TouchableOpacity style={styles.saveButton} onPress={dismissKeyboard}>
           <Text style={styles.saveButtonText}>Salvar Alterações</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </KeyboardForm>
     </View>
   );
 }
@@ -161,6 +158,10 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 24,
   },
   avatarSection: {
     alignItems: 'center',

@@ -1,8 +1,9 @@
-import { View, Text, ScrollView, Alert } from 'react-native';
+import { View, Text, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Input } from '../components/Input';
+import { KeyboardForm, dismissKeyboard } from '../components/KeyboardForm';
 import { useState } from 'react';
 
 export function ExampleScreen() {
@@ -30,7 +31,7 @@ export function ExampleScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
-      <ScrollView className="flex-1">
+      <KeyboardForm style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
         {/* Header */}
         <View className="bg-gradient-to-r from-pink-500 to-purple-500 p-6">
           <Text className="text-white text-3xl font-bold">
@@ -63,7 +64,10 @@ export function ExampleScreen() {
             />
             <Button
               title="Cadastrar"
-              onPress={handleSubmit}
+              onPress={() => {
+                dismissKeyboard();
+                void handleSubmit();
+              }}
               isLoading={isLoading}
             />
           </Card>
@@ -129,7 +133,7 @@ export function ExampleScreen() {
             <Feature icon="✅" text="Safe Area" />
           </Card>
         </View>
-      </ScrollView>
+      </KeyboardForm>
     </SafeAreaView>
   );
 }

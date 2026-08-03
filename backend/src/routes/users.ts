@@ -383,13 +383,15 @@ export async function usersRoutes(app: FastifyInstance) {
         email, 
         phone, 
         profileImageUrl,
-        isActive 
+        isActive,
+        clubWelcomeSeenAt,
       } = request.body as {
         name?: string
         email?: string
         phone?: string
         profileImageUrl?: string
         isActive?: boolean
+        clubWelcomeSeenAt?: string | Date | null
       }
       
       // Verifica se usuário existe
@@ -404,6 +406,13 @@ export async function usersRoutes(app: FastifyInstance) {
           error: 'Usuário não encontrado'
         })
       }
+
+      const welcomeSeenValue =
+        clubWelcomeSeenAt === undefined
+          ? undefined
+          : clubWelcomeSeenAt === null
+            ? null
+            : new Date(clubWelcomeSeenAt)
       
       const user = await prisma.user.update({
         where: { id },
@@ -412,7 +421,8 @@ export async function usersRoutes(app: FastifyInstance) {
           ...(email && { email }),
           ...(phone !== undefined && { phone }),
           ...(profileImageUrl !== undefined && { profileImageUrl }),
-          ...(isActive !== undefined && { isActive })
+          ...(isActive !== undefined && { isActive }),
+          ...(welcomeSeenValue !== undefined && { clubWelcomeSeenAt: welcomeSeenValue }),
         },
         include: {
           subscription: {

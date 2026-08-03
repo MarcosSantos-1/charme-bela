@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,10 +12,10 @@ import { MyPlanScreen } from '../screens/client/profile/MyPlanScreen';
 import { AnamnesisBridgeScreen } from '../screens/client/profile/AnamnesisBridgeScreen';
 import { AnamnesisFlow } from '../screens/anamnesis/AnamnesisFlow';
 import { SubscriptionCheckScreen } from '../screens/SubscriptionCheckScreen';
+import { AppLoadingScreen } from '../components/AppLoadingScreen';
 import { useAuth } from '../contexts/AuthContext';
 import { useCommercial } from '../contexts/CommercialContext';
 import { getAnamnesis, getSubscription, updateUser } from '../lib/api';
-import { brand } from '../theme/brand';
 import type { Subscription } from '../types/commercial';
 import { looksLikePhoneName } from '../lib/userDisplay';
 
@@ -121,6 +120,7 @@ function ClientGate() {
   const { subscription, loading: commercialLoading, refresh } = useCommercial();
   const [phase, setPhase] = useState<GatePhase>('loading');
   const [openPlan, setOpenPlan] = useState(false);
+  const [anamnesisDraft, setAnamnesisDraft] = useState<any | null>(null);
 
   const syncNameFromAnamnesis = useCallback(
     async (form: any) => {
@@ -143,6 +143,18 @@ function ClientGate() {
     [setUserProfile, user?.id, user?.name],
   );
 
+  const markClubWelcomeSeen = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const updated = await updateUser(user.id, {
+        clubWelcomeSeenAt: new Date().toISOString(),
+      });
+      await setUserProfile(updated);
+    } catch {
+      // best-effort — ainda assim segue para o app
+    }
+  }, [setUserProfile, user?.id]);
+
   const resolveAfterAnamnesis = useCallback(async () => {
     if (!user?.id) {
       setPhase('ready');
@@ -151,11 +163,20 @@ function ClientGate() {
     try {
       await refresh();
       const sub = await getSubscription(user.id);
-      setPhase(isSubscriptionActive(sub) ? 'ready' : 'subscription');
-    } catch {
+      if (isSubscriptionActive(sub)) {
+        setPhase('ready');
+        return;
+      }
+      // Já viu a tela de boas-vindas → vai direto ao home
+      if (user.clubWelcomeSeenAt) {
+        setPhase('ready');
+        return;
+      }
       setPhase('subscription');
+    } catch {
+      setPhase(user.clubWelcomeSeenAt ? 'ready' : 'subscription');
     }
-  }, [refresh, user?.id]);
+  }, [refresh, user?.clubWelcomeSeenAt, user?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,13 +187,17 @@ function ClientGate() {
         const form = await getAnamnesis(user.id);
         if (cancelled) return;
         if (!form || !form.termsAccepted) {
+          setAnamnesisDraft(form);
           setPhase('anamnesis');
           return;
         }
         await syncNameFromAnamnesis(form);
         // Wait for commercial load to decide stub
       } catch {
-        if (!cancelled) setPhase('anamnesis');
+        if (!cancelled) {
+          setAnamnesisDraft(null);
+          setPhase('anamnesis');
+        }
       }
     })();
     return () => {
@@ -187,38 +212,50 @@ function ClientGate() {
       try {
         const form = await getAnamnesis(user.id);
         if (!form || !form.termsAccepted) {
+          setAnamnesisDraft(form);
           setPhase('anamnesis');
           return;
         }
         await syncNameFromAnamnesis(form);
-        setPhase(isSubscriptionActive(subscription) ? 'ready' : 'subscription');
+        if (isSubscriptionActive(subscription)) {
+          setPhase('ready');
+          return;
+        }
+        setPhase(user.clubWelcomeSeenAt ? 'ready' : 'subscription');
       } catch {
+        setAnamnesisDraft(null);
         setPhase('anamnesis');
       }
     })();
-  }, [phase, user?.id, commercialLoading, subscription, syncNameFromAnamnesis]);
+  }, [phase, user?.id, user?.clubWelcomeSeenAt, commercialLoading, subscription, syncNameFromAnamnesis]);
 
   if (!user) return null;
 
   if (phase === 'loading') {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={brand.rose} />
-      </View>
-    );
+    return <AppLoadingScreen message="Preparando seu espaço…" />;
   }
 
   if (phase === 'anamnesis') {
-    return <AnamnesisFlow user={user} onComplete={() => void resolveAfterAnamnesis()} />;
+    return (
+      <AnamnesisFlow
+        user={user}
+        initialForm={anamnesisDraft}
+        onComplete={() => void resolveAfterAnamnesis()}
+      />
+    );
   }
 
   if (phase === 'subscription') {
     return (
       <SubscriptionCheckScreen
-        onContinue={() => setPhase('ready')}
+        onContinue={() => {
+          void markClubWelcomeSeen().finally(() => setPhase('ready'));
+        }}
         onViewPlans={() => {
-          setOpenPlan(true);
-          setPhase('ready');
+          void markClubWelcomeSeen().finally(() => {
+            setOpenPlan(true);
+            setPhase('ready');
+          });
         }}
       />
     );
@@ -230,12 +267,3 @@ function ClientGate() {
 export function ClientNavigator() {
   return <ClientGate />;
 }
-
-const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: brand.background,
-  },
-});

@@ -72,6 +72,7 @@ export interface User {
   isActive: boolean;
   firebaseUid?: string;
   profileImageUrl?: string;
+  clubWelcomeSeenAt?: string | null;
   subscription?: any;
   anamnesisForm?: any;
 }
@@ -106,7 +107,12 @@ export async function createUser(data: {
 
 export async function updateUser(
   userId: string,
-  data: { name?: string; phone?: string; email?: string },
+  data: {
+    name?: string;
+    phone?: string;
+    email?: string;
+    clubWelcomeSeenAt?: string | null;
+  },
 ): Promise<User> {
   const response = await api.put(`/users/${userId}`, data);
   return unwrap<User>(response.data);
@@ -295,7 +301,7 @@ export async function saveAnamnesis(
     lifestyleData: data.lifestyleData || {},
     healthData: data.healthData || {},
     objectivesData: data.objectivesData || {},
-    termsAccepted: data.termsAccepted ?? true,
+    termsAccepted: data.termsAccepted === true,
     schemaVersion: data.schemaVersion ?? 2,
   };
   const response = current

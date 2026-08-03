@@ -10,6 +10,12 @@ export const formClipboardSource = require('../../assets/form-icon-clipboard.png
 export const formHeartOutlineSource = require('../../assets/form-icon-heart-outline.png');
 export const formHeartFilledSource = require('../../assets/form-icon-heart-filled.png');
 
+/** Ilustrações de planos / cobrança. */
+export const medalBronzeSource = require('../../assets/ilustracoes/medalha-de-bronze.png');
+export const medalSilverSource = require('../../assets/ilustracoes/medalha-de-prata.png');
+export const medalGoldSource = require('../../assets/ilustracoes/medalha-de-ouro.png');
+export const creditCard3dSource = require('../../assets/ilustracoes/cartao-de-credito-3d.png');
+
 /** Prefetch das imagens pesadas do onboarding antes de mostrar a UI. */
 export async function preloadOnboardingAssets() {
   const { Asset } = await import('expo-asset');

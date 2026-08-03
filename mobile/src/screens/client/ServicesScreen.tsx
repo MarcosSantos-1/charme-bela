@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { CATEGORY_META, type Service, type ServiceCategory } from '../../types/commercial';
 
@@ -12,6 +12,19 @@ export function ServicesScreen() {
   const { services, loading, refreshing, error, refresh } = useCommercial();
   const [selectedCategory, setSelectedCategory] = useState<ServiceCategory | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
+
+  const scrollToTop = useCallback(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      scrollToTop();
+      const unsubscribe = navigation.addListener('tabPress', scrollToTop);
+      return unsubscribe;
+    }, [navigation, scrollToTop])
+  );
 
   useEffect(() => {
     if (route.params?.category && route.params.category in CATEGORY_META) {
@@ -37,7 +50,7 @@ export function ServicesScreen() {
         <Text style={styles.headerSubtitle}>Escolha seu tratamento</Text>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}>
+      <ScrollView ref={scrollRef} style={styles.content} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}>
         {/* Categories Filter */}
         <ScrollView 
           horizontal 

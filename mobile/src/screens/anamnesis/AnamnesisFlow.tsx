@@ -1,4 +1,4 @@
-import { useMemo, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Alert, Text, View, StyleSheet, TouchableOpacity } from 'react-native';
 import type { Dispatch } from 'react';
 import { AnamnesisShell } from './components/AnamnesisShell';
@@ -181,8 +181,24 @@ function maskPhone(value: string) {
   return digits.replace(/(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3');
 }
 
+function resolveResumeStepIndex(form: any | null | undefined, sex: SexValue | null): number {
+  if (!form || form.termsAccepted) return form ? 1 : 0;
+  const steps = buildSteps(sex ?? (form.personalData?.sex as SexValue | null) ?? null);
+  const draftStep = form.personalData?.draftStepId as StepId | undefined;
+  if (draftStep && steps.includes(draftStep)) {
+    return steps.indexOf(draftStep);
+  }
+  const hydrated = fromBackendForm(form);
+  for (let i = 0; i < steps.length; i++) {
+    if (steps[i] === 'welcome') continue;
+    if (!canContinue(steps[i], hydrated)) return i;
+  }
+  return Math.min(steps.length - 1, 1);
+}
+
 export function AnamnesisFlow({ user, onComplete, initialForm }: AnamnesisFlowProps) {
   const { setUserProfile } = useAuth();
+  const isEditMode = Boolean(initialForm?.termsAccepted);
   const [state, dispatch] = useReducer(
     anamnesisReducer,
     undefined,
@@ -197,22 +213,66 @@ export function AnamnesisFlow({ user, onComplete, initialForm }: AnamnesisFlowPr
         : createInitialState(prefill);
     },
   );
-  const [stepIndex, setStepIndex] = useState(() => (initialForm ? 1 : 0));
+  const [stepIndex, setStepIndex] = useState(() =>
+    resolveResumeStepIndex(initialForm, initialForm?.personalData?.sex ?? null),
+  );
   const [saving, setSaving] = useState(false);
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipDraftRef = useRef(false);
 
   const steps = useMemo(() => buildSteps(state.sex), [state.sex]);
   const step = steps[Math.min(stepIndex, steps.length - 1)];
   const patch = (payload: Partial<AnamnesisFormState>) =>
     dispatch({ type: 'PATCH', payload });
 
+  const persistDraft = useCallback(
+    async (stepId: StepId, formState: AnamnesisFormState) => {
+      if (isEditMode || skipDraftRef.current) return;
+      if (stepId === 'consent' && formState.consentTruth && formState.consentUse && formState.consentUpdate) {
+        return;
+      }
+      try {
+        const payload = toBackendPayload(formState);
+        await saveAnamnesis(user.id, {
+          ...payload,
+          personalData: {
+            ...payload.personalData,
+            draftStepId: stepId,
+          },
+          termsAccepted: false,
+          schemaVersion: 2,
+        });
+      } catch {
+        // rascunho é best-effort — não bloqueia o fluxo
+      }
+    },
+    [isEditMode, user.id],
+  );
+
+  // Persiste rascunho ao mudar de passo / dados (debounce), para retomar após fechar o app
+  useEffect(() => {
+    if (isEditMode) return;
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      void persistDraft(step, state);
+    }, 700);
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, [isEditMode, persistDraft, state, step]);
+
   const goNext = async () => {
     if (!canContinue(step, state)) return;
 
     if (step === 'consent') {
       setSaving(true);
+      skipDraftRef.current = true;
       try {
         const payload = toBackendPayload(state);
-        await saveAnamnesis(user.id, payload);
+        await saveAnamnesis(user.id, {
+          ...payload,
+          termsAccepted: true,
+        });
         // Sync display name / phone on User so Home & Profile stay correct
         const fullName = state.fullName.trim();
         const phoneDigits = state.phone.replace(/\D/g, '');
@@ -227,6 +287,7 @@ export function AnamnesisFlow({ user, onComplete, initialForm }: AnamnesisFlowPr
         }
         onComplete();
       } catch (error) {
+        skipDraftRef.current = false;
         Alert.alert('Não foi possível salvar', getApiErrorMessage(error));
       } finally {
         setSaving(false);
@@ -237,11 +298,14 @@ export function AnamnesisFlow({ user, onComplete, initialForm }: AnamnesisFlowPr
     const nextSteps = buildSteps(state.sex);
     const nextIndex = Math.min(stepIndex + 1, nextSteps.length - 1);
     setStepIndex(nextIndex);
+    void persistDraft(nextSteps[nextIndex], state);
   };
 
   const goBack = () => {
     if (stepIndex <= 0) return;
-    setStepIndex((i) => Math.max(0, i - 1));
+    const prev = Math.max(0, stepIndex - 1);
+    setStepIndex(prev);
+    void persistDraft(steps[prev], state);
   };
 
   const meta = STEP_META[step];

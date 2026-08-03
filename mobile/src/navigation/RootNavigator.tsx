@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet, Image, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthNavigator } from './AuthNavigator';
 import { ClientNavigator } from './ClientNavigator';
 import { ONBOARDING_SEEN_KEY } from '../screens/OnboardingScreen';
-import { brand } from '../theme/brand';
-import { logoSource, preloadOnboardingAssets } from '../assets/brandAssets';
+import { preloadOnboardingAssets } from '../assets/brandAssets';
+import { AppLoadingScreen } from '../components/AppLoadingScreen';
 
 export function RootNavigator() {
   const { user, loading } = useAuth();
@@ -41,13 +40,7 @@ export function RootNavigator() {
   }, []);
 
   if (loading || onboardingSeen === null || !assetsReady) {
-    return (
-      <View style={styles.loading}>
-        <Image source={logoSource} style={styles.loadingLogo} resizeMode="contain" />
-        <ActivityIndicator size="small" color={brand.rose} style={styles.spinner} />
-        <Text style={styles.loadingText}>Charme & Bela</Text>
-      </View>
-    );
+    return <AppLoadingScreen />;
   }
 
   return (
@@ -60,26 +53,3 @@ export function RootNavigator() {
     </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: brand.background,
-  },
-  loadingLogo: {
-    width: 96,
-    height: 96,
-    marginBottom: 20,
-  },
-  spinner: {
-    marginBottom: 12,
-  },
-  loadingText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: brand.muted,
-    letterSpacing: 1,
-  },
-});

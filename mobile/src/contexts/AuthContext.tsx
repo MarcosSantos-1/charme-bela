@@ -101,6 +101,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Garante splash entre login e home/anamnese (backend pode demorar ou estar offline)
+      setLoading(true);
       try {
         const backendUser = await getOrCreateUserFromFirebase({
           uid: fbUser.uid,

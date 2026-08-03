@@ -1,28 +1,56 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../contexts/AuthContext';
 import { NotificationsPanel } from '../../components/NotificationsPanel';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { CATEGORY_META, type ServiceCategory } from '../../types/commercial';
 import { displayUserFirstName } from '../../lib/userDisplay';
 
 const { width } = Dimensions.get('window');
 
-const MOCK_NO_PLAN = {
-  hasActivePlan: false,
-  gradientColors: ['#6b7280', '#4b5563'], // Gray gradient
+/**
+ * TODO(promo-carousel): este card será um carrossel/slide de promoções nas próximas
+ * atualizações. Enquanto isso, exibe o CTA de assinatura quando não há plano ativo.
+ */
+const NO_PLAN_CARD = {
+  gradientColors: ['#ec4899', '#be185d'] as const,
 };
+
+function nextBillingLabel(startDate: string) {
+  const start = new Date(startDate);
+  const dayOfMonth = start.getDate();
+  const next = new Date();
+  next.setHours(12, 0, 0, 0);
+  next.setDate(dayOfMonth);
+  if (new Date().getDate() >= dayOfMonth) {
+    next.setMonth(next.getMonth() + 1);
+  }
+  return next.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' });
+}
 
 export function ClientHomeScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const { services, appointments, subscription, refreshing, refresh } = useCommercial();
   const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
   const firstName = displayUserFirstName(user);
+
+  const scrollToTop = useCallback(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      scrollToTop();
+      const unsubscribe = navigation.addListener('tabPress', scrollToTop);
+      return unsubscribe;
+    }, [navigation, scrollToTop])
+  );
   const activePlan = subscription && (subscription.status !== 'CANCELED' || Boolean(subscription.endDate && new Date(subscription.endDate) > new Date())) ? {
     hasActivePlan: true,
     planName: subscription.plan.name,
@@ -30,7 +58,12 @@ export function ClientHomeScreen() {
     usedTreatments: subscription.currentMonthUsage.totalTreatments,
     totalTreatments: subscription.plan.maxTreatmentsPerMonth,
     status: subscription.status,
-    nextPayment: subscription.endDate ? new Date(subscription.endDate).toLocaleDateString('pt-BR') : 'Cobrança mensal',
+    nextPayment:
+      subscription.status === 'CANCELED' && subscription.endDate
+        ? new Date(subscription.endDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })
+        : subscription.startDate
+          ? nextBillingLabel(subscription.startDate)
+          : '—',
     gradientColors: subscription.plan.tier === 'GOLD' ? ['#8b5cf6', '#7c3aed'] : subscription.plan.tier === 'SILVER' ? ['#64748b', '#475569'] : ['#d97706', '#b45309'],
   } : null;
   const categories = (Object.keys(CATEGORY_META) as ServiceCategory[]).map((category) => ({
@@ -48,7 +81,7 @@ export function ClientHomeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}>
+      <ScrollView ref={scrollRef} style={styles.scrollView} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerText}>
@@ -193,14 +226,14 @@ function NoPlanCard({ onPress }: { onPress: () => void }) {
   return (
     <View style={styles.planCardContainer}>
       <LinearGradient
-        colors={MOCK_NO_PLAN.gradientColors as unknown as readonly [string, string, ...string[]]}
+        colors={[...NO_PLAN_CARD.gradientColors]}
         style={styles.planCard}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
         <View style={styles.planCardHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.planName}>✨ Sem Plano Ativo</Text>
+            <Text style={styles.planName}>Sem Plano Ativo</Text>
             <Text style={styles.planNextPayment}>
               Assine e economize até 60% em tratamentos
             </Text>
@@ -209,13 +242,13 @@ function NoPlanCard({ onPress }: { onPress: () => void }) {
 
         <View style={styles.noPlanContent}>
           <Text style={styles.noPlanText}>
-            📦 Até 4 procedimentos por mês{'\n'}
-            💰 Valor fixo e previsível{'\n'}
-            🎯 Sem taxas ocultas
+            Até 6 procedimentos por mês{'\n'}
+            Valor fixo e previsível{'\n'}
+            Sem taxas ocultas
           </Text>
           <TouchableOpacity style={styles.subscribeCTA} onPress={onPress}>
             <Text style={styles.subscribeCTAText}>Assinar Agora</Text>
-            <Ionicons name="arrow-forward" size={20} color="#6b7280" />
+            <Ionicons name="arrow-forward" size={20} color="#be185d" />
           </TouchableOpacity>
         </View>
       </LinearGradient>
@@ -441,7 +474,7 @@ const styles = StyleSheet.create({
   subscribeCTAText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#6b7280',
+    color: '#be185d',
   },
   section: {
     paddingHorizontal: 20,

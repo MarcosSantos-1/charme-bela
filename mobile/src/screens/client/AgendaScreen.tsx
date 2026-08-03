@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { cancelAppointment, createPaymentSession } from '../../lib/api';
 import { getApiErrorMessage, type Appointment } from '../../types/commercial';
@@ -31,6 +31,19 @@ export function AgendaScreen() {
   const [selectedDate, setSelectedDate] = useState('');
   const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
   const [selected, setSelected] = useState<Appointment | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+
+  const scrollToTop = useCallback(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      scrollToTop();
+      const unsubscribe = navigation.addListener('tabPress', scrollToTop);
+      return unsubscribe;
+    }, [navigation, scrollToTop])
+  );
 
   const now = new Date();
   const upcoming = appointments.filter((item) => !['COMPLETED', 'CANCELED', 'NO_SHOW'].includes(item.status) && wallDate(item.startTime) >= now);
@@ -76,7 +89,7 @@ export function AgendaScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}><Text style={styles.headerTitle}>Minha Agenda</Text><Text style={styles.headerSubtitle}>Gerencie seus agendamentos</Text></View>
-      <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}>
+      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}>
         <View style={styles.content}>
           <TouchableOpacity style={styles.newButton} onPress={() => navigation.navigate('Services')}><Ionicons name="add-circle-outline" size={23} color="white" /><Text style={styles.newButtonText}>Novo Agendamento</Text></TouchableOpacity>
           <View style={styles.calendarCard}>

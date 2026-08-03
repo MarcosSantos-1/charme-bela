@@ -735,64 +735,111 @@ export async function stripeRoutes(app: FastifyInstance) {
         expand: ['data.charges'],
       })
       
-      // Combina invoices e payment intents
+      // IDs de payment intents já cobertos por invoices (evita duplicar a mesma cobrança)
+      const invoicePaymentIntentIds = new Set(
+        invoices.data
+          .map((invoice) => {
+            const pi = (invoice as any).payment_intent
+            return typeof pi === 'string' ? pi : pi?.id
+          })
+          .filter(Boolean) as string[]
+      )
+
+      // Combina invoices e payment intents avulsos (sem repetir cobrança de assinatura)
       const allPayments = [
         // Invoices (assinaturas)
-        ...invoices.data.map(invoice => ({
-          id: invoice.id,
-          type: 'subscription' as const,
-          amount: invoice.amount_paid / 100,
-          totalAmount: invoice.total / 100,
-          currency: invoice.currency,
-          status: invoice.status, // paid, open, void, uncollectible
-          description: invoice.description || 'Assinatura mensal',
-          paidAt: invoice.status_transitions.paid_at 
-            ? new Date(invoice.status_transitions.paid_at * 1000) 
-            : null,
-          createdAt: new Date(invoice.created * 1000),
-          invoicePdf: invoice.invoice_pdf,
-          hostedInvoiceUrl: invoice.hosted_invoice_url,
-        })),
-        
-        // Payment Intents (avulsos)
-        ...paymentIntents.data.map(pi => {
-          // Charges são expandidos via 'expand' parameter
-          const charges = (pi as any).charges?.data || []
-          const latestCharge = charges[0]
-          
-          // Para pagamentos avulsos bem-sucedidos, gera URL de recibo
-          let receiptUrl = latestCharge?.receipt_url || null
-          
-          // Se não tem receipt_url mas tem charge, tenta buscar
-          if (!receiptUrl && latestCharge?.id && pi.status === 'succeeded') {
-            receiptUrl = `https://dashboard.stripe.com/payments/${latestCharge.id}`
-          }
-          
+        ...invoices.data.map(invoice => {
+          const lineDescription = invoice.lines?.data?.[0]?.description
+          const description =
+            invoice.description ||
+            lineDescription ||
+            'Assinatura Charme & Bela Club'
+
           return {
-            id: pi.id,
-            type: 'single' as const,
-            amount: pi.amount / 100,
-            totalAmount: pi.amount / 100,
-            currency: pi.currency,
-            status: pi.status, // succeeded, canceled, processing, requires_payment_method
-            description: pi.description || 'Tratamento avulso',
-            paidAt: latestCharge?.created 
-              ? new Date(latestCharge.created * 1000) 
+            id: invoice.id,
+            type: 'subscription' as const,
+            amount: invoice.amount_paid / 100,
+            totalAmount: invoice.total / 100,
+            currency: invoice.currency,
+            status: invoice.status, // paid, open, void, uncollectible
+            description,
+            paidAt: invoice.status_transitions.paid_at
+              ? new Date(invoice.status_transitions.paid_at * 1000)
               : null,
-            createdAt: new Date(pi.created * 1000),
-            invoicePdf: null, // Pagamentos avulsos não geram PDF via API
-            hostedInvoiceUrl: null,
-            receiptUrl: receiptUrl,
+            createdAt: new Date(invoice.created * 1000),
+            invoicePdf: invoice.invoice_pdf,
+            hostedInvoiceUrl: invoice.hosted_invoice_url,
           }
         }),
+
+        // Payment Intents (somente avulsos — PIs de invoice já entram acima)
+        ...paymentIntents.data
+          .filter((pi) => {
+            const linkedInvoice = (pi as any).invoice
+            if (linkedInvoice) return false
+            if (invoicePaymentIntentIds.has(pi.id)) return false
+            return true
+          })
+          .map((pi) => {
+            // Charges são expandidos via 'expand' parameter
+            const charges = (pi as any).charges?.data || []
+            const latestCharge = charges[0]
+
+            // Para pagamentos avulsos bem-sucedidos, gera URL de recibo
+            let receiptUrl = latestCharge?.receipt_url || null
+
+            // Se não tem receipt_url mas tem charge, tenta buscar
+            if (!receiptUrl && latestCharge?.id && pi.status === 'succeeded') {
+              receiptUrl = `https://dashboard.stripe.com/payments/${latestCharge.id}`
+            }
+
+            return {
+              id: pi.id,
+              type: 'single' as const,
+              amount: pi.amount / 100,
+              totalAmount: pi.amount / 100,
+              currency: pi.currency,
+              status: pi.status, // succeeded, canceled, processing, requires_payment_method
+              description: pi.description || 'Tratamento avulso',
+              paidAt: latestCharge?.created
+                ? new Date(latestCharge.created * 1000)
+                : null,
+              createdAt: new Date(pi.created * 1000),
+              invoicePdf: null, // Pagamentos avulsos não geram PDF via API
+              hostedInvoiceUrl: null,
+              receiptUrl: receiptUrl,
+            }
+          }),
       ]
-      
+
+      // Segurança extra: se ainda sobrar PI de assinatura com o mesmo valor e horário próximo da invoice, remove
+      const invoiceAnchors = allPayments
+        .filter((p) => p.type === 'subscription' && (p.status === 'paid' || p.amount > 0))
+        .map((p) => ({
+          amount: p.amount,
+          at: (p.paidAt || p.createdAt).getTime(),
+        }))
+
+      const dedupedPayments = allPayments.filter((payment) => {
+        if (payment.type !== 'single') return true
+        const at = (payment.paidAt || payment.createdAt).getTime()
+        const looksLikeClubSub =
+          typeof payment.description === 'string' &&
+          /charme\s*&\s*bela\s*club/i.test(payment.description)
+        const duplicatesInvoice = invoiceAnchors.some(
+          (invoice) =>
+            Math.abs(invoice.amount - payment.amount) < 0.01 &&
+            Math.abs(invoice.at - at) < 5 * 60 * 1000
+        )
+        return !(looksLikeClubSub && duplicatesInvoice)
+      })
+
       // Ordena por data (mais recente primeiro)
-      allPayments.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      
+      dedupedPayments.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+
       return reply.status(200).send({
         success: true,
-        data: allPayments
+        data: dedupedPayments
       })
     } catch (error: any) {
       logger.error('Erro ao buscar histórico de pagamentos:', error)

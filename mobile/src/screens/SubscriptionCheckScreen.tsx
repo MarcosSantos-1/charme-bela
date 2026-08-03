@@ -42,13 +42,6 @@ export function SubscriptionCheckScreen({
   return (
     <View style={styles.root}>
       <View style={[styles.orb, styles.orbChampagne]} />
-      <View style={styles.sparkleTop}>
-        <Ionicons name="sparkles" size={14} color={brand.gold} />
-      </View>
-      <View style={styles.sparkleMid}>
-        <Ionicons name="sparkles" size={10} color={brand.goldSoft} />
-      </View>
-
       <ScrollView
         style={styles.flex}
         contentContainerStyle={[
@@ -65,15 +58,13 @@ export function SubscriptionCheckScreen({
           <Text style={styles.badgeText}>Charme & Bela Club</Text>
         </View>
 
-        <Text style={styles.title}>Seja bem-vinda! ✨</Text>
+        <Text style={styles.title}>Seja bem-vindo(a)! </Text>
         <Text style={styles.subtitle}>
-          Sua ficha foi concluída com sucesso. Agora você já faz parte do Charme & Bela
-          Club e pode aproveitar tudo que preparamos para você!
+          Sua ficha foi concluída com sucesso. Agora você já faz parte da Charme & Bela
+         e pode aproveitar tudo que preparamos para você!
         </Text>
 
-        <View style={styles.logoWrap}>
-          <Image source={logoSource} style={styles.logo} resizeMode="contain" />
-        </View>
+
 
         <View style={styles.card}>
           {FEATURES.map((item, index) => (
@@ -107,7 +98,7 @@ export function SubscriptionCheckScreen({
 
         <View style={styles.footer}>
           <TouchableOpacity style={styles.primary} onPress={onViewPlans} activeOpacity={0.9}>
-            <Text style={styles.primaryText}>Ver planos</Text>
+            <Text style={styles.primaryText}>Ver Charme & Bela Club</Text>
             <Ionicons name="arrow-forward" size={20} color={brand.white} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.secondary} onPress={onContinue} activeOpacity={0.85}>

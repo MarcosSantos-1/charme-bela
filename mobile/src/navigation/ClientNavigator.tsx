@@ -21,7 +21,7 @@ import { looksLikePhoneName } from '../lib/userDisplay';
 
 export type ClientTabParamList = {
   Home: undefined;
-  Agenda: undefined;
+  Agenda: { appointmentId?: string } | undefined;
   Services: { category?: string } | undefined;
   Profile: { openScreen?: 'history' | 'anamnesis' | 'plan' } | undefined;
 };

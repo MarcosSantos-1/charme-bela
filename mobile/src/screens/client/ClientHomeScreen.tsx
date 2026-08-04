@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, RefreshControl, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../contexts/AuthContext';
 import { NotificationsPanel } from '../../components/NotificationsPanel';
@@ -9,6 +9,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { CATEGORY_META, type ServiceCategory } from '../../types/commercial';
 import { displayUserFirstName } from '../../lib/userDisplay';
+import { CATEGORY_ILLUSTRATIONS, logoSource } from '../../assets/brandAssets';
 
 const { width } = Dimensions.get('window');
 
@@ -32,10 +33,28 @@ function nextBillingLabel(startDate: string) {
   return next.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' });
 }
 
+function friendlyLoadError(error: string | null) {
+  if (!error) return null;
+  const lower = error.toLowerCase();
+  if (
+    lower.includes('network') ||
+    lower.includes('failed to fetch') ||
+    lower.includes('timeout') ||
+    lower.includes('timed out') ||
+    lower.includes('internet') ||
+    lower.includes('offline') ||
+    lower.includes('econnrefused') ||
+    lower.includes('enotfound')
+  ) {
+    return 'Sem conexão com a internet. Verifique sua rede e tente novamente.';
+  }
+  return error;
+}
+
 export function ClientHomeScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
-  const { services, appointments, subscription, refreshing, refresh } = useCommercial();
+  const { services, appointments, subscription, loading, refreshing, error, refresh } = useCommercial();
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const firstName = displayUserFirstName(user);
@@ -51,6 +70,12 @@ export function ClientHomeScreen() {
       return unsubscribe;
     }, [navigation, scrollToTop])
   );
+
+  const showInitialSkeleton = loading && services.length === 0;
+  const showHardError = Boolean(error) && services.length === 0 && !loading;
+  const showSoftError = Boolean(error) && services.length > 0;
+  const errorMessage = friendlyLoadError(error);
+
   const activePlan = subscription && (subscription.status !== 'CANCELED' || Boolean(subscription.endDate && new Date(subscription.endDate) > new Date())) ? {
     hasActivePlan: true,
     planName: subscription.plan.name,
@@ -84,11 +109,16 @@ export function ClientHomeScreen() {
       <ScrollView ref={scrollRef} style={styles.scrollView} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}>
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.headerText}>
-            <Text style={styles.greeting}>Olá,</Text>
-            <Text style={styles.userName} numberOfLines={1} ellipsizeMode="tail">{firstName}</Text>
+          <View style={styles.headerLeft}>
+            <View style={styles.logoCircle}>
+              <Image source={logoSource} style={styles.logoImage} resizeMode="contain" />
+            </View>
+            <View style={styles.headerText}>
+              <Text style={styles.greeting}>Olá,</Text>
+              <Text style={styles.userName} numberOfLines={1} ellipsizeMode="tail">{firstName}</Text>
+            </View>
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.notificationButton}
             onPress={() => setNotificationsVisible(true)}
           >
@@ -97,82 +127,167 @@ export function ClientHomeScreen() {
           </TouchableOpacity>
         </View>
 
+        {showSoftError ? (
+          <TouchableOpacity style={styles.softErrorBanner} onPress={() => void refresh()} activeOpacity={0.85}>
+            <Ionicons name="cloud-offline-outline" size={18} color="#b45309" />
+            <Text style={styles.softErrorText} numberOfLines={2}>
+              {errorMessage || 'Não foi possível atualizar. Toque para tentar de novo.'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
         {/* Plan Card */}
-        {activePlan ? (
+        {showInitialSkeleton ? (
+          <PlanCardSkeleton />
+        ) : activePlan ? (
           <TouchableOpacity activeOpacity={0.9} onPress={() => navigation.navigate('Plan')}><ActivePlanCard plan={activePlan} /></TouchableOpacity>
         ) : (
           <NoPlanCard onPress={() => navigation.navigate('Plan')} />
         )}
 
-        {/* Procedimentos */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Procedimentos</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Services')}>
-              <Text style={styles.seeAllLink}>ver todos</Text>
+        {showHardError ? (
+          <View style={styles.hardErrorBox}>
+            <Ionicons name="cloud-offline-outline" size={40} color="#9ca3af" />
+            <Text style={styles.hardErrorTitle}>Não foi possível carregar</Text>
+            <Text style={styles.hardErrorMessage}>
+              {errorMessage || 'Verifique sua conexão e tente novamente.'}
+            </Text>
+            <TouchableOpacity style={styles.retryButton} onPress={() => void refresh()}>
+              <Text style={styles.retryButtonText}>Tentar novamente</Text>
             </TouchableOpacity>
           </View>
-
-          <View style={styles.categoriesGrid}>
-            {categories.map(category => (
-              <CategoryCard key={category.id} category={category} hasPlan={category.included} onPress={() => navigation.navigate('Services', { category: category.id })} />
-            ))}
-          </View>
-        </View>
-
-        {/* Próximos Agendamentos */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Próximos Agendamentos</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Agenda')}>
-              <Text style={styles.seeAllLink}>ver todos</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.appointmentsList}>
-            {nextAppointments.map(appointment => (
-              <AppointmentCard key={appointment.id} appointment={appointment} />
-            ))}
-            {nextAppointments.length === 0 ? <Text style={{ color: '#6b7280', textAlign: 'center', paddingVertical: 18 }}>Nenhum agendamento futuro</Text> : null}
-          </View>
-
-          <TouchableOpacity style={styles.newAppointmentButton} onPress={() => navigation.navigate('Services')}>
-            <Ionicons name="add-circle-outline" size={24} color="white" />
-            <Text style={styles.newAppointmentButtonText}>Novo Agendamento</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Ações Rápidas */}
-        <View style={styles.section}>
-          <View style={styles.quickActionsGrid}>
-            <TouchableOpacity
-              style={[styles.quickActionCard, { backgroundColor: '#fce7f3' }]}
-              onPress={() => navigation.navigate('Profile', { openScreen: 'anamnesis' })}
-            >
-              <View style={styles.quickActionIcon}>
-                <Ionicons name="clipboard-outline" size={32} color="#ec4899" />
+        ) : (
+          <>
+            {/* Próximos Agendamentos */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Próximos Agendamentos</Text>
+                <TouchableOpacity onPress={() => navigation.navigate('Agenda')}>
+                  <Text style={styles.seeAllLink}>ver todos</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={styles.quickActionTitle}>Minha Anamnese</Text>
-              <Text style={styles.quickActionSubtitle}>Histórico médico</Text>
-            </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: '#e0e7ff' }]} onPress={() => navigation.navigate('Plan')}>
-              <View style={styles.quickActionIcon}>
-                <Ionicons name="card-outline" size={32} color="#6366f1" />
+              {showInitialSkeleton ? (
+                <AppointmentsSkeleton />
+              ) : (
+                <View style={styles.appointmentsList}>
+                  {nextAppointments.map(appointment => (
+                    <AppointmentCard
+                      key={appointment.id}
+                      appointment={appointment}
+                      onPress={() => navigation.navigate('Agenda', { appointmentId: appointment.id })}
+                    />
+                  ))}
+                  {nextAppointments.length === 0 ? <Text style={{ color: '#6b7280', textAlign: 'center', paddingVertical: 18 }}>Nenhum agendamento futuro</Text> : null}
+                </View>
+              )}
+
+              <TouchableOpacity style={styles.newAppointmentButton} onPress={() => navigation.navigate('Services')}>
+                <Ionicons name="add-circle-outline" size={24} color="white" />
+                <Text style={styles.newAppointmentButtonText}>Novo Agendamento</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Procedimentos */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Procedimentos</Text>
+                <TouchableOpacity onPress={() => navigation.navigate('Services')}>
+                  <Text style={styles.seeAllLink}>ver todos</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={styles.quickActionTitle}>Meu Plano</Text>
-              <Text style={styles.quickActionSubtitle}>Gerenciar assinatura</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+
+              {showInitialSkeleton ? (
+                <CategoriesSkeleton />
+              ) : (
+                <View style={styles.categoriesGrid}>
+                  {categories.map(category => (
+                    <CategoryCard key={category.id} category={category} hasPlan={category.included} onPress={() => navigation.navigate('Services', { category: category.id })} />
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* Ações Rápidas */}
+            <View style={styles.section}>
+              <View style={styles.quickActionsGrid}>
+                <TouchableOpacity
+                  style={[styles.quickActionCard, { backgroundColor: '#fce7f3' }]}
+                  onPress={() => navigation.navigate('Profile', { openScreen: 'anamnesis' })}
+                >
+                  <View style={styles.quickActionIcon}>
+                    <Ionicons name="clipboard-outline" size={32} color="#ec4899" />
+                  </View>
+                  <Text style={styles.quickActionTitle}>Minha Anamnese</Text>
+                  <Text style={styles.quickActionSubtitle}>Histórico médico</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: '#e0e7ff' }]} onPress={() => navigation.navigate('Plan')}>
+                  <View style={styles.quickActionIcon}>
+                    <Ionicons name="card-outline" size={32} color="#6366f1" />
+                  </View>
+                  <Text style={styles.quickActionTitle}>Meu Plano</Text>
+                  <Text style={styles.quickActionSubtitle}>Gerenciar assinatura</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
       </ScrollView>
 
       {/* Notifications Panel */}
-      <NotificationsPanel 
+      <NotificationsPanel
         visible={notificationsVisible}
         onClose={() => setNotificationsVisible(false)}
       />
     </SafeAreaView>
+  );
+}
+
+function SkeletonBlock({ style }: { style?: object }) {
+  return <View style={[styles.skeletonBlock, style]} />;
+}
+
+function PlanCardSkeleton() {
+  return (
+    <View style={styles.planCardContainer}>
+      <View style={styles.planCardSkeleton}>
+        <SkeletonBlock style={{ width: '55%', height: 22, marginBottom: 10 }} />
+        <SkeletonBlock style={{ width: '40%', height: 14, marginBottom: 28 }} />
+        <SkeletonBlock style={{ width: '100%', height: 8, borderRadius: 4, marginBottom: 12 }} />
+        <SkeletonBlock style={{ width: '45%', height: 16 }} />
+      </View>
+    </View>
+  );
+}
+
+function AppointmentsSkeleton() {
+  return (
+    <View style={styles.appointmentsList}>
+      {[0, 1].map((key) => (
+        <View key={key} style={styles.appointmentCard}>
+          <SkeletonBlock style={{ width: 56, height: 56, borderRadius: 12, marginRight: 16 }} />
+          <View style={{ flex: 1, gap: 8 }}>
+            <SkeletonBlock style={{ width: '70%', height: 16 }} />
+            <SkeletonBlock style={{ width: '45%', height: 12 }} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function CategoriesSkeleton() {
+  return (
+    <View style={styles.categoriesGrid}>
+      {[0, 1, 2, 3].map((key) => (
+        <View key={key} style={styles.categoryCard}>
+          <SkeletonBlock style={{ width: 82, height: 82, borderRadius: 41, marginBottom: 12 }} />
+          <SkeletonBlock style={{ width: '70%', height: 16, marginBottom: 8 }} />
+          <SkeletonBlock style={{ width: '50%', height: 12 }} />
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -257,14 +372,16 @@ function NoPlanCard({ onPress }: { onPress: () => void }) {
 }
 
 function CategoryCard({ category, hasPlan, onPress }: { category: any; hasPlan: boolean; onPress: () => void }) {
+  const illustration = CATEGORY_ILLUSTRATIONS[category.id as ServiceCategory];
+
   return (
-    <TouchableOpacity style={styles.categoryCard} onPress={onPress}>
-      <View style={[styles.categoryIconContainer, { backgroundColor: `${category.color}20` }]}>
-        <MaterialCommunityIcons
-          name={category.icon as any}
-          size={28}
-          color={category.color}
-        />
+    <TouchableOpacity
+      style={[styles.categoryCard, { borderColor: category.color }]}
+      onPress={onPress}
+    >
+      <View style={styles.categoryIconContainer}>
+        <View style={[styles.categoryIconCircle, { backgroundColor: `${category.color}20` }]} />
+        <Image source={illustration} style={styles.categoryIllustration} resizeMode="contain" />
       </View>
       <Text style={styles.categoryName}>{category.name}</Text>
       <Text style={styles.categoryCount}>
@@ -274,7 +391,7 @@ function CategoryCard({ category, hasPlan, onPress }: { category: any; hasPlan: 
   );
 }
 
-function AppointmentCard({ appointment }: { appointment: any }) {
+function AppointmentCard({ appointment, onPress }: { appointment: any; onPress: () => void }) {
   const getPaymentInfo = () => {
     switch (appointment.paymentType) {
       case 'plan':
@@ -291,7 +408,7 @@ function AppointmentCard({ appointment }: { appointment: any }) {
   const payment = getPaymentInfo();
 
   return (
-    <TouchableOpacity style={styles.appointmentCard}>
+    <TouchableOpacity style={styles.appointmentCard} onPress={onPress} activeOpacity={0.85}>
       <View style={styles.appointmentDate}>
         <Text style={styles.appointmentDay}>{appointment.date}</Text>
         <Text style={styles.appointmentMonth}>{appointment.month}</Text>
@@ -334,9 +451,32 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     backgroundColor: 'white',
   },
+  headerLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+    gap: 12,
+  },
+  logoCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  logoImage: {
+    width: 30,
+    height: 30,
+  },
   headerText: {
     flex: 1,
-    marginRight: 12,
+    minWidth: 0,
   },
   greeting: {
     fontSize: 14,
@@ -366,6 +506,71 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#ef4444',
+  },
+  softErrorBanner: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  softErrorText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400e',
+    fontWeight: '500',
+  },
+  hardErrorBox: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 24,
+    padding: 28,
+    borderRadius: 16,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+  },
+  hardErrorTitle: {
+    marginTop: 12,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  hardErrorMessage: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  retryButton: {
+    marginTop: 18,
+    backgroundColor: '#ec4899',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  skeletonBlock: {
+    backgroundColor: '#e5e7eb',
+    borderRadius: 8,
+  },
+  planCardSkeleton: {
+    borderRadius: 20,
+    padding: 20,
+    backgroundColor: '#f3f4f6',
+    minHeight: 160,
   },
   planCardContainer: {
     paddingHorizontal: 20,
@@ -505,17 +710,28 @@ const styles = StyleSheet.create({
     width: (width - 52) / 2,
     backgroundColor: 'white',
     borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 16,
+    borderWidth: 1.5,
     borderColor: '#e5e7eb',
   },
   categoryIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 82,
+    height: 82,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
+  },
+  categoryIconCircle: {
+    position: 'absolute',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+  },
+  categoryIllustration: {
+    width: 82,
+    height: 82,
   },
   categoryName: {
     fontSize: 16,

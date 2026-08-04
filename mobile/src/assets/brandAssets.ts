@@ -1,3 +1,6 @@
+import type { ImageSourcePropType } from 'react-native';
+import type { ServiceCategory } from '../types/commercial';
+
 /**
  * Assets de marca (versões otimizadas em mobile/assets).
  * logo-mark = flor com fundo transparente (uso em UI).
@@ -15,6 +18,19 @@ export const medalBronzeSource = require('../../assets/ilustracoes/medalha-de-br
 export const medalSilverSource = require('../../assets/ilustracoes/medalha-de-prata.png');
 export const medalGoldSource = require('../../assets/ilustracoes/medalha-de-ouro.png');
 export const creditCard3dSource = require('../../assets/ilustracoes/cartao-de-credito-3d.png');
+
+/** Ilustrações 3D das categorias de procedimentos (Home). */
+export const categoryComboSource = require('../../assets/icons/pacotes.png');
+export const categoryFacialSource = require('../../assets/icons/faciais.png');
+export const categoryCorporalSource = require('../../assets/icons/corporais.png');
+export const categoryMassagemSource = require('../../assets/icons/massagens.png');
+
+export const CATEGORY_ILLUSTRATIONS: Record<ServiceCategory, ImageSourcePropType> = {
+  COMBO: categoryComboSource,
+  FACIAL: categoryFacialSource,
+  CORPORAL: categoryCorporalSource,
+  MASSAGEM: categoryMassagemSource,
+};
 
 /** Prefetch das imagens pesadas do onboarding antes de mostrar a UI. */
 export async function preloadOnboardingAssets() {

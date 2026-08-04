@@ -1,15 +1,41 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Calendar } from 'react-native-calendars';
+import { Calendar, LocaleConfig } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { cancelAppointment, createPaymentSession } from '../../lib/api';
 import { getApiErrorMessage, type Appointment } from '../../types/commercial';
 import { useAuth } from '../../contexts/AuthContext';
+import type { ClientTabParamList } from '../../navigation/ClientNavigator';
+
+LocaleConfig.locales.pt = {
+  monthNames: [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+  ],
+  monthNamesShort: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
+  dayNames: ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'],
+  dayNamesShort: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'],
+  today: 'Hoje',
+};
+LocaleConfig.defaultLocale = 'pt';
 
 const HOLD_MS_TICK = 250;
+const PINK = '#ec4899';
+
+function todayString() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function monthKeyFromDate(value: string) {
+  return value.slice(0, 7);
+}
 
 function isOnlinePaymentHold(appointment: Appointment) {
   if (appointment.origin === 'ADMIN_CREATED') return false;
@@ -27,15 +53,25 @@ function formatCountdown(ms: number) {
 
 export function AgendaScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<RouteProp<ClientTabParamList, 'Agenda'>>();
   const { appointments, loading, refreshing, error, refresh } = useCommercial();
   const [selectedDate, setSelectedDate] = useState('');
   const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
   const [selected, setSelected] = useState<Appointment | null>(null);
+  const [visibleMonth, setVisibleMonth] = useState(() => monthKeyFromDate(todayString()));
   const scrollRef = useRef<ScrollView>(null);
+  const pendingAppointmentId = route.params?.appointmentId;
+  const today = todayString();
 
   const scrollToTop = useCallback(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, []);
+
+  const clearAppointmentParam = useCallback(() => {
+    if (route.params?.appointmentId) {
+      navigation.setParams({ appointmentId: undefined });
+    }
+  }, [navigation, route.params?.appointmentId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -45,6 +81,17 @@ export function AgendaScreen() {
     }, [navigation, scrollToTop])
   );
 
+  useEffect(() => {
+    if (!pendingAppointmentId || loading) return;
+    const match = appointments.find((item) => item.id === pendingAppointmentId);
+    if (match) {
+      setSelected(match);
+      setActiveTab('upcoming');
+      setSelectedDate('');
+    }
+    clearAppointmentParam();
+  }, [appointments, clearAppointmentParam, loading, pendingAppointmentId]);
+
   const now = new Date();
   const upcoming = appointments.filter((item) => !['COMPLETED', 'CANCELED', 'NO_SHOW'].includes(item.status) && wallDate(item.startTime) >= now);
   const history = appointments.filter((item) => !upcoming.includes(item)).slice().reverse();
@@ -52,15 +99,103 @@ export function AgendaScreen() {
     ? appointments.filter((item) => datePart(item.startTime) === selectedDate)
     : activeTab === 'upcoming' ? upcoming : history;
 
+  const datesWithAppointments = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of appointments) set.add(datePart(item.startTime));
+    return set;
+  }, [appointments]);
+
+  const isPastWithoutHistory = useCallback(
+    (date: string) => date < today && !datesWithAppointments.has(date),
+    [datesWithAppointments, today],
+  );
+
   const markedDates = useMemo(() => {
-    const result = appointments.reduce<Record<string, any>>((result, item) => {
-    const date = datePart(item.startTime);
-    result[date] = { marked: true, dotColor: statusColor(item.status) };
+    const result: Record<string, any> = {};
+    const [yearStr, monthStr] = visibleMonth.split('-');
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${yearStr}-${monthStr}-${String(day).padStart(2, '0')}`;
+      if (isPastWithoutHistory(dateStr)) {
+        result[dateStr] = {
+          disabled: true,
+          disableTouchEvent: true,
+          customStyles: {
+            container: { backgroundColor: 'transparent' },
+            text: { color: '#d1d5db' },
+          },
+        };
+      }
+    }
+
+    for (const item of appointments) {
+      const date = datePart(item.startTime);
+      const prev = result[date] || {};
+      result[date] = {
+        ...prev,
+        disabled: false,
+        disableTouchEvent: false,
+        marked: true,
+        dotColor: statusColor(item.status),
+        customStyles: {
+          container: { ...(prev.customStyles?.container || {}), backgroundColor: 'transparent' },
+          text: { ...(prev.customStyles?.text || {}), color: '#111827', fontWeight: '600' },
+        },
+      };
+    }
+
+    if (!result[today] || !result[today].disabled) {
+      const prev = result[today] || {};
+      result[today] = {
+        ...prev,
+        customStyles: {
+          container: {
+            borderWidth: 1.5,
+            borderColor: PINK,
+            borderRadius: 16,
+            backgroundColor: 'transparent',
+          },
+          text: {
+            color: PINK,
+            fontWeight: '700',
+          },
+        },
+      };
+    }
+
+    if (selectedDate) {
+      const prev = result[selectedDate] || {};
+      result[selectedDate] = {
+        ...prev,
+        disabled: false,
+        disableTouchEvent: false,
+        customStyles: {
+          container: {
+            backgroundColor: PINK,
+            borderRadius: 16,
+            borderWidth: 0,
+          },
+          text: {
+            color: 'white',
+            fontWeight: '700',
+          },
+        },
+      };
+    }
+
     return result;
-    }, {});
-    if (selectedDate) result[selectedDate] = { ...(result[selectedDate] || {}), selected: true, selectedColor: '#ec4899' };
-    return result;
-  }, [appointments, selectedDate]);
+  }, [appointments, isPastWithoutHistory, selectedDate, today, visibleMonth]);
+
+  const handleDayPress = useCallback(
+    (day: { dateString: string }) => {
+      if (isPastWithoutHistory(day.dateString)) return;
+      setSelectedDate((current) => (current === day.dateString ? '' : day.dateString));
+    },
+    [isPastWithoutHistory],
+  );
 
   const handleCancel = (appointment: Appointment) => {
     Alert.alert('Cancelar agendamento', 'A regra de antecedência e eventual reembolso serão aplicados pela clínica. Deseja continuar?', [
@@ -93,7 +228,22 @@ export function AgendaScreen() {
         <View style={styles.content}>
           <TouchableOpacity style={styles.newButton} onPress={() => navigation.navigate('Services')}><Ionicons name="add-circle-outline" size={23} color="white" /><Text style={styles.newButtonText}>Novo Agendamento</Text></TouchableOpacity>
           <View style={styles.calendarCard}>
-            <Calendar onDayPress={(day) => setSelectedDate(selectedDate === day.dateString ? '' : day.dateString)} markedDates={markedDates} theme={{ arrowColor: '#ec4899', todayTextColor: '#ec4899', selectedDayBackgroundColor: '#ec4899', dotColor: '#ec4899' }} />
+            <Calendar
+              markingType="custom"
+              onDayPress={handleDayPress}
+              onMonthChange={(month) => setVisibleMonth(monthKeyFromDate(month.dateString))}
+              markedDates={markedDates}
+              theme={{
+                arrowColor: PINK,
+                todayTextColor: PINK,
+                selectedDayBackgroundColor: PINK,
+                selectedDayTextColor: 'white',
+                dotColor: PINK,
+                textDisabledColor: '#d1d5db',
+                monthTextColor: '#111827',
+                textMonthFontWeight: '700',
+              }}
+            />
           </View>
           {selectedDate ? <View style={styles.selectionHeader}><Text style={styles.sectionTitle}>{longDate(selectedDate)}</Text><TouchableOpacity onPress={() => setSelectedDate('')}><Text style={styles.clear}>Limpar</Text></TouchableOpacity></View> : (
             <View style={styles.tabs}>
@@ -233,8 +383,8 @@ function timePart(value: string) { return value.slice(11, 16); }
 function wallDate(value: string) { return new Date(`${datePart(value)}T${timePart(value)}:00`); }
 function longDate(value: string) { return new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }); }
 function shortMonth(value: string) { return new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''); }
-function statusColor(status: string) { return status === 'CONFIRMED' || status === 'COMPLETED' ? '#10b981' : status === 'PENDING' ? '#f59e0b' : '#ef4444'; }
-function statusLabel(status: string) { return ({ PENDING: 'Pendente', CONFIRMED: 'Confirmado', COMPLETED: 'Concluído', CANCELED: 'Cancelado', NO_SHOW: 'Não compareceu' } as any)[status] || status; }
+function statusColor(status: string) { return status === 'CONFIRMED' || status === 'COMPLETED' ? '#10b981' : status === 'PENDING' ? PINK : '#ef4444'; }
+function statusLabel(status: string) { return ({ PENDING: 'Agendado', CONFIRMED: 'Confirmado', COMPLETED: 'Concluído', CANCELED: 'Cancelado', NO_SHOW: 'Não compareceu' } as any)[status] || status; }
 function originLabel(origin: string, payment: string | null) { if (origin === 'SUBSCRIPTION') return 'Descontado do plano'; if (origin === 'VOUCHER') return 'Voucher aplicado'; if (origin === 'SINGLE') return payment === 'PAID' ? 'Pagamento confirmado' : 'Pagamento pendente'; return 'Criado pela clínica'; }
 
 const styles = StyleSheet.create({ container: { flex: 1, backgroundColor: '#f9fafb' }, header: { backgroundColor: 'white', paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }, headerTitle: { fontSize: 28, fontWeight: '800', color: '#111827' }, headerSubtitle: { fontSize: 15, color: '#6b7280', marginTop: 4 }, content: { padding: 20, paddingBottom: 38 }, newButton: { backgroundColor: '#ec4899', borderRadius: 14, height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 18 }, newButtonText: { color: 'white', fontSize: 16, fontWeight: '800' }, calendarCard: { backgroundColor: 'white', borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: '#e5e7eb' }, tabs: { flexDirection: 'row', backgroundColor: '#e5e7eb', padding: 4, borderRadius: 13, marginVertical: 20 }, tab: { flex: 1, paddingVertical: 11, alignItems: 'center', borderRadius: 10 }, tabActive: { backgroundColor: 'white' }, tabText: { color: '#6b7280', fontWeight: '700' }, tabTextActive: { color: '#ec4899' }, selectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 20 }, sectionTitle: { fontSize: 18, fontWeight: '800', color: '#111827', textTransform: 'capitalize' }, clear: { color: '#ec4899', fontWeight: '800' }, list: { gap: 12 }, card: { backgroundColor: 'white', borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb' }, cardHold: { backgroundColor: '#fff7ed', borderColor: '#fb923c' }, dateBox: { width: 54, height: 58, borderRadius: 12, backgroundColor: '#fdf2f8', alignItems: 'center', justifyContent: 'center', marginRight: 13 }, day: { fontSize: 21, color: '#ec4899', fontWeight: '800' }, month: { color: '#9d174d', fontSize: 12, fontWeight: '700', textTransform: 'capitalize' }, cardInfo: { flex: 1 }, service: { color: '#111827', fontSize: 16, fontWeight: '800' }, meta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 }, metaText: { color: '#6b7280', fontSize: 13 }, holdTimer: { marginTop: 6, color: '#c2410c', fontSize: 12, fontWeight: '800' }, holdTimerUrgent: { color: '#b91c1c' }, holdBox: { backgroundColor: '#ffedd5', borderRadius: 14, padding: 14, marginTop: 8, marginBottom: 8 }, holdBoxTitle: { color: '#9a3412', fontWeight: '800', fontSize: 15 }, holdBoxText: { color: '#9a3412', fontSize: 13, marginTop: 6, marginBottom: 12 }, payButton: { backgroundColor: '#ea580c', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }, payButtonText: { color: 'white', fontWeight: '800' }, dot: { width: 7, height: 7, borderRadius: 4, marginLeft: 4 }, status: { fontSize: 12, fontWeight: '800' }, empty: { alignItems: 'center', paddingVertical: 50, paddingHorizontal: 20 }, emptyText: { fontSize: 16, color: '#6b7280', textAlign: 'center', marginVertical: 12 }, overlay: { flex: 1, justifyContent: 'flex-end' }, backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,.45)' }, sheet: { backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 22, paddingBottom: 36 }, handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: '#d1d5db', alignSelf: 'center', marginBottom: 18 }, sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, sheetTitle: { fontSize: 20, fontWeight: '800', color: '#111827' }, statusBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 12, marginTop: 16 }, detailService: { fontSize: 23, fontWeight: '800', color: '#111827', marginVertical: 20 }, detailRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 }, detailText: { color: '#4b5563', fontSize: 15 }, actions: { flexDirection: 'row', gap: 12, marginTop: 16 }, reschedule: { flex: 1, backgroundColor: '#ec4899', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }, rescheduleText: { color: 'white', fontWeight: '800' }, cancel: { flex: 1, borderWidth: 1, borderColor: '#ef4444', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }, cancelText: { color: '#ef4444', fontWeight: '800' } });

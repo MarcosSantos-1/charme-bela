@@ -281,26 +281,53 @@ export function AccessScreen() {
           </View>
 
           <View style={styles.buttons}>
-            <TouchableOpacity style={[styles.btn, styles.btnApple]} onPress={handleApple} activeOpacity={0.9}>
-              <Ionicons name="logo-apple" size={20} color={brand.white} />
-              <Text style={styles.btnAppleText}>Continuar com Apple</Text>
-            </TouchableOpacity>
+            {Platform.OS === 'android' ? (
+              <>
+                <TouchableOpacity
+                  style={[styles.btn, styles.btnGoogle, (loading || !request) && styles.btnDisabled]}
+                  onPress={handleGoogle}
+                  disabled={loading || !request}
+                  activeOpacity={0.9}
+                >
+                  {loading && step === 'methods' ? (
+                    <ActivityIndicator color={brand.ink} />
+                  ) : (
+                    <>
+                      <Ionicons name="logo-google" size={20} color={brand.ink} />
+                      <Text style={styles.btnGoogleText}>Continuar com Google</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.btn, styles.btnGoogle, (loading || !request) && styles.btnDisabled]}
-              onPress={handleGoogle}
-              disabled={loading || !request}
-              activeOpacity={0.9}
-            >
-              {loading && step === 'methods' ? (
-                <ActivityIndicator color={brand.ink} />
-              ) : (
-                <>
-                  <Ionicons name="logo-google" size={20} color={brand.ink} />
-                  <Text style={styles.btnGoogleText}>Continuar com Google</Text>
-                </>
-              )}
-            </TouchableOpacity>
+                <TouchableOpacity style={[styles.btn, styles.btnApple]} onPress={handleApple} activeOpacity={0.9}>
+                  <Ionicons name="logo-apple" size={20} color={brand.white} />
+                  <Text style={styles.btnAppleText}>Continuar com Apple</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity style={[styles.btn, styles.btnApple]} onPress={handleApple} activeOpacity={0.9}>
+                  <Ionicons name="logo-apple" size={20} color={brand.white} />
+                  <Text style={styles.btnAppleText}>Continuar com Apple</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.btn, styles.btnGoogle, (loading || !request) && styles.btnDisabled]}
+                  onPress={handleGoogle}
+                  disabled={loading || !request}
+                  activeOpacity={0.9}
+                >
+                  {loading && step === 'methods' ? (
+                    <ActivityIndicator color={brand.ink} />
+                  ) : (
+                    <>
+                      <Ionicons name="logo-google" size={20} color={brand.ink} />
+                      <Text style={styles.btnGoogleText}>Continuar com Google</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
 
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />

@@ -31,7 +31,9 @@
       },
       "softwareKeyboardLayoutMode": "resize",
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "usesCleartextTraffic": true,
+      "allowBackup": false
     },
     "web": {
       "favicon": "./assets/favicon.png"

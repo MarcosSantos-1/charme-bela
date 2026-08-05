@@ -9,7 +9,7 @@ import { preloadOnboardingAssets } from '../assets/brandAssets';
 import { AppLoadingScreen } from '../components/AppLoadingScreen';
 
 export function RootNavigator() {
-  const { user, loading } = useAuth();
+  const { user, firebaseUser, loading } = useAuth();
   const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
   const [assetsReady, setAssetsReady] = useState(false);
 
@@ -43,9 +43,13 @@ export function RootNavigator() {
     return <AppLoadingScreen />;
   }
 
+  // App do cliente só com sessão Firebase + usuário sincronizado no backend.
+  // Cache sozinho não basta — evita pular onboarding/login direto para anamnese.
+  const isAuthenticated = Boolean(firebaseUser && user);
+
   return (
     <NavigationContainer>
-      {user ? (
+      {isAuthenticated ? (
         <ClientNavigator />
       ) : (
         <AuthNavigator initialRouteName={onboardingSeen ? 'Access' : 'Onboarding'} />

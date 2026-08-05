@@ -77,18 +77,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pendingProfile = useRef<PendingProfile | null>(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [cached, savedEmail] = await Promise.all([
-          AsyncStorage.getItem(USER_CACHE_KEY),
-          AsyncStorage.getItem(LAST_EMAIL_KEY),
-        ]);
-        if (cached) setUser(JSON.parse(cached));
+    // Só restaura lastEmail — NÃO hidratar `user` do cache sem sessão Firebase.
+    // Cache stale fazia RootNavigator pular onboarding/login e cair na anamnese.
+    AsyncStorage.getItem(LAST_EMAIL_KEY)
+      .then((savedEmail) => {
         if (savedEmail) setLastEmail(savedEmail);
-      } catch {
-        // ignora
-      }
-    })();
+      })
+      .catch(() => {});
 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
@@ -101,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Garante splash entre login e home/anamnese (backend pode demorar ou estar offline)
+      // Splash entre login Firebase e home/anamnese (aguarda sync com backend)
       setLoading(true);
       try {
         const backendUser = await getOrCreateUserFromFirebase({
@@ -122,6 +117,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLastEmail(backendUser.email);
       } catch (error) {
         console.error('Erro ao sincronizar usuário com backend:', error);
+        // Sem perfil no backend, não entra no app — volta ao login
+        setUser(null);
+        await AsyncStorage.removeItem(USER_CACHE_KEY);
+        try {
+          await firebaseSignOut(auth);
+        } catch {
+          // ignora
+        }
+        setFirebaseUser(null);
       } finally {
         setLoading(false);
       }

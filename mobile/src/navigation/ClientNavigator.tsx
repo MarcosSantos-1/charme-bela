@@ -193,11 +193,9 @@ function ClientGate() {
         }
         await syncNameFromAnamnesis(form);
         // Wait for commercial load to decide stub
-      } catch {
-        if (!cancelled) {
-          setAnamnesisDraft(null);
-          setPhase('anamnesis');
-        }
+      } catch (error) {
+        // Erro de rede/API ≠ anamnese pendente — fica no loading até o próximo efeito
+        console.error('Erro ao verificar anamnese:', error);
       }
     })();
     return () => {
@@ -222,9 +220,10 @@ function ClientGate() {
           return;
         }
         setPhase(user.clubWelcomeSeenAt ? 'ready' : 'subscription');
-      } catch {
-        setAnamnesisDraft(null);
-        setPhase('anamnesis');
+      } catch (error) {
+        // Não forçar anamnese por falha de rede — segue para o app; booking exige anamnese depois
+        console.error('Erro ao verificar anamnese:', error);
+        setPhase(user.clubWelcomeSeenAt || isSubscriptionActive(subscription) ? 'ready' : 'subscription');
       }
     })();
   }, [phase, user?.id, user?.clubWelcomeSeenAt, commercialLoading, subscription, syncNameFromAnamnesis]);

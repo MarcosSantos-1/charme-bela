@@ -20,6 +20,7 @@ import {
   isAuthEnforced,
   isPublicRoute,
   requireAuth,
+  requireFirebaseToken,
   CRON_ROUTES
 } from './utils/auth'
 
@@ -103,10 +104,24 @@ async function start() {
         return
       }
 
-      // POST /users (cadastro): token Firebase pode existir antes do registro no banco
-      if (method === 'POST' && path === '/users') {
-        if (!request.headers.authorization?.startsWith('Bearer ') && isAuthEnforced()) {
-          return reply.status(401).send({ success: false, error: 'Não autenticado' })
+      // Bootstrap de conta: o JWT Firebase existe antes do user no banco.
+      // Não usar requireAuth aqui — ele 401 quando o firebaseUid ainda não tem User.
+      const isUserBootstrap =
+        (method === 'POST' && path === '/users') ||
+        (method === 'GET' && path.startsWith('/users/firebase/'))
+
+      if (isUserBootstrap) {
+        const uid = await requireFirebaseToken(request, reply)
+        if (reply.sent) return
+
+        if (method === 'GET' && uid) {
+          const requestedUid = path.slice('/users/firebase/'.length)
+          if (requestedUid && requestedUid !== uid) {
+            return reply.status(403).send({
+              success: false,
+              error: 'Você só pode consultar o próprio usuário',
+            })
+          }
         }
         return
       }

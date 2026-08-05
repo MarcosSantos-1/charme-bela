@@ -23,6 +23,10 @@ export const API_URL = configuredApiUrl || (__DEV__
   ? Platform.OS === 'android' ? 'http://10.0.2.2:3333' : 'http://localhost:3333'
   : 'https://charme-bela.fly.dev');
 
+if (__DEV__) {
+  console.log(`[API] baseURL = ${API_URL}`);
+}
+
 const api = axios.create({
   baseURL: API_URL,
   timeout: 15000,

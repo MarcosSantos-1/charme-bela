@@ -42,10 +42,46 @@ export async function verifyFirebaseIdToken(token: string): Promise<JWTPayload> 
   return payload
 }
 
-function extractBearer(request: FastifyRequest): string | null {
+export function extractBearer(request: FastifyRequest): string | null {
   const header = request.headers.authorization
   if (!header?.startsWith('Bearer ')) return null
   return header.slice(7).trim() || null
+}
+
+/**
+ * Valida só o JWT Firebase (sem exigir usuário no banco).
+ * Usado no bootstrap de cadastro: GET /users/firebase/:uid e POST /users.
+ */
+export async function requireFirebaseToken(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<string | null> {
+  const token = extractBearer(request)
+  if (!token) {
+    if (isAuthEnforced()) {
+      reply.status(401).send({
+        success: false,
+        error: 'Não autenticado. Envie Authorization: Bearer <token>.',
+      })
+      return null
+    }
+    return null
+  }
+
+  try {
+    const payload = await verifyFirebaseIdToken(token)
+    const firebaseUid = payload.sub
+    if (!firebaseUid) throw new Error('Token sem sub')
+    request.firebaseUid = firebaseUid
+    return firebaseUid
+  } catch (error: any) {
+    logger.warning(`Auth token inválido (bootstrap): ${error.message}`)
+    if (isAuthEnforced()) {
+      reply.status(401).send({ success: false, error: 'Token inválido ou expirado' })
+      return null
+    }
+    return null
+  }
 }
 
 /**

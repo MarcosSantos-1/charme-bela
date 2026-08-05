@@ -507,25 +507,25 @@ function PlanOption({
                 );
               })
             )}
-
-            {!current ? (
-              <TouchableOpacity style={styles.selectButton} onPress={onSelect} disabled={loading} activeOpacity={0.85}>
-                {loading ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <Text style={styles.selectButtonText}>
-                    {hasActiveSub ? 'Trocar para este plano' : 'Assinar este plano'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.currentButton}>
-                <Ionicons name="checkmark-circle" size={18} color={brand.roseDeep} />
-                <Text style={styles.currentButtonText}>Plano ativo</Text>
-              </View>
-            )}
           </View>
         ) : null}
+
+        {!current ? (
+          <TouchableOpacity style={styles.selectButton} onPress={onSelect} disabled={loading} activeOpacity={0.85}>
+            {loading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.selectButtonText}>
+                {hasActiveSub ? 'Trocar para este plano' : 'Assinar este plano'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.currentButton}>
+            <Ionicons name="checkmark-circle" size={18} color={brand.roseDeep} />
+            <Text style={styles.currentButtonText}>Plano ativo</Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -890,7 +890,7 @@ const styles = StyleSheet.create({
   serviceDuration: { fontSize: 11, color: brand.muted },
 
   selectButton: {
-    marginTop: 6,
+    marginTop: 14,
     backgroundColor: brand.rose,
     borderRadius: 14,
     paddingVertical: 14,
@@ -898,7 +898,7 @@ const styles = StyleSheet.create({
   },
   selectButtonText: { color: brand.white, fontWeight: '800', fontSize: 15 },
   currentButton: {
-    marginTop: 6,
+    marginTop: 14,
     backgroundColor: brand.blush,
     borderRadius: 14,
     paddingVertical: 14,

@@ -10,8 +10,8 @@ import { logger } from './logger'
  * Se o pagamento não confirmar no prazo, o hold expira e o horário libera.
  *
  * A expiração NÃO depende só de cron (Fly em scale-to-zero pode dormir):
- * `releaseExpiredPaymentHolds` roda de forma preguiçosa antes de consultar slots
- * e antes de criar/reagendar.
+ * `releaseExpiredPaymentHolds` roda de forma preguiçosa ao listar/buscar
+ * agendamentos, ao consultar slots e antes de criar/reagendar.
  *
  * Hold curto (5 min) libera o horário rápido para outras clientes.
  * A sessão do Stripe Checkout exige no mínimo 30 min (`expires_at`) — se o

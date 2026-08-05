@@ -7,8 +7,8 @@ export function AppLoadingScreen({ message = 'Charme & Bela' }: { message?: stri
   return (
     <View style={styles.loading}>
       <Image source={logoSource} style={styles.loadingLogo} resizeMode="contain" />
-      <ActivityIndicator size="small" color={brand.rose} style={styles.spinner} />
       <Text style={styles.loadingText}>{message}</Text>
+      <ActivityIndicator size="small" color={brand.rose} style={styles.spinner} />
     </View>
   );
 }
@@ -26,7 +26,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   spinner: {
-    marginBottom: 12,
+    marginTop: 12,
   },
   loadingText: {
     fontSize: 14,

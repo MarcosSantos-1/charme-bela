@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Linking,
   ScrollView,
   StyleSheet,
@@ -13,6 +14,7 @@ import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ClientStackParamList } from '../../navigation/ClientNavigator';
+import { CATEGORY_ILLUSTRATIONS } from '../../assets/brandAssets';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,24 +24,41 @@ import {
   getAvailableSlots,
   rescheduleAppointment,
 } from '../../lib/api';
-import { CATEGORY_META, getApiErrorMessage } from '../../types/commercial';
+import {
+  CATEGORY_META,
+  getApiErrorMessage,
+  type AppointmentOrigin,
+  type Plan,
+} from '../../types/commercial';
 
 type Props = NativeStackScreenProps<ClientStackParamList, 'Booking'>;
 type Step = 'details' | 'date' | 'time' | 'review';
+type BookableOrigin = Extract<AppointmentOrigin, 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER'>;
+
+const TIER_ORDER: Record<Plan['tier'], number> = { BRONZE: 0, SILVER: 1, GOLD: 2 };
+
+const SHIFT_META = [
+  { id: 'morning' as const, label: 'Manhã', icon: 'sunny-outline' as const, match: (h: number) => h < 12 },
+  { id: 'afternoon' as const, label: 'Tarde', icon: 'partly-sunny-outline' as const, match: (h: number) => h >= 12 && h < 18 },
+  { id: 'evening' as const, label: 'Noite', icon: 'moon-outline' as const, match: (h: number) => h >= 18 },
+];
 
 export function BookingScreen({ route, navigation }: Props) {
   const { user } = useAuth();
-  const { services, subscription, vouchers, refresh } = useCommercial();
+  const { services, plans, subscription, vouchers, refresh } = useCommercial();
   const service = services.find((item) => item.id === route.params.serviceId);
   const isRescheduling = Boolean(route.params.appointmentId);
   const [step, setStep] = useState<Step>(isRescheduling ? 'date' : 'details');
   const [date, setDate] = useState('');
   const [slots, setSlots] = useState<string[]>([]);
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [slotsReason, setSlotsReason] = useState<string | null>(null);
   const [time, setTime] = useState('');
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bookingOrigin, setBookingOrigin] = useState<BookableOrigin>('SINGLE');
+  const [originInitialized, setOriginInitialized] = useState(false);
 
   const matchingVoucher = useMemo(() => vouchers.find((voucher) => {
     if (voucher.type === 'FREE_MONTH') return false;
@@ -47,30 +66,65 @@ export function BookingScreen({ route, navigation }: Props) {
     return voucher.type === 'DISCOUNT' || voucher.anyService || voucher.serviceId === service?.id;
   }), [service?.id, vouchers]);
 
-  const includedInPlan = Boolean(
+  const serviceInUserPlan = Boolean(
     subscription?.status === 'ACTIVE' &&
-    subscription.remaining.thisMonth > 0 &&
     subscription.plan.services.some((item) => item.id === service?.id),
   );
+  const remainingSessions = subscription?.remaining.thisMonth ?? 0;
+  const canUsePlan = serviceInUserPlan && remainingSessions > 0;
 
-  const bookingOrigin = matchingVoucher ? 'VOUCHER' : includedInPlan ? 'SUBSCRIPTION' : 'SINGLE';
-  const finalPrice = useMemo(() => {
-    if (!service) return 0;
-    if (matchingVoucher?.type === 'FREE_TREATMENT') return 0;
-    if (matchingVoucher?.discountPercent) return Math.max(0, service.price * (1 - matchingVoucher.discountPercent / 100));
-    if (matchingVoucher?.discountAmount) return Math.max(0, service.price - matchingVoucher.discountAmount);
+  const startingPlan = useMemo(() => {
+    if (!service) return null;
+    const candidates = plans
+      .filter((plan) => plan.isActive && plan.services.some((item) => item.id === service.id))
+      .sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || a.price - b.price);
+    return candidates[0] ?? null;
+  }, [plans, service]);
+
+  const voucherPrice = useMemo(() => {
+    if (!service || !matchingVoucher) return null;
+    if (matchingVoucher.type === 'FREE_TREATMENT') return 0;
+    if (matchingVoucher.discountPercent) {
+      return Math.max(0, service.price * (1 - matchingVoucher.discountPercent / 100));
+    }
+    if (matchingVoucher.discountAmount) {
+      return Math.max(0, service.price - matchingVoucher.discountAmount);
+    }
     return service.price;
   }, [matchingVoucher, service]);
+
+  const finalPrice = useMemo(() => {
+    if (!service) return 0;
+    if (bookingOrigin === 'SUBSCRIPTION') return 0;
+    if (bookingOrigin === 'VOUCHER' && voucherPrice !== null) return voucherPrice;
+    return service.price;
+  }, [bookingOrigin, service, voucherPrice]);
+
+  useEffect(() => {
+    if (originInitialized || !service) return;
+    if (matchingVoucher) setBookingOrigin('VOUCHER');
+    else if (canUsePlan) setBookingOrigin('SUBSCRIPTION');
+    else setBookingOrigin('SINGLE');
+    setOriginInitialized(true);
+  }, [canUsePlan, matchingVoucher, originInitialized, service]);
 
   useEffect(() => {
     if (!date || !service) return;
     setLoadingSlots(true);
     setError(null);
     setTime('');
+    setSlotsReason(null);
     getAvailableSlots(date, service.id)
       .then((result) => {
-        setSlots(result.slots || []);
-        setBookedSlots(result.bookedSlots || []);
+        const futureSlots = filterFutureSlots(date, result.slots || []);
+        const futureBooked = filterFutureSlots(date, result.bookedSlots || []);
+        setSlots(futureSlots);
+        setBookedSlots(futureBooked);
+        if (result.reason) {
+          setSlotsReason(result.reason);
+        } else if (futureSlots.length === 0 && futureBooked.length === 0 && date === localDateKey(new Date())) {
+          setSlotsReason('Não há mais horários disponíveis para hoje');
+        }
       })
       .catch((requestError) => setError(getApiErrorMessage(requestError, 'Erro ao buscar horários')))
       .finally(() => setLoadingSlots(false));
@@ -81,8 +135,25 @@ export function BookingScreen({ route, navigation }: Props) {
   }
 
   const allSlots = Array.from(new Set([...slots, ...bookedSlots])).sort();
+  const availableCount = slots.length;
+  const shifts = SHIFT_META.map((shift) => ({
+    ...shift,
+    slots: allSlots.filter((slot) => shift.match(hourFromSlot(slot))),
+  })).filter((shift) => shift.slots.length > 0);
+
   const minDate = localDateKey(new Date());
   const lastNextMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 2, 0).toISOString().slice(0, 10);
+  const canProceedFromDetails =
+    bookingOrigin === 'SINGLE' ||
+    (bookingOrigin === 'VOUCHER' && Boolean(matchingVoucher)) ||
+    (bookingOrigin === 'SUBSCRIPTION' && canUsePlan);
+
+  const summaryValue =
+    bookingOrigin === 'SUBSCRIPTION'
+      ? 'Incluso'
+      : finalPrice === 0
+        ? 'Grátis'
+        : currency(finalPrice);
 
   const submit = async () => {
     if (!user || !date || !time) return;
@@ -146,7 +217,10 @@ export function BookingScreen({ route, navigation }: Props) {
   return (
     <View style={styles.container}>
       <ScreenHeader style={{ borderBottomWidth: 0, paddingHorizontal: 16, paddingBottom: 12 }}>
-        <TouchableOpacity onPress={() => step === 'details' || isRescheduling ? navigation.goBack() : setStep(previousStep(step))} style={styles.iconButton}>
+        <TouchableOpacity
+          onPress={() => (step === 'details' || isRescheduling ? navigation.goBack() : setStep(previousStep(step)))}
+          style={styles.iconButton}
+        >
           <Ionicons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
@@ -157,24 +231,108 @@ export function BookingScreen({ route, navigation }: Props) {
           <Ionicons name="close" size={24} color="#111827" />
         </TouchableOpacity>
       </ScreenHeader>
-      <View style={styles.progress}><View style={[styles.progressFill, { width: `${progress(step)}%` }]} /></View>
+      <View style={styles.progress}>
+        <View style={[styles.progressFill, { width: `${progress(step)}%` }]} />
+      </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {step === 'details' && (
           <>
-            <View style={styles.heroIcon}><Ionicons name="sparkles" size={34} color="#ec4899" /></View>
+            <View style={styles.heroIcon}>
+              <Image
+                source={CATEGORY_ILLUSTRATIONS[service.category]}
+                style={styles.heroCategoryIcon}
+                resizeMode="contain"
+              />
+            </View>
             <Text style={styles.serviceName}>{service.name}</Text>
-            <Text style={styles.category}>{CATEGORY_META[service.category].label}</Text>
+            <Text style={[styles.category, { color: CATEGORY_META[service.category].color }]}>
+              {CATEGORY_META[service.category].label}
+            </Text>
             <Text style={styles.description}>{service.description}</Text>
+
             <View style={styles.summaryRow}>
               <Summary icon="time-outline" label="Duração" value={`${service.duration} min`} />
-              <Summary icon="cash-outline" label="Valor" value={bookingOrigin === 'SUBSCRIPTION' ? 'Incluso' : finalPrice === 0 ? 'Grátis' : currency(finalPrice)} />
+              <Summary icon="cash-outline" label="Valor" value={summaryValue} />
             </View>
-            <View style={styles.benefitBox}>
-              <Ionicons name={bookingOrigin === 'SUBSCRIPTION' ? 'ribbon-outline' : bookingOrigin === 'VOUCHER' ? 'gift-outline' : 'card-outline'} size={22} color="#ec4899" />
-              <Text style={styles.benefitText}>{originLabel(bookingOrigin)}</Text>
-            </View>
-            <PrimaryButton title="Escolher data" onPress={() => setStep('date')} />
+
+            {(serviceInUserPlan || startingPlan) ? (
+              <View style={styles.planInfoCard}>
+                {serviceInUserPlan ? (
+                  <View style={styles.planBadgeRow}>
+                    <Ionicons name="checkmark-circle" size={18} color="#be185d" />
+                    <Text style={styles.planBadgeText}>Incluso no seu plano</Text>
+                  </View>
+                ) : null}
+                {serviceInUserPlan ? (
+                  <Text style={styles.planSessionsText}>
+                    {remainingSessions} {remainingSessions === 1 ? 'sessão disponível' : 'sessões disponíveis'} este mês
+                  </Text>
+                ) : null}
+                {startingPlan ? (
+                  <View style={[styles.startingPlanRow, serviceInUserPlan && { marginTop: 10 }]}>
+                    <Ionicons name="diamond-outline" size={16} color="#ec4899" />
+                    <Text style={styles.startingPlanText}>
+                      {serviceInUserPlan && subscription?.planId === startingPlan.id
+                        ? `Coberto pelo plano ${startingPlan.name}`
+                        : `Disponível a partir do plano ${startingPlan.name}`}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            <Text style={styles.paymentSectionTitle}>Forma de pagamento</Text>
+
+            {serviceInUserPlan ? (
+              <PaymentOption
+                selected={bookingOrigin === 'SUBSCRIPTION'}
+                disabled={!canUsePlan}
+                icon="ribbon-outline"
+                title="Usar Plano"
+                subtitle={
+                  canUsePlan
+                    ? `Consumir 1 sessão (${remainingSessions} disponíveis)`
+                    : 'Limite mensal do plano atingido'
+                }
+                accent="#8b5cf6"
+                onPress={() => canUsePlan && setBookingOrigin('SUBSCRIPTION')}
+              />
+            ) : null}
+
+            {matchingVoucher ? (
+              <PaymentOption
+                selected={bookingOrigin === 'VOUCHER'}
+                icon="gift-outline"
+                title={voucherPrice === 0 ? 'Usar Voucher — Grátis' : 'Usar Voucher'}
+                subtitle={
+                  voucherPrice === 0
+                    ? 'Tratamento totalmente gratuito'
+                    : `${currency(voucherPrice!)} · de ${currency(service.price)}`
+                }
+                accent="#10b981"
+                onPress={() => setBookingOrigin('VOUCHER')}
+              />
+            ) : null}
+
+            <PaymentOption
+              selected={bookingOrigin === 'SINGLE'}
+              icon="card-outline"
+              title="Pagamento avulso"
+              subtitle={
+                serviceInUserPlan && canUsePlan
+                  ? `${currency(service.price)} · Não consome sessão do plano`
+                  : currency(service.price)
+              }
+              accent="#ec4899"
+              onPress={() => setBookingOrigin('SINGLE')}
+            />
+
+            <PrimaryButton
+              title="Escolher data"
+              onPress={() => setStep('date')}
+              disabled={!canProceedFromDetails}
+            />
           </>
         )}
 
@@ -185,9 +343,26 @@ export function BookingScreen({ route, navigation }: Props) {
               <Calendar
                 minDate={minDate}
                 maxDate={lastNextMonth}
-                onDayPress={(day) => { setDate(day.dateString); setStep('time'); }}
+                onDayPress={(day) => {
+                  setDate(day.dateString);
+                  setStep('time');
+                }}
                 markedDates={date ? { [date]: { selected: true, selectedColor: '#ec4899' } } : {}}
-                theme={{ arrowColor: '#ec4899', todayTextColor: '#ec4899', selectedDayBackgroundColor: '#ec4899' }}
+                theme={{
+                  arrowColor: '#ec4899',
+                  todayTextColor: '#ec4899',
+                  selectedDayBackgroundColor: '#ec4899',
+                  selectedDayTextColor: '#ffffff',
+                  textDayHeaderColor: '#111827',
+                  textDayHeaderFontWeight: '700',
+                  textDayHeaderFontSize: 13,
+                  textDayFontSize: 16,
+                  textDayFontWeight: '500',
+                  textMonthFontSize: 18,
+                  textMonthFontWeight: '700',
+                  textMonthColor: '#111827',
+                  dayTextColor: '#111827',
+                }}
               />
             </View>
           </>
@@ -195,20 +370,81 @@ export function BookingScreen({ route, navigation }: Props) {
 
         {step === 'time' && (
           <>
-            <Text style={styles.sectionTitle}>Horários de {formatDate(date)}</Text>
-            {loadingSlots ? <ActivityIndicator size="large" color="#ec4899" style={{ marginTop: 48 }} /> : allSlots.length === 0 ? (
-              <CenteredMessage title="Nenhum horário disponível" action={() => setStep('date')} compact />
-            ) : (
-              <View style={styles.slots}>
-                {allSlots.map((slot) => {
-                  const booked = bookedSlots.includes(slot) || !slots.includes(slot);
-                  return (
-                    <TouchableOpacity key={slot} disabled={booked} onPress={() => setTime(slot)} style={[styles.slot, booked && styles.slotDisabled, time === slot && styles.slotSelected]}>
-                      <Text style={[styles.slotText, booked && styles.slotTextDisabled, time === slot && styles.slotTextSelected]}>{slot}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+            <Text style={styles.sectionTitle}>Horários · {formatSlotDate(date)}</Text>
+
+            {loadingSlots ? (
+              <ActivityIndicator size="large" color="#ec4899" style={{ marginTop: 48 }} />
+            ) : allSlots.length === 0 ? (
+              <View style={styles.emptySlotsBox}>
+                <Ionicons name="time-outline" size={42} color="#d1d5db" />
+                <Text style={styles.emptySlotsTitle}>
+                  {slotsReason || 'Nenhum horário disponível'}
+                </Text>
+                <Text style={styles.emptySlotsHint}>
+                  {date === localDateKey(new Date())
+                    ? 'Os horários de hoje já passaram ou estão ocupados. Escolha outro dia.'
+                    : 'Tente outra data para ver horários livres.'}
+                </Text>
+                <TouchableOpacity style={styles.emptySlotsButton} onPress={() => setStep('date')} activeOpacity={0.85}>
+                  <Text style={styles.emptySlotsButtonText}>Escolher outra data</Text>
+                </TouchableOpacity>
               </View>
+            ) : (
+              <>
+                <View style={styles.legend}>
+                  <LegendItem tone="available" label="Disponível" />
+                  <LegendItem tone="selected" label="Selecionado" />
+                  <LegendItem tone="booked" label="Ocupado" />
+                </View>
+
+                {availableCount === 0 ? (
+                  <View style={styles.onlyBookedBanner}>
+                    <Ionicons name="information-circle-outline" size={18} color="#be185d" />
+                    <Text style={styles.onlyBookedText}>
+                      Não restam horários livres neste dia. Os abaixo já estão ocupados.
+                    </Text>
+                  </View>
+                ) : null}
+
+                {shifts.map((shift) => (
+                  <View key={shift.id} style={styles.shiftBlock}>
+                    <View style={styles.shiftHeader}>
+                      <View style={styles.shiftIconWrap}>
+                        <Ionicons name={shift.icon} size={16} color="#ec4899" />
+                      </View>
+                      <Text style={styles.shiftLabel}>{shift.label}</Text>
+                      <View style={styles.shiftLine} />
+                    </View>
+                    <View style={styles.slots}>
+                      {shift.slots.map((slot) => {
+                        const booked = bookedSlots.includes(slot) || !slots.includes(slot);
+                        return (
+                          <TouchableOpacity
+                            key={slot}
+                            disabled={booked}
+                            onPress={() => setTime(slot)}
+                            style={[
+                              styles.slot,
+                              booked && styles.slotDisabled,
+                              time === slot && styles.slotSelected,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.slotText,
+                                booked && styles.slotTextDisabled,
+                                time === slot && styles.slotTextSelected,
+                              ]}
+                            >
+                              {slot}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))}
+              </>
             )}
             {time ? <PrimaryButton title="Revisar agendamento" onPress={() => setStep('review')} /> : null}
           </>
@@ -218,14 +454,33 @@ export function BookingScreen({ route, navigation }: Props) {
           <>
             <Text style={styles.sectionTitle}>Revise antes de confirmar</Text>
             <View style={styles.reviewCard}>
-              <ReviewRow icon="sparkles-outline" label="Tratamento" value={service.name} />
-              <ReviewRow icon="calendar-outline" label="Data" value={formatDate(date)} />
+              <ReviewRow icon="flower-outline" label="Tratamento" value={service.name} />
+              <ReviewRow
+                icon="calendar-outline"
+                label="Data"
+                value={formatReviewDate(date)}
+                suffix={date === localDateKey(new Date()) ? '(Hoje)' : undefined}
+              />
               <ReviewRow icon="time-outline" label="Horário" value={time} />
-              {!isRescheduling && <ReviewRow icon="wallet-outline" label="Pagamento" value={originLabel(bookingOrigin)} />}
-              {!isRescheduling && bookingOrigin !== 'SUBSCRIPTION' && <ReviewRow icon="cash-outline" label="Total" value={currency(finalPrice)} />}
+              {!isRescheduling && (
+                <ReviewRow icon="wallet-outline" label="Pagamento" value={originLabel(bookingOrigin)} />
+              )}
+              {!isRescheduling && bookingOrigin !== 'SUBSCRIPTION' && (
+                <ReviewRow icon="cash-outline" label="Total" value={currency(finalPrice)} />
+              )}
             </View>
             {error ? <Text style={styles.error}>{error}</Text> : null}
-            <PrimaryButton title={isRescheduling ? 'Confirmar novo horário' : bookingOrigin === 'SINGLE' || finalPrice > 0 && bookingOrigin === 'VOUCHER' ? 'Ir para pagamento' : 'Confirmar agendamento'} onPress={submit} loading={submitting} />
+            <PrimaryButton
+              title={
+                isRescheduling
+                  ? 'Confirmar novo horário'
+                  : bookingOrigin === 'SINGLE' || (bookingOrigin === 'VOUCHER' && finalPrice > 0)
+                    ? 'Ir para pagamento'
+                    : 'Confirmar agendamento'
+              }
+              onPress={submit}
+              loading={submitting}
+            />
           </>
         )}
         {error && step !== 'review' ? <Text style={styles.error}>{error}</Text> : null}
@@ -234,20 +489,422 @@ export function BookingScreen({ route, navigation }: Props) {
   );
 }
 
-function PrimaryButton({ title, onPress, loading }: { title: string; onPress: () => void; loading?: boolean }) {
-  return <TouchableOpacity disabled={loading} style={[styles.primaryButton, loading && { opacity: 0.7 }]} onPress={onPress}>{loading ? <ActivityIndicator color="white" /> : <Text style={styles.primaryButtonText}>{title}</Text>}</TouchableOpacity>;
+function PaymentOption({
+  selected,
+  disabled,
+  icon,
+  title,
+  subtitle,
+  accent,
+  onPress,
+}: {
+  selected: boolean;
+  disabled?: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle: string;
+  accent: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.85}
+      style={[
+        styles.paymentOption,
+        selected && { borderColor: accent, backgroundColor: `${accent}12` },
+        disabled && styles.paymentOptionDisabled,
+      ]}
+    >
+      <View style={[styles.paymentIconWrap, { backgroundColor: `${accent}18` }]}>
+        <Ionicons name={icon} size={20} color={disabled ? '#9ca3af' : accent} />
+      </View>
+      <View style={styles.paymentCopy}>
+        <Text style={[styles.paymentTitle, disabled && styles.paymentTextDisabled]}>{title}</Text>
+        <Text style={[styles.paymentSubtitle, disabled && styles.paymentTextDisabled]}>{subtitle}</Text>
+      </View>
+      {selected && !disabled ? <Ionicons name="checkmark-circle" size={22} color={accent} /> : null}
+    </TouchableOpacity>
+  );
 }
-function Summary({ icon, label, value }: { icon: any; label: string; value: string }) { return <View style={styles.summary}><Ionicons name={icon} size={22} color="#ec4899" /><Text style={styles.summaryLabel}>{label}</Text><Text style={styles.summaryValue}>{value}</Text></View>; }
-function ReviewRow({ icon, label, value }: { icon: any; label: string; value: string }) { return <View style={styles.reviewRow}><Ionicons name={icon} size={21} color="#ec4899" /><View style={{ flex: 1 }}><Text style={styles.reviewLabel}>{label}</Text><Text style={styles.reviewValue}>{value}</Text></View></View>; }
-function CenteredMessage({ title, action, compact }: { title: string; action: () => void; compact?: boolean }) { return <View style={[styles.centered, compact && { minHeight: 180 }]}><Ionicons name="calendar-outline" size={50} color="#d1d5db" /><Text style={styles.centeredText}>{title}</Text><TouchableOpacity onPress={action}><Text style={styles.link}>Voltar</Text></TouchableOpacity></View>; }
-function previousStep(step: Step): Step { return step === 'review' ? 'time' : step === 'time' ? 'date' : 'details'; }
-function progress(step: Step) { return ({ details: 25, date: 50, time: 75, review: 100 })[step]; }
-function stepLabel(step: Step) { return ({ details: 'Detalhes', date: 'Escolha a data', time: 'Escolha o horário', review: 'Confirmação' })[step]; }
-function originLabel(origin: string) { return origin === 'SUBSCRIPTION' ? 'Incluso no seu plano' : origin === 'VOUCHER' ? 'Voucher aplicado' : 'Pagamento avulso'; }
-function currency(value: number) { return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
-function formatDate(value: string) { if (!value) return ''; return new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'long' }); }
-function localDateKey(value: Date) { return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`; }
+
+function LegendItem({ tone, label }: { tone: 'available' | 'selected' | 'booked'; label: string }) {
+  return (
+    <View style={styles.legendItem}>
+      <View
+        style={[
+          styles.legendSwatch,
+          tone === 'available' && styles.legendAvailable,
+          tone === 'selected' && styles.legendSelected,
+          tone === 'booked' && styles.legendBooked,
+        ]}
+      />
+      <Text style={styles.legendLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function PrimaryButton({
+  title,
+  onPress,
+  loading,
+  disabled,
+}: {
+  title: string;
+  onPress: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      disabled={loading || disabled}
+      style={[styles.primaryButton, (loading || disabled) && { opacity: 0.55 }]}
+      onPress={onPress}
+    >
+      {loading ? <ActivityIndicator color="white" /> : <Text style={styles.primaryButtonText}>{title}</Text>}
+    </TouchableOpacity>
+  );
+}
+
+function Summary({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
+  return (
+    <View style={styles.summary}>
+      <Ionicons name={icon} size={22} color="#ec4899" />
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={styles.summaryValue}>{value}</Text>
+    </View>
+  );
+}
+
+function ReviewRow({
+  icon,
+  label,
+  value,
+  suffix,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  suffix?: string;
+}) {
+  return (
+    <View style={styles.reviewRow}>
+      <Ionicons name={icon} size={21} color="#ec4899" />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.reviewLabel}>{label}</Text>
+        <Text style={styles.reviewValue}>
+          {value}
+          {suffix ? <Text style={styles.reviewValueSuffix}> {suffix}</Text> : null}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function CenteredMessage({ title, action, compact }: { title: string; action: () => void; compact?: boolean }) {
+  return (
+    <View style={[styles.centered, compact && { minHeight: 180 }]}>
+      <Ionicons name="calendar-outline" size={50} color="#d1d5db" />
+      <Text style={styles.centeredText}>{title}</Text>
+      <TouchableOpacity onPress={action}>
+        <Text style={styles.link}>Voltar</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function previousStep(step: Step): Step {
+  return step === 'review' ? 'time' : step === 'time' ? 'date' : 'details';
+}
+function progress(step: Step) {
+  return ({ details: 25, date: 50, time: 75, review: 100 })[step];
+}
+function stepLabel(step: Step) {
+  return ({ details: 'Detalhes', date: 'Escolha a data', time: 'Escolha o horário', review: 'Confirmação' })[step];
+}
+function originLabel(origin: BookableOrigin) {
+  return origin === 'SUBSCRIPTION'
+    ? 'Incluso no seu plano'
+    : origin === 'VOUCHER'
+      ? 'Voucher aplicado'
+      : 'Pagamento avulso';
+}
+function currency(value: number) {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+function capitalize(value: string) {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+function formatSlotDate(value: string) {
+  if (!value) return '';
+  const dateValue = new Date(`${value}T12:00:00`);
+  const weekday = capitalize(
+    dateValue.toLocaleDateString('pt-BR', { weekday: 'long' }).replace(/-feira$/i, ''),
+  );
+  const day = dateValue.toLocaleDateString('pt-BR', { day: '2-digit' });
+  const month = dateValue.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+  return `${weekday}, ${day} de ${month}.`;
+}
+function formatReviewDate(value: string) {
+  if (!value) return '';
+  const formatted = new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+  });
+  return capitalize(formatted);
+}
+function hourFromSlot(slot: string) {
+  const hour = Number(slot.slice(0, 2));
+  return Number.isFinite(hour) ? hour : 0;
+}
+function localDateKey(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
+/** Remove slots cujo início já passou no dia de hoje (hora local do dispositivo). */
+function filterFutureSlots(date: string, list: string[]) {
+  if (date !== localDateKey(new Date())) return list;
+  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+  return list.filter((slot) => {
+    const [h, m] = slot.split(':').map(Number);
+    return h * 60 + m > nowMinutes;
+  });
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' }, iconButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' }, headerCenter: { flex: 1, alignItems: 'center' }, headerTitle: { fontSize: 18, fontWeight: '800', color: '#111827' }, headerStep: { fontSize: 12, color: '#6b7280', marginTop: 2 }, progress: { height: 4, backgroundColor: '#fce7f3' }, progressFill: { height: 4, backgroundColor: '#ec4899' }, content: { padding: 22, paddingBottom: 44 }, heroIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#fce7f3', alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginTop: 20 }, serviceName: { fontSize: 25, fontWeight: '800', textAlign: 'center', color: '#111827', marginTop: 18 }, category: { color: '#ec4899', fontWeight: '700', textAlign: 'center', marginTop: 5 }, description: { fontSize: 15, lineHeight: 23, color: '#4b5563', textAlign: 'center', marginVertical: 22 }, summaryRow: { flexDirection: 'row', gap: 12 }, summary: { flex: 1, backgroundColor: 'white', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#f3f4f6' }, summaryLabel: { fontSize: 12, color: '#6b7280', marginTop: 8 }, summaryValue: { fontSize: 16, fontWeight: '800', color: '#111827', marginTop: 3 }, benefitBox: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fdf2f8', borderRadius: 14, padding: 15, marginTop: 14 }, benefitText: { color: '#9d174d', fontWeight: '700' }, primaryButton: { backgroundColor: '#ec4899', borderRadius: 14, minHeight: 54, alignItems: 'center', justifyContent: 'center', marginTop: 24 }, primaryButtonText: { color: 'white', fontWeight: '800', fontSize: 16 }, sectionTitle: { fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 18 }, calendarCard: { backgroundColor: 'white', borderRadius: 18, overflow: 'hidden', padding: 6, borderWidth: 1, borderColor: '#e5e7eb' }, slots: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, slot: { width: '30%', flexGrow: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: 'white', borderWidth: 1, borderColor: '#e5e7eb', alignItems: 'center' }, slotSelected: { backgroundColor: '#ec4899', borderColor: '#ec4899' }, slotDisabled: { backgroundColor: '#f3f4f6' }, slotText: { fontWeight: '700', color: '#111827' }, slotTextSelected: { color: 'white' }, slotTextDisabled: { color: '#c4c8ce', textDecorationLine: 'line-through' }, reviewCard: { backgroundColor: 'white', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#e5e7eb' }, reviewRow: { flexDirection: 'row', gap: 13, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb' }, reviewLabel: { fontSize: 12, color: '#6b7280' }, reviewValue: { fontSize: 15, color: '#111827', fontWeight: '700', marginTop: 2 }, error: { color: '#b91c1c', backgroundColor: '#fee2e2', borderRadius: 10, padding: 12, marginTop: 16, textAlign: 'center' }, centered: { minHeight: 500, alignItems: 'center', justifyContent: 'center', padding: 24 }, centeredText: { fontSize: 18, color: '#6b7280', marginTop: 12, marginBottom: 10 }, link: { color: '#ec4899', fontWeight: '800' },
+  container: { flex: 1, backgroundColor: '#f9fafb' },
+  iconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: '#111827' },
+  headerStep: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  progress: { height: 4, backgroundColor: '#fce7f3' },
+  progressFill: { height: 4, backgroundColor: '#ec4899' },
+  content: { padding: 22, paddingBottom: 44 },
+  heroIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#fce7f3',
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    overflow: 'hidden',
+  },
+  heroCategoryIcon: { width: 52, height: 52 },
+  serviceName: {
+    fontSize: 25,
+    fontWeight: '800',
+    textAlign: 'center',
+    color: '#111827',
+    marginTop: 18,
+  },
+  category: { fontWeight: '700', textAlign: 'center', marginTop: 5 },
+  description: {
+    fontSize: 15,
+    lineHeight: 23,
+    color: '#4b5563',
+    textAlign: 'center',
+    marginVertical: 22,
+  },
+  summaryRow: { flexDirection: 'row', gap: 12 },
+  summary: {
+    flex: 1,
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#f3f4f6',
+  },
+  summaryLabel: { fontSize: 12, color: '#6b7280', marginTop: 8 },
+  summaryValue: { fontSize: 16, fontWeight: '800', color: '#111827', marginTop: 3 },
+
+  planInfoCard: {
+    marginTop: 14,
+    backgroundColor: '#fdf2f8',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(236,73,152,0.18)',
+  },
+  planBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  planBadgeText: { color: '#be185d', fontWeight: '800', fontSize: 14 },
+  planSessionsText: { color: '#9d174d', fontSize: 13, marginTop: 6, fontWeight: '600' },
+  startingPlanRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  startingPlanText: { color: '#9d174d', fontSize: 13, fontWeight: '600', flex: 1 },
+
+  paymentSectionTitle: {
+    marginTop: 22,
+    marginBottom: 12,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  paymentOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'white',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    padding: 14,
+    marginBottom: 10,
+  },
+  paymentOptionDisabled: { opacity: 0.55 },
+  paymentIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paymentCopy: { flex: 1 },
+  paymentTitle: { fontSize: 15, fontWeight: '800', color: '#111827' },
+  paymentSubtitle: { fontSize: 13, color: '#6b7280', marginTop: 2, lineHeight: 18 },
+  paymentTextDisabled: { color: '#9ca3af' },
+
+  primaryButton: {
+    backgroundColor: '#ec4899',
+    borderRadius: 14,
+    minHeight: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
+  },
+  primaryButtonText: { color: 'white', fontWeight: '800', fontSize: 16 },
+  sectionTitle: { fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 18 },
+  calendarCard: {
+    backgroundColor: 'white',
+    borderRadius: 18,
+    overflow: 'hidden',
+    padding: 6,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+
+  legend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+    marginBottom: 18,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendSwatch: { width: 14, height: 14, borderRadius: 4 },
+  legendAvailable: { backgroundColor: 'white', borderWidth: 2, borderColor: '#e5e7eb' },
+  legendSelected: { backgroundColor: '#ec4899' },
+  legendBooked: { backgroundColor: '#e5e7eb', borderWidth: 1, borderColor: '#d1d5db' },
+  legendLabel: { fontSize: 12, color: '#6b7280', fontWeight: '600' },
+
+  shiftBlock: { marginBottom: 18 },
+  shiftHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  shiftIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#fce7f3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shiftLabel: { fontSize: 14, fontWeight: '800', color: '#ec4899' },
+  shiftLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(236,73,152,0.25)' },
+
+  emptySlotsBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'white',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    paddingVertical: 36,
+    paddingHorizontal: 22,
+    marginTop: 8,
+  },
+  emptySlotsTitle: {
+    marginTop: 12,
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  emptySlotsHint: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  emptySlotsButton: {
+    marginTop: 18,
+    backgroundColor: '#ec4899',
+    borderRadius: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  emptySlotsButtonText: { color: 'white', fontWeight: '800', fontSize: 14 },
+  onlyBookedBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#fdf2f8',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  onlyBookedText: { flex: 1, color: '#9d174d', fontSize: 13, fontWeight: '600', lineHeight: 18 },
+
+  slots: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  slot: {
+    width: '30%',
+    flexGrow: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+  },
+  slotSelected: { backgroundColor: '#ec4899', borderColor: '#ec4899' },
+  slotDisabled: { backgroundColor: '#f3f4f6' },
+  slotText: { fontWeight: '700', color: '#111827' },
+  slotTextSelected: { color: 'white' },
+  slotTextDisabled: { color: '#c4c8ce', textDecorationLine: 'line-through' },
+
+  reviewCard: {
+    backgroundColor: 'white',
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  reviewRow: {
+    flexDirection: 'row',
+    gap: 13,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e5e7eb',
+  },
+  reviewLabel: { fontSize: 12, color: '#6b7280' },
+  reviewValue: { fontSize: 15, color: '#111827', fontWeight: '700', marginTop: 2 },
+  reviewValueSuffix: { color: '#ec4899', fontWeight: '800' },
+  error: {
+    color: '#b91c1c',
+    backgroundColor: '#fee2e2',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  centered: { minHeight: 500, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  centeredText: { fontSize: 18, color: '#6b7280', marginTop: 12, marginBottom: 10 },
+  link: { color: '#ec4899', fontWeight: '800' },
 });

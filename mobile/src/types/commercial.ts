@@ -76,6 +76,8 @@ export interface AvailableSlots {
   serviceId?: string;
   slots: string[];
   bookedSlots: string[];
+  available?: boolean;
+  reason?: string;
 }
 
 export interface PaymentMethod {
@@ -112,4 +114,30 @@ export const CATEGORY_META: Record<ServiceCategory, { label: string; color: stri
 export function getApiErrorMessage(error: unknown, fallback = 'Não foi possível concluir a operação') {
   const value = error as any;
   return value?.response?.data?.error || value?.response?.data?.message || value?.message || fallback;
+}
+
+/** Hold de checkout online ainda dentro dos 5 minutos. */
+export function isOnlinePaymentHold(appointment: Pick<Appointment, 'origin' | 'status' | 'paymentStatus' | 'paymentExpiresAt'>) {
+  if (appointment.origin === 'ADMIN_CREATED') return false;
+  if (appointment.status !== 'PENDING' || appointment.paymentStatus !== 'PENDING' || !appointment.paymentExpiresAt) {
+    return false;
+  }
+  return new Date(appointment.paymentExpiresAt).getTime() > Date.now();
+}
+
+/** Hold expirado ainda não cancelado no servidor (lag até o release). */
+export function isExpiredUnpaidHold(appointment: Pick<Appointment, 'origin' | 'status' | 'paymentStatus' | 'paymentExpiresAt'>) {
+  if (appointment.origin === 'ADMIN_CREATED') return false;
+  if (appointment.status !== 'PENDING' || appointment.paymentStatus !== 'PENDING' || !appointment.paymentExpiresAt) {
+    return false;
+  }
+  return new Date(appointment.paymentExpiresAt).getTime() <= Date.now();
+}
+
+/** Status efetivo para UI — hold expirado conta como Cancelado imediatamente. */
+export function effectiveAppointmentStatus(
+  appointment: Pick<Appointment, 'origin' | 'status' | 'paymentStatus' | 'paymentExpiresAt'>,
+): AppointmentStatus {
+  if (isExpiredUnpaidHold(appointment)) return 'CANCELED';
+  return appointment.status;
 }

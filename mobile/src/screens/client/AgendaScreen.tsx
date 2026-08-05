@@ -6,7 +6,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { cancelAppointment, createPaymentSession } from '../../lib/api';
-import { getApiErrorMessage, type Appointment } from '../../types/commercial';
+import {
+  effectiveAppointmentStatus,
+  getApiErrorMessage,
+  isExpiredUnpaidHold,
+  isOnlinePaymentHold,
+  type Appointment,
+} from '../../types/commercial';
 import { useAuth } from '../../contexts/AuthContext';
 import type { ClientTabParamList } from '../../navigation/ClientNavigator';
 
@@ -37,18 +43,17 @@ function monthKeyFromDate(value: string) {
   return value.slice(0, 7);
 }
 
-function isOnlinePaymentHold(appointment: Appointment) {
-  if (appointment.origin === 'ADMIN_CREATED') return false;
-  if (appointment.status !== 'PENDING' || appointment.paymentStatus !== 'PENDING' || !appointment.paymentExpiresAt) return false;
-  return new Date(appointment.paymentExpiresAt).getTime() > Date.now();
-}
-
 function formatCountdown(ms: number) {
   if (ms <= 0) return '00:00';
   const total = Math.ceil(ms / 1000);
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function isActiveUpcoming(appointment: Appointment, now: Date) {
+  const status = effectiveAppointmentStatus(appointment);
+  return !['COMPLETED', 'CANCELED', 'NO_SHOW'].includes(status) && wallDate(appointment.startTime) >= now;
 }
 
 export function AgendaScreen() {
@@ -75,6 +80,7 @@ export function AgendaScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setActiveTab('upcoming');
       scrollToTop();
       const unsubscribe = navigation.addListener('tabPress', scrollToTop);
       return unsubscribe;
@@ -93,8 +99,8 @@ export function AgendaScreen() {
   }, [appointments, clearAppointmentParam, loading, pendingAppointmentId]);
 
   const now = new Date();
-  const upcoming = appointments.filter((item) => !['COMPLETED', 'CANCELED', 'NO_SHOW'].includes(item.status) && wallDate(item.startTime) >= now);
-  const history = appointments.filter((item) => !upcoming.includes(item)).slice().reverse();
+  const upcoming = appointments.filter((item) => isActiveUpcoming(item, now));
+  const history = appointments.filter((item) => !isActiveUpcoming(item, now)).slice().reverse();
   const visible = selectedDate
     ? appointments.filter((item) => datePart(item.startTime) === selectedDate)
     : activeTab === 'upcoming' ? upcoming : history;
@@ -253,19 +259,47 @@ export function AgendaScreen() {
           )}
 
           {loading ? <ActivityIndicator size="large" color="#ec4899" style={{ marginTop: 45 }} /> : error && appointments.length === 0 ? <Empty icon="cloud-offline-outline" title={error} action={refresh} /> : visible.length === 0 ? <Empty icon="calendar-outline" title={selectedDate ? 'Nenhum agendamento neste dia' : activeTab === 'upcoming' ? 'Nenhum horário agendado' : 'Seu histórico aparecerá aqui'} action={emptyAction} /> : (
-            <View style={styles.list}>{visible.map((appointment) => <AppointmentCard key={appointment.id} appointment={appointment} onPress={() => setSelected(appointment)} />)}</View>
+            <View style={styles.list}>
+              {visible.map((appointment) => (
+                <AppointmentCard
+                  key={appointment.id}
+                  appointment={appointment}
+                  onPress={() => setSelected(appointment)}
+                  onHoldExpired={() => void refresh()}
+                />
+              ))}
+            </View>
           )}
         </View>
       </ScrollView>
 
-      <AppointmentDetail appointment={selected} onClose={() => setSelected(null)} onCancel={handleCancel} onRefresh={refresh} onReschedule={(appointment) => { setSelected(null); navigation.navigate('Booking', { serviceId: appointment.serviceId, appointmentId: appointment.id }); }} />
+      <AppointmentDetail
+        appointment={selected}
+        onClose={() => setSelected(null)}
+        onCancel={handleCancel}
+        onRefresh={refresh}
+        onReschedule={(appointment) => {
+          setSelected(null);
+          navigation.navigate('Booking', { serviceId: appointment.serviceId, appointmentId: appointment.id });
+        }}
+      />
     </SafeAreaView>
   );
 }
 
-function AppointmentCard({ appointment, onPress }: { appointment: Appointment; onPress: () => void }) {
+function AppointmentCard({
+  appointment,
+  onPress,
+  onHoldExpired,
+}: {
+  appointment: Appointment;
+  onPress: () => void;
+  onHoldExpired: () => void;
+}) {
   const date = datePart(appointment.startTime);
   const hold = isOnlinePaymentHold(appointment);
+  const expired = isExpiredUnpaidHold(appointment);
+  const status = effectiveAppointmentStatus(appointment);
   return (
     <TouchableOpacity style={[styles.card, hold && styles.cardHold]} onPress={onPress}>
       <View style={styles.dateBox}><Text style={styles.day}>{date.slice(8, 10)}</Text><Text style={styles.month}>{shortMonth(date)}</Text></View>
@@ -274,24 +308,34 @@ function AppointmentCard({ appointment, onPress }: { appointment: Appointment; o
         <View style={styles.meta}>
           <Ionicons name="time-outline" size={15} color="#6b7280" />
           <Text style={styles.metaText}>{timePart(appointment.startTime)}</Text>
-          <View style={[styles.dot, { backgroundColor: hold ? '#f97316' : statusColor(appointment.status) }]} />
-          <Text style={[styles.status, { color: hold ? '#c2410c' : statusColor(appointment.status) }]}>
-            {hold ? 'Pagar' : statusLabel(appointment.status)}
+          <View style={[styles.dot, { backgroundColor: hold ? '#f97316' : statusColor(status) }]} />
+          <Text style={[styles.status, { color: hold ? '#c2410c' : statusColor(status) }]}>
+            {hold ? 'Pagar' : statusLabel(status)}
           </Text>
         </View>
-        {hold ? <HoldCountdown expiresAt={appointment.paymentExpiresAt!} /> : null}
+        {hold ? <HoldCountdown expiresAt={appointment.paymentExpiresAt!} onExpired={onHoldExpired} /> : null}
+        {expired ? <Text style={styles.holdExpiredHint}>Pagamento não concluído</Text> : null}
       </View>
       <Ionicons name="chevron-forward" size={20} color="#d1d5db" />
     </TouchableOpacity>
   );
 }
 
-function HoldCountdown({ expiresAt }: { expiresAt: string }) {
+function HoldCountdown({ expiresAt, onExpired }: { expiresAt: string; onExpired?: () => void }) {
   const [left, setLeft] = useState(() => Math.max(0, new Date(expiresAt).getTime() - Date.now()));
+  const expiredNotified = useRef(false);
   useEffect(() => {
-    const id = setInterval(() => setLeft(Math.max(0, new Date(expiresAt).getTime() - Date.now())), HOLD_MS_TICK);
+    expiredNotified.current = false;
+    const id = setInterval(() => {
+      const ms = Math.max(0, new Date(expiresAt).getTime() - Date.now());
+      setLeft(ms);
+      if (ms <= 0 && !expiredNotified.current) {
+        expiredNotified.current = true;
+        onExpired?.();
+      }
+    }, HOLD_MS_TICK);
     return () => clearInterval(id);
-  }, [expiresAt]);
+  }, [expiresAt, onExpired]);
   return (
     <Text style={[styles.holdTimer, left < 60_000 && styles.holdTimerUrgent]}>
       Expira em {formatCountdown(left)}
@@ -309,22 +353,36 @@ function AppointmentDetail({ appointment, onClose, onCancel, onReschedule, onRef
   const { user } = useAuth();
   const [paying, setPaying] = useState(false);
   const hold = appointment ? isOnlinePaymentHold(appointment) : false;
+  const expired = appointment ? isExpiredUnpaidHold(appointment) : false;
+  const status = appointment ? effectiveAppointmentStatus(appointment) : null;
   const [left, setLeft] = useState(0);
+  const expiredNotified = useRef(false);
+  const onRefreshRef = useRef(onRefresh);
+  const onCloseRef = useRef(onClose);
+  onRefreshRef.current = onRefresh;
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!appointment?.paymentExpiresAt || !hold) return;
+    expiredNotified.current = false;
     const tick = () => {
       const ms = Math.max(0, new Date(appointment.paymentExpiresAt!).getTime() - Date.now());
       setLeft(ms);
-      if (ms <= 0) void onRefresh();
+      if (ms <= 0 && !expiredNotified.current) {
+        expiredNotified.current = true;
+        void onRefreshRef.current().then(() => onCloseRef.current());
+      }
     };
     tick();
     const id = setInterval(tick, HOLD_MS_TICK);
     return () => clearInterval(id);
   }, [appointment?.id, appointment?.paymentExpiresAt, hold]);
 
-  if (!appointment) return null;
-  const actionable = ['PENDING', 'CONFIRMED'].includes(appointment.status) && wallDate(appointment.startTime) > new Date();
+  if (!appointment || !status) return null;
+  const actionable =
+    ['PENDING', 'CONFIRMED'].includes(status) &&
+    !expired &&
+    wallDate(appointment.startTime) > new Date();
 
   const handlePay = async () => {
     if (!user || paying || left <= 0) return;
@@ -350,16 +408,23 @@ function AppointmentDetail({ appointment, onClose, onCancel, onReschedule, onRef
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}><TouchableOpacity style={styles.backdrop} onPress={onClose} /><View style={styles.sheet}>
         <View style={styles.handle} /><View style={styles.sheetHeader}><Text style={styles.sheetTitle}>Detalhes do horário</Text><TouchableOpacity onPress={onClose}><Ionicons name="close-circle" size={30} color="#9ca3af" /></TouchableOpacity></View>
-        <View style={[styles.statusBadge, { backgroundColor: hold ? '#ffedd5' : `${statusColor(appointment.status)}18` }]}>
-          <View style={[styles.dot, { backgroundColor: hold ? '#f97316' : statusColor(appointment.status) }]} />
-          <Text style={[styles.status, { color: hold ? '#c2410c' : statusColor(appointment.status) }]}>
-            {hold ? 'Pagamento pendente' : statusLabel(appointment.status)}
+        <View style={[styles.statusBadge, { backgroundColor: hold ? '#ffedd5' : `${statusColor(status)}18` }]}>
+          <View style={[styles.dot, { backgroundColor: hold ? '#f97316' : statusColor(status) }]} />
+          <Text style={[styles.status, { color: hold ? '#c2410c' : statusColor(status) }]}>
+            {hold ? 'Pagamento pendente' : statusLabel(status)}
           </Text>
         </View>
         <Text style={styles.detailService}>{appointment.service.name}</Text>
         <Detail icon="calendar-outline" text={longDate(datePart(appointment.startTime))} />
         <Detail icon="time-outline" text={`${timePart(appointment.startTime)} • ${appointment.service.duration} minutos`} />
-        <Detail icon="wallet-outline" text={originLabel(appointment.origin, appointment.paymentStatus)} />
+        <Detail
+          icon="wallet-outline"
+          text={
+            expired
+              ? 'Pagamento não concluído'
+              : originLabel(appointment.origin, appointment.paymentStatus)
+          }
+        />
         {hold ? (
           <View style={styles.holdBox}>
             <Text style={styles.holdBoxTitle}>Reserve expira em {formatCountdown(left)}</Text>
@@ -367,6 +432,13 @@ function AppointmentDetail({ appointment, onClose, onCancel, onReschedule, onRef
             <TouchableOpacity style={styles.payButton} onPress={handlePay} disabled={paying || left <= 0}>
               <Text style={styles.payButtonText}>{paying ? 'Abrindo…' : 'Pagar agora'}</Text>
             </TouchableOpacity>
+          </View>
+        ) : null}
+        {expired ? (
+          <View style={styles.expiredBox}>
+            <Text style={styles.expiredBoxText}>
+              O tempo para pagamento acabou. Este horário foi cancelado e liberado.
+            </Text>
           </View>
         ) : null}
         {actionable && !hold ? <View style={styles.actions}><TouchableOpacity style={styles.reschedule} onPress={() => onReschedule(appointment)}><Text style={styles.rescheduleText}>Reagendar</Text></TouchableOpacity><TouchableOpacity style={styles.cancel} onPress={() => onCancel(appointment)}><Text style={styles.cancelText}>Cancelar</Text></TouchableOpacity></View> : null}
@@ -387,4 +459,60 @@ function statusColor(status: string) { return status === 'CONFIRMED' || status =
 function statusLabel(status: string) { return ({ PENDING: 'Agendado', CONFIRMED: 'Confirmado', COMPLETED: 'Concluído', CANCELED: 'Cancelado', NO_SHOW: 'Não compareceu' } as any)[status] || status; }
 function originLabel(origin: string, payment: string | null) { if (origin === 'SUBSCRIPTION') return 'Descontado do plano'; if (origin === 'VOUCHER') return 'Voucher aplicado'; if (origin === 'SINGLE') return payment === 'PAID' ? 'Pagamento confirmado' : 'Pagamento pendente'; return 'Criado pela clínica'; }
 
-const styles = StyleSheet.create({ container: { flex: 1, backgroundColor: '#f9fafb' }, header: { backgroundColor: 'white', paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }, headerTitle: { fontSize: 28, fontWeight: '800', color: '#111827' }, headerSubtitle: { fontSize: 15, color: '#6b7280', marginTop: 4 }, content: { padding: 20, paddingBottom: 38 }, newButton: { backgroundColor: '#ec4899', borderRadius: 14, height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 18 }, newButtonText: { color: 'white', fontSize: 16, fontWeight: '800' }, calendarCard: { backgroundColor: 'white', borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: '#e5e7eb' }, tabs: { flexDirection: 'row', backgroundColor: '#e5e7eb', padding: 4, borderRadius: 13, marginVertical: 20 }, tab: { flex: 1, paddingVertical: 11, alignItems: 'center', borderRadius: 10 }, tabActive: { backgroundColor: 'white' }, tabText: { color: '#6b7280', fontWeight: '700' }, tabTextActive: { color: '#ec4899' }, selectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 20 }, sectionTitle: { fontSize: 18, fontWeight: '800', color: '#111827', textTransform: 'capitalize' }, clear: { color: '#ec4899', fontWeight: '800' }, list: { gap: 12 }, card: { backgroundColor: 'white', borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb' }, cardHold: { backgroundColor: '#fff7ed', borderColor: '#fb923c' }, dateBox: { width: 54, height: 58, borderRadius: 12, backgroundColor: '#fdf2f8', alignItems: 'center', justifyContent: 'center', marginRight: 13 }, day: { fontSize: 21, color: '#ec4899', fontWeight: '800' }, month: { color: '#9d174d', fontSize: 12, fontWeight: '700', textTransform: 'capitalize' }, cardInfo: { flex: 1 }, service: { color: '#111827', fontSize: 16, fontWeight: '800' }, meta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 }, metaText: { color: '#6b7280', fontSize: 13 }, holdTimer: { marginTop: 6, color: '#c2410c', fontSize: 12, fontWeight: '800' }, holdTimerUrgent: { color: '#b91c1c' }, holdBox: { backgroundColor: '#ffedd5', borderRadius: 14, padding: 14, marginTop: 8, marginBottom: 8 }, holdBoxTitle: { color: '#9a3412', fontWeight: '800', fontSize: 15 }, holdBoxText: { color: '#9a3412', fontSize: 13, marginTop: 6, marginBottom: 12 }, payButton: { backgroundColor: '#ea580c', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }, payButtonText: { color: 'white', fontWeight: '800' }, dot: { width: 7, height: 7, borderRadius: 4, marginLeft: 4 }, status: { fontSize: 12, fontWeight: '800' }, empty: { alignItems: 'center', paddingVertical: 50, paddingHorizontal: 20 }, emptyText: { fontSize: 16, color: '#6b7280', textAlign: 'center', marginVertical: 12 }, overlay: { flex: 1, justifyContent: 'flex-end' }, backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,.45)' }, sheet: { backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 22, paddingBottom: 36 }, handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: '#d1d5db', alignSelf: 'center', marginBottom: 18 }, sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, sheetTitle: { fontSize: 20, fontWeight: '800', color: '#111827' }, statusBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 12, marginTop: 16 }, detailService: { fontSize: 23, fontWeight: '800', color: '#111827', marginVertical: 20 }, detailRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 }, detailText: { color: '#4b5563', fontSize: 15 }, actions: { flexDirection: 'row', gap: 12, marginTop: 16 }, reschedule: { flex: 1, backgroundColor: '#ec4899', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }, rescheduleText: { color: 'white', fontWeight: '800' }, cancel: { flex: 1, borderWidth: 1, borderColor: '#ef4444', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }, cancelText: { color: '#ef4444', fontWeight: '800' } });
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f9fafb' },
+  header: { backgroundColor: 'white', paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  headerTitle: { fontSize: 28, fontWeight: '800', color: '#111827' },
+  headerSubtitle: { fontSize: 15, color: '#6b7280', marginTop: 4 },
+  content: { padding: 20, paddingBottom: 38 },
+  newButton: { backgroundColor: '#ec4899', borderRadius: 14, height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 18 },
+  newButtonText: { color: 'white', fontSize: 16, fontWeight: '800' },
+  calendarCard: { backgroundColor: 'white', borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: '#e5e7eb' },
+  tabs: { flexDirection: 'row', backgroundColor: '#e5e7eb', padding: 4, borderRadius: 13, marginVertical: 20 },
+  tab: { flex: 1, paddingVertical: 11, alignItems: 'center', borderRadius: 10 },
+  tabActive: { backgroundColor: 'white' },
+  tabText: { color: '#6b7280', fontWeight: '700' },
+  tabTextActive: { color: '#ec4899' },
+  selectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 20 },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#111827', textTransform: 'capitalize' },
+  clear: { color: '#ec4899', fontWeight: '800' },
+  list: { gap: 12 },
+  card: { backgroundColor: 'white', borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb' },
+  cardHold: { backgroundColor: '#fff7ed', borderColor: '#fb923c' },
+  dateBox: { width: 54, height: 58, borderRadius: 12, backgroundColor: '#fdf2f8', alignItems: 'center', justifyContent: 'center', marginRight: 13 },
+  day: { fontSize: 21, color: '#ec4899', fontWeight: '800' },
+  month: { color: '#9d174d', fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
+  cardInfo: { flex: 1 },
+  service: { color: '#111827', fontSize: 16, fontWeight: '800' },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
+  metaText: { color: '#6b7280', fontSize: 13 },
+  holdTimer: { marginTop: 6, color: '#c2410c', fontSize: 12, fontWeight: '800' },
+  holdTimerUrgent: { color: '#b91c1c' },
+  holdExpiredHint: { marginTop: 6, color: '#ef4444', fontSize: 12, fontWeight: '700' },
+  holdBox: { backgroundColor: '#ffedd5', borderRadius: 14, padding: 14, marginTop: 8, marginBottom: 8 },
+  holdBoxTitle: { color: '#9a3412', fontWeight: '800', fontSize: 15 },
+  holdBoxText: { color: '#9a3412', fontSize: 13, marginTop: 6, marginBottom: 12 },
+  payButton: { backgroundColor: '#ea580c', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  payButtonText: { color: 'white', fontWeight: '800' },
+  expiredBox: { backgroundColor: '#fee2e2', borderRadius: 14, padding: 14, marginTop: 8, marginBottom: 8 },
+  expiredBoxText: { color: '#b91c1c', fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  dot: { width: 7, height: 7, borderRadius: 4, marginLeft: 4 },
+  status: { fontSize: 12, fontWeight: '800' },
+  empty: { alignItems: 'center', paddingVertical: 50, paddingHorizontal: 20 },
+  emptyText: { fontSize: 16, color: '#6b7280', textAlign: 'center', marginVertical: 12 },
+  overlay: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,.45)' },
+  sheet: { backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 22, paddingBottom: 36 },
+  handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: '#d1d5db', alignSelf: 'center', marginBottom: 18 },
+  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sheetTitle: { fontSize: 20, fontWeight: '800', color: '#111827' },
+  statusBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 12, marginTop: 16 },
+  detailService: { fontSize: 23, fontWeight: '800', color: '#111827', marginVertical: 20 },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  detailText: { color: '#4b5563', fontSize: 15 },
+  actions: { flexDirection: 'row', gap: 12, marginTop: 16 },
+  reschedule: { flex: 1, backgroundColor: '#ec4899', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  rescheduleText: { color: 'white', fontWeight: '800' },
+  cancel: { flex: 1, borderWidth: 1, borderColor: '#ef4444', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  cancelText: { color: '#ef4444', fontWeight: '800' },
+});

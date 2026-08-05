@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, TextInput } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, TextInput, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import { CATEGORY_ILLUSTRATIONS } from '../../assets/brandAssets';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { CATEGORY_META, type Service, type ServiceCategory, type Subscription } from '../../types/commercial';
 
@@ -35,17 +36,17 @@ export function ServicesScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      const category = route.params?.category;
+      if (category && category in CATEGORY_META) {
+        setSelectedCategory(category as ServiceCategory);
+      } else if (category === 'ALL') {
+        setSelectedCategory(null);
+      }
       scrollToTop();
       const unsubscribe = navigation.addListener('tabPress', scrollToTop);
       return unsubscribe;
-    }, [navigation, scrollToTop])
+    }, [navigation, route.params?.category, scrollToTop])
   );
-
-  useEffect(() => {
-    if (route.params?.category && route.params.category in CATEGORY_META) {
-      setSelectedCategory(route.params.category);
-    }
-  }, [route.params?.category]);
 
   const categories = (Object.keys(CATEGORY_META) as ServiceCategory[])
     .filter((category) => services.some((service) => service.category === category))
@@ -189,11 +190,15 @@ function ServiceCard({
     <TouchableOpacity style={styles.serviceCard} onPress={onBook}>
       <View style={styles.serviceHeader}>
         <View style={[styles.serviceIconContainer, { backgroundColor: `${meta.color}18` }]}>
-          <MaterialCommunityIcons name={meta.icon as any} size={24} color={meta.color} />
+          <Image
+            source={CATEGORY_ILLUSTRATIONS[service.category]}
+            style={styles.serviceCategoryIcon}
+            resizeMode="contain"
+          />
         </View>
         <View style={styles.serviceInfo}>
           <Text style={styles.serviceName}>{service.name}</Text>
-          <Text style={styles.serviceCategory}>{meta.label}</Text>
+          <Text style={[styles.serviceCategory, { color: meta.color }]}>{meta.label}</Text>
         </View>
         {includedInPlan ? (
           <View style={styles.planBadge}>
@@ -350,6 +355,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    overflow: 'hidden',
+  },
+  serviceCategoryIcon: {
+    width: 36,
+    height: 36,
   },
   serviceInfo: {
     flex: 1,

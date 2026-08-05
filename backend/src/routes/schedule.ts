@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { releaseExpiredPaymentHolds } from '../utils/paymentHolds'
+import { wallClockNowAsStoredUtc } from '../utils/wallClock'
 
 // ============================================================================
 // Helpers de horário (slots dinâmicos)
@@ -220,9 +221,39 @@ export async function scheduleRoutes(app: FastifyInstance) {
       }
       // Remove duplicatas e ordena (períodos não deveriam se sobrepor, mas garantimos)
       candidateSlots = Array.from(new Set(candidateSlots)).sort()
+
+      // No dia de hoje (America/Sao_Paulo), remove horários cujo início já passou.
+      // Ex.: agora 16:50 → 16:30 some; 17:00 continua elegível.
+      if (date === saoPauloDateStr) {
+        const wallNow = wallClockNowAsStoredUtc(now)
+        const before = candidateSlots.length
+        candidateSlots = candidateSlots.filter((slot) => slotToDate(date, slot).getTime() > wallNow.getTime())
+        logger.debug(
+          `Filtro horário atual (SP ${wallNow.toISOString()}): ${before} → ${candidateSlots.length} candidatos futuros`
+        )
+      }
       
       logger.debug(`Períodos configurados: ${JSON.stringify(availableSlots)}`)
       logger.debug(`Grade ${slotDuration}min, serviço ${serviceDuration}min → candidatos: ${candidateSlots.join(', ')}`)
+
+      if (candidateSlots.length === 0) {
+        const reason =
+          date === saoPauloDateStr
+            ? 'Não há mais horários disponíveis para hoje'
+            : 'Nenhum horário disponível'
+        logger.info(`${reason} (${date})`)
+        return reply.status(200).send({
+          success: true,
+          data: {
+            date,
+            available: false,
+            reason,
+            slots: [],
+            bookedSlots: [],
+            totalSlots: 0,
+          }
+        })
+      }
       
       // 6. Busca agendamentos do dia (mesmo referencial UTC dos rótulos de slot)
       // Antes, libera holds de pagamento expirados para não mostrar como ocupado

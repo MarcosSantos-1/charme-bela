@@ -226,6 +226,10 @@ export async function appointmentsRoutes(app: FastifyInstance) {
     logger.route('GET', '/appointments')
     
     try {
+      // Libera holds expirados antes de listar — evita devolver PENDING/"Agendado"
+      // para reservas cujo timer de pagamento já acabou.
+      await releaseExpiredPaymentHolds()
+
       const { userId, status, startDate, endDate, excludeHidden } = request.query as {
         userId?: string
         status?: string
@@ -306,6 +310,8 @@ export async function appointmentsRoutes(app: FastifyInstance) {
     logger.route('GET', `/appointments/${id}`)
     
     try {
+      await releaseExpiredPaymentHolds()
+
       const appointment = await prisma.appointment.findUnique({
         where: { id },
         include: {

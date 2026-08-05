@@ -7,7 +7,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { NotificationsPanel } from '../../components/NotificationsPanel';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
-import { CATEGORY_META, type ServiceCategory } from '../../types/commercial';
+import { CATEGORY_META, isExpiredUnpaidHold, isOnlinePaymentHold, type ServiceCategory } from '../../types/commercial';
 import { displayUserFirstName } from '../../lib/userDisplay';
 import { CATEGORY_ILLUSTRATIONS, logoSource } from '../../assets/brandAssets';
 
@@ -100,9 +100,32 @@ export function ClientHomeScreen() {
     included: Boolean(subscription?.plan.services.some((service) => service.category === category)),
   })).filter((category) => category.count > 0);
   const nextAppointments = appointments
-    .filter((item) => ['PENDING', 'CONFIRMED'].includes(item.status) && new Date(`${item.startTime.slice(0, 10)}T${item.startTime.slice(11, 16)}:00`) > new Date())
+    .filter((item) => {
+      if (isExpiredUnpaidHold(item)) return false;
+      if (!['PENDING', 'CONFIRMED'].includes(item.status)) return false;
+      return new Date(`${item.startTime.slice(0, 10)}T${item.startTime.slice(11, 16)}:00`) > new Date();
+    })
     .slice(0, 3)
-    .map((item) => ({ id: item.id, service: item.service.name, date: item.startTime.slice(8, 10), month: new Date(`${item.startTime.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''), time: item.startTime.slice(11, 16), paymentType: item.origin === 'SUBSCRIPTION' ? 'plan' : item.origin === 'ADMIN_CREATED' ? 'clinic' : 'cash', status: item.status === 'CONFIRMED' ? 'confirmed' : 'pending' }));
+    .map((item) => {
+      const paymentHold = isOnlinePaymentHold(item);
+      const paymentType =
+        item.origin === 'SUBSCRIPTION'
+          ? 'plan'
+          : item.origin === 'ADMIN_CREATED'
+            ? 'clinic'
+            : paymentHold || item.paymentStatus === 'PENDING'
+              ? 'pending'
+              : 'cash';
+      return {
+        id: item.id,
+        service: item.service.name,
+        date: item.startTime.slice(8, 10),
+        month: new Date(`${item.startTime.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''),
+        time: item.startTime.slice(11, 16),
+        paymentType,
+        status: item.status === 'CONFIRMED' ? 'confirmed' : 'pending',
+      };
+    });
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -192,7 +215,7 @@ export function ClientHomeScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Procedimentos</Text>
-                <TouchableOpacity onPress={() => navigation.navigate('Services')}>
+                <TouchableOpacity onPress={() => navigation.navigate('Services', { category: 'ALL' })}>
                   <Text style={styles.seeAllLink}>ver todos</Text>
                 </TouchableOpacity>
               </View>
@@ -396,6 +419,8 @@ function AppointmentCard({ appointment, onPress }: { appointment: any; onPress: 
     switch (appointment.paymentType) {
       case 'plan':
         return { icon: 'checkmark-circle', color: '#10b981', text: 'Plano' };
+      case 'pending':
+        return { icon: 'alert-circle', color: '#ef4444', text: 'Pendente pagamento' };
       case 'cash':
         return { icon: 'cash', color: '#f59e0b', text: 'Pago' };
       case 'clinic':

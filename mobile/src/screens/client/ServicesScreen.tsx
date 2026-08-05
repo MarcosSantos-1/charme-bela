@@ -1,15 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
-import { CATEGORY_META, type Service, type ServiceCategory } from '../../types/commercial';
+import { CATEGORY_META, type Service, type ServiceCategory, type Subscription } from '../../types/commercial';
+
+function formatCurrency(value: number) {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function isServiceInPlan(service: Service, subscription: Subscription | null) {
+  if (!subscription) return false;
+  const stillActive =
+    subscription.status === 'ACTIVE' ||
+    subscription.status === 'PAUSED' ||
+    subscription.status === 'PAST_DUE' ||
+    (subscription.status === 'CANCELED' && Boolean(subscription.endDate && new Date(subscription.endDate) > new Date()));
+  if (!stillActive) return false;
+  return subscription.plan.services.some((planService) => planService.id === service.id);
+}
 
 export function ServicesScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { services, loading, refreshing, error, refresh } = useCommercial();
+  const { services, subscription, loading, refreshing, error, refresh } = useCommercial();
   const [selectedCategory, setSelectedCategory] = useState<ServiceCategory | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const scrollRef = useRef<ScrollView>(null);
@@ -44,16 +59,32 @@ export function ServicesScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Serviços</Text>
         <Text style={styles.headerSubtitle}>Escolha seu tratamento</Text>
+
+        <View style={styles.searchBox}>
+          <Ionicons name="search-outline" size={20} color="#9ca3af" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar serviços…"
+            placeholderTextColor="#9ca3af"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+          {searchQuery.length > 0 ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={18} color="#9ca3af" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
       <ScrollView ref={scrollRef} style={styles.content} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}>
-        {/* Categories Filter */}
-        <ScrollView 
-          horizontal 
+        <ScrollView
+          horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.categoriesScroll}
           contentContainerStyle={styles.categoriesContent}
@@ -98,7 +129,6 @@ export function ServicesScreen() {
           ))}
         </ScrollView>
 
-        {/* Services List */}
         <View style={styles.servicesList}>
           {loading ? (
             <ActivityIndicator size="large" color="#ec4899" style={styles.loader} />
@@ -114,12 +144,17 @@ export function ServicesScreen() {
               <Ionicons name="search-outline" size={64} color="#d1d5db" />
               <Text style={styles.emptyStateTitle}>Nenhum serviço encontrado</Text>
               <Text style={styles.emptyStateText}>
-                Tente selecionar outra categoria
+                Tente outro termo ou categoria
               </Text>
             </View>
           ) : (
             filteredServices.map(service => (
-              <ServiceCard key={service.id} service={service} onBook={() => navigation.navigate('Booking', { serviceId: service.id })} />
+              <ServiceCard
+                key={service.id}
+                service={service}
+                includedInPlan={isServiceInPlan(service, subscription)}
+                onBook={() => navigation.navigate('Booking', { serviceId: service.id })}
+              />
             ))
           )}
         </View>
@@ -128,23 +163,33 @@ export function ServicesScreen() {
   );
 }
 
-function ServiceCard({ service, onBook }: { service: Service; onBook: () => void }) {
+function ServiceCard({
+  service,
+  includedInPlan,
+  onBook,
+}: {
+  service: Service;
+  includedInPlan: boolean;
+  onBook: () => void;
+}) {
+  const meta = CATEGORY_META[service.category];
+
   return (
     <TouchableOpacity style={styles.serviceCard} onPress={onBook}>
       <View style={styles.serviceHeader}>
-        <View style={styles.serviceIconContainer}>
-          <Ionicons name="sparkles" size={24} color="#ec4899" />
+        <View style={[styles.serviceIconContainer, { backgroundColor: `${meta.color}18` }]}>
+          <MaterialCommunityIcons name={meta.icon as any} size={24} color={meta.color} />
         </View>
         <View style={styles.serviceInfo}>
           <Text style={styles.serviceName}>{service.name}</Text>
-          <Text style={styles.serviceCategory}>{CATEGORY_META[service.category].label}</Text>
+          <Text style={styles.serviceCategory}>{meta.label}</Text>
         </View>
-        {service.isActive && (
-          <View style={styles.availableBadge}>
-            <View style={styles.availableDot} />
-            <Text style={styles.availableText}>Disponível</Text>
+        {includedInPlan ? (
+          <View style={styles.planBadge}>
+            <Ionicons name="checkmark-circle" size={14} color="#be185d" />
+            <Text style={styles.planBadgeText}>No plano</Text>
           </View>
-        )}
+        ) : null}
       </View>
 
       <Text style={styles.serviceDescription} numberOfLines={2}>
@@ -155,12 +200,12 @@ function ServiceCard({ service, onBook }: { service: Service; onBook: () => void
         <View style={styles.serviceDetails}>
           <View style={styles.serviceDetail}>
             <Ionicons name="time-outline" size={16} color="#6b7280" />
-              <Text style={styles.serviceDetailText}>{service.duration} min</Text>
+            <Text style={styles.serviceDetailText}>{service.duration} min</Text>
           </View>
           <View style={styles.serviceDetail}>
             <Ionicons name="cash-outline" size={16} color="#6b7280" />
             <Text style={styles.serviceDetailText}>
-              R$ {service.price.toFixed(2)}
+              {formatCurrency(service.price)}
             </Text>
           </View>
         </View>
@@ -195,6 +240,22 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 15,
     color: '#6b7280',
+  },
+  searchBox: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 48,
+    gap: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#111827',
+    paddingVertical: 0,
   },
   content: {
     flex: 1,
@@ -274,7 +335,6 @@ const styles = StyleSheet.create({
   serviceIconContainer: {
     width: 48,
     height: 48,
-    backgroundColor: '#fce7f3',
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
@@ -282,6 +342,8 @@ const styles = StyleSheet.create({
   },
   serviceInfo: {
     flex: 1,
+    minWidth: 0,
+    marginRight: 8,
   },
   serviceName: {
     fontSize: 17,
@@ -293,25 +355,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
   },
-  availableBadge: {
+  planBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#d1fae5',
+    gap: 4,
+    backgroundColor: '#fce7f3',
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#f9a8d4',
   },
-  availableDot: {
-    width: 6,
-    height: 6,
-    backgroundColor: '#10b981',
-    borderRadius: 3,
-    marginRight: 4,
-  },
-  availableText: {
+  planBadgeText: {
     fontSize: 11,
-    fontWeight: '600',
-    color: '#059669',
+    fontWeight: '700',
+    color: '#be185d',
   },
   serviceDescription: {
     fontSize: 14,

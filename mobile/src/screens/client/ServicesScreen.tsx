@@ -51,10 +51,21 @@ export function ServicesScreen() {
     .filter((category) => services.some((service) => service.category === category))
     .map((category) => ({ id: category, ...CATEGORY_META[category] }));
 
-  const filteredServices = services.filter(service => {
+  const handleSearchChange = useCallback((text: string) => {
+    setSearchQuery(text);
+    if (text.trim().length > 0) {
+      setSelectedCategory(null);
+    }
+  }, []);
+
+  const filteredServices = services.filter((service) => {
+    const query = searchQuery.trim().toLowerCase();
+    const matchesSearch =
+      !query || `${service.name} ${service.description} ${CATEGORY_META[service.category].label}`.toLowerCase().includes(query);
+    // Busca é global: com texto na pesquisa, ignora o chip de categoria
+    if (query) return matchesSearch;
     const matchesCategory = !selectedCategory || service.category === selectedCategory;
-    const matchesSearch = `${service.name} ${service.description}`.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+    return matchesCategory;
   });
 
   return (
@@ -70,7 +81,7 @@ export function ServicesScreen() {
             placeholder="Buscar serviços…"
             placeholderTextColor="#9ca3af"
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={handleSearchChange}
             returnKeyType="search"
             clearButtonMode="while-editing"
           />

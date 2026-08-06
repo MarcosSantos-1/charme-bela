@@ -10,13 +10,15 @@ import {
   fetchSignInMethodsForEmail,
   GoogleAuthProvider,
   PhoneAuthProvider,
+  EmailAuthProvider,
   signInWithCredential,
+  linkWithCredential,
   type User as FirebaseUser,
   type ApplicationVerifier,
 } from 'firebase/auth';
 import * as WebBrowser from 'expo-web-browser';
 import { auth } from '../lib/firebase';
-import { getOrCreateUserFromFirebase, getUserByFirebaseUid, User } from '../lib/api';
+import { getOrCreateUserFromFirebase, getUserByFirebaseUid, updateUser, User } from '../lib/api';
 import { looksLikePhoneName } from '../lib/userDisplay';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -51,11 +53,49 @@ interface AuthContextType {
     verifier: ApplicationVerifier
   ) => Promise<string>;
   confirmPhoneCode: (verificationId: string, code: string) => Promise<void>;
+  /** Vincula Google à conta já logada (recuperação / segundo método). */
+  linkGoogleIdToken: (idToken: string) => Promise<void>;
+  /** Vincula e-mail+senha à conta (recuperação; não vira login principal na UI). */
+  linkEmailPassword: (email: string, password: string) => Promise<void>;
+  /** Envia SMS para vincular telefone à conta atual. */
+  sendPhoneLinkVerification: (
+    e164Phone: string,
+    verifier: ApplicationVerifier
+  ) => Promise<string>;
+  /** Confirma SMS e vincula telefone à conta atual. */
+  confirmPhoneLink: (verificationId: string, code: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   /** Atualiza o usuário em memória + cache (ex.: após anamnese). */
   setUserProfile: (next: User) => Promise<void>;
   refreshUser: () => Promise<User | null>;
+}
+
+/** Mensagens amigáveis para erros comuns de vínculo Firebase. */
+export function firebaseLinkErrorMessage(error: any): string {
+  const code = String(error?.code || '');
+  if (code.includes('credential-already-in-use')) {
+    return 'Esse método já está vinculado a outra conta. Entre com ele ou use outro.';
+  }
+  if (code.includes('email-already-in-use')) {
+    return 'Este e-mail já está em uso por outra conta.';
+  }
+  if (code.includes('provider-already-linked')) {
+    return 'Esse método já está vinculado a esta conta.';
+  }
+  if (code.includes('requires-recent-login')) {
+    return 'Por segurança, saia e entre de novo antes de vincular um novo método.';
+  }
+  if (code.includes('invalid-verification-code') || code.includes('invalid-verification-id')) {
+    return 'Código inválido. Solicite um novo SMS e tente novamente.';
+  }
+  if (code.includes('weak-password')) {
+    return 'Use uma senha com pelo menos 6 caracteres.';
+  }
+  if (code.includes('invalid-email')) {
+    return 'E-mail inválido.';
+  }
+  return error?.message || 'Não foi possível vincular. Tente novamente.';
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -181,6 +221,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signInWithCredential(auth, credential);
   }, []);
 
+  const linkGoogleIdToken = useCallback(async (idToken: string) => {
+    const current = auth.currentUser;
+    if (!current) throw new Error('Faça login antes de vincular o Google.');
+    const credential = GoogleAuthProvider.credential(idToken);
+    await linkWithCredential(current, credential);
+  }, []);
+
+  const linkEmailPassword = useCallback(async (email: string, password: string) => {
+    const current = auth.currentUser;
+    if (!current) throw new Error('Faça login antes de vincular o e-mail.');
+    const credential = EmailAuthProvider.credential(email.trim(), password);
+    await linkWithCredential(current, credential);
+  }, []);
+
+  const sendPhoneLinkVerification = useCallback(
+    async (e164Phone: string, verifier: ApplicationVerifier): Promise<string> => {
+      const provider = new PhoneAuthProvider(auth);
+      return provider.verifyPhoneNumber(e164Phone, verifier);
+    },
+    []
+  );
+
+  const confirmPhoneLink = useCallback(async (verificationId: string, code: string) => {
+    const current = auth.currentUser;
+    if (!current) throw new Error('Faça login antes de vincular o telefone.');
+    const credential = PhoneAuthProvider.credential(verificationId, code.trim());
+    const result = await linkWithCredential(current, credential);
+    const phone = result.user.phoneNumber || undefined;
+    // Sincroniza phone no backend se já temos perfil
+    const cached = await AsyncStorage.getItem(USER_CACHE_KEY);
+    if (phone && cached) {
+      try {
+        const parsed = JSON.parse(cached) as User;
+        if (parsed?.id) {
+          const updated = await updateUser(parsed.id, { phone });
+          setUser(updated);
+          await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(updated));
+        }
+      } catch {
+        // vínculo Firebase ok; sync backend pode falhar sem bloquear
+      }
+    }
+  }, []);
+
   const resetPassword = useCallback(async (email: string) => {
     await sendPasswordResetEmail(auth, email.trim());
   }, []);
@@ -225,6 +309,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signInWithGoogleIdToken,
         sendPhoneVerification,
         confirmPhoneCode,
+        linkGoogleIdToken,
+        linkEmailPassword,
+        sendPhoneLinkVerification,
+        confirmPhoneLink,
         resetPassword,
         signOut,
         setUserProfile,

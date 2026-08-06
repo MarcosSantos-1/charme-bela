@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
@@ -16,6 +16,8 @@ import { LanguageScreen } from './profile/LanguageScreen';
 import { HelpCenterScreen } from './profile/HelpCenterScreen';
 import { PrivacyScreen } from './profile/PrivacyScreen';
 import { ContactModal } from '../../components/ContactModal';
+import { ClinicInfoPanel } from '../../components/ClinicInfoPanel';
+import { ACTIVE_CLINIC } from '../../constants/clinicInfo';
 import { displayUserContact, displayUserName } from '../../lib/userDisplay';
 
 function monthsBetween(start: Date, end: Date) {
@@ -45,6 +47,7 @@ export function ProfileScreen() {
   const navigation = useNavigation<any>();
   const [currentScreen, setCurrentScreen] = useState<SubScreen>('main');
   const [showContactModal, setShowContactModal] = useState(false);
+  const [showClinicInfo, setShowClinicInfo] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const openScreenRef = useRef(route.params?.openScreen);
   openScreenRef.current = route.params?.openScreen;
@@ -163,8 +166,17 @@ export function ProfileScreen() {
             </View>
             <Text style={styles.userName}>{displayUserName(user)}</Text>
             <Text style={styles.userEmail}>{displayUserContact(user)}</Text>
-            <TouchableOpacity style={styles.editButton} onPress={() => setCurrentScreen('personal-data')}>
-              <Text style={styles.editButtonText}>Editar Perfil</Text>
+            {/* SaaS: este botão vira seletor/info da clínica ativa (multi-clínica). */}
+            <TouchableOpacity
+              style={styles.clinicButton}
+              onPress={() => setShowClinicInfo(true)}
+              activeOpacity={0.85}
+            >
+              <View style={styles.clinicLogoCircle}>
+                <Image source={ACTIVE_CLINIC.logo} style={styles.clinicLogo} resizeMode="contain" />
+              </View>
+              <Text style={styles.clinicButtonText}>{ACTIVE_CLINIC.name}</Text>
+              <Ionicons name="information-circle-outline" size={18} color="#fce7f3" />
             </TouchableOpacity>
           </View>
         </View>
@@ -298,6 +310,10 @@ export function ProfileScreen() {
         visible={showContactModal}
         onClose={() => setShowContactModal(false)}
       />
+      <ClinicInfoPanel
+        visible={showClinicInfo}
+        onClose={() => setShowClinicInfo(false)}
+      />
     </View>
   );
 }
@@ -381,16 +397,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#fce7f3',
   },
-  editButton: {
+  clinicButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#db2777',
-    paddingHorizontal: 24,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingLeft: 6,
+    paddingRight: 14,
+    paddingVertical: 6,
+    borderRadius: 24,
     marginTop: 16,
+    gap: 10,
   },
-  editButtonText: {
+  clinicLogoCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  clinicLogo: {
+    width: 22,
+    height: 22,
+  },
+  clinicButtonText: {
     color: 'white',
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: 14,
   },
   body: {

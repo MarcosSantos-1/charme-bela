@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../contexts/AuthContext';
 import { NotificationsPanel } from '../../components/NotificationsPanel';
+import { ClinicInfoPanel } from '../../components/ClinicInfoPanel';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { CATEGORY_META, isExpiredUnpaidHold, isOnlinePaymentHold, type ServiceCategory } from '../../types/commercial';
@@ -56,6 +57,7 @@ export function ClientHomeScreen() {
   const { user } = useAuth();
   const { services, appointments, subscription, loading, refreshing, error, refresh } = useCommercial();
   const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [clinicInfoVisible, setClinicInfoVisible] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const firstName = displayUserFirstName(user);
 
@@ -133,9 +135,15 @@ export function ClientHomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <View style={styles.logoCircle}>
+            <TouchableOpacity
+              style={styles.logoCircle}
+              onPress={() => setClinicInfoVisible(true)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Sobre a clínica"
+            >
               <Image source={logoSource} style={styles.logoImage} resizeMode="contain" />
-            </View>
+            </TouchableOpacity>
             <View style={styles.headerText}>
               <Text style={styles.greeting}>Olá,</Text>
               <Text style={styles.userName} numberOfLines={1} ellipsizeMode="tail">{firstName}</Text>
@@ -258,10 +266,13 @@ export function ClientHomeScreen() {
         )}
       </ScrollView>
 
-      {/* Notifications Panel */}
       <NotificationsPanel
         visible={notificationsVisible}
         onClose={() => setNotificationsVisible(false)}
+      />
+      <ClinicInfoPanel
+        visible={clinicInfoVisible}
+        onClose={() => setClinicInfoVisible(false)}
       />
     </SafeAreaView>
   );

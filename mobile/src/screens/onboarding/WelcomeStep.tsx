@@ -35,7 +35,7 @@ export function WelcomeStep({ total, current, onNext, onSelect, width }: Welcome
             fadeDuration={0}
           />
         </View>
-        <Text style={styles.eyebrow}>Bem-vinda</Text>
+        <Text style={styles.eyebrow}>Boas-vindas</Text>
         <Text style={styles.title}>
            <Text style={styles.titleAccent}>Charme & Bela</Text> 
         </Text>

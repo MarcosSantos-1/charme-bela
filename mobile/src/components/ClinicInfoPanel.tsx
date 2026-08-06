@@ -95,14 +95,14 @@ export function ClinicInfoPanel({
 
             <TouchableOpacity
               style={styles.row}
-              onPress={() => openUrl(`mailto:${clinic.email}`)}
+              onPress={() => openUrl(clinic.websiteUrl)}
             >
               <View style={[styles.rowIcon, { backgroundColor: '#ec4899' }]}>
-                <Ionicons name="mail" size={20} color="#fff" />
+                <Ionicons name="globe-outline" size={20} color="#fff" />
               </View>
               <View style={styles.rowBody}>
-                <Text style={styles.rowTitle}>E-mail</Text>
-                <Text style={styles.rowSubtitle}>{clinic.email}</Text>
+                <Text style={styles.rowTitle}>Site</Text>
+                <Text style={styles.rowSubtitle}>charmebela.com.br</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#d1d5db" />
             </TouchableOpacity>
@@ -151,7 +151,7 @@ export function ClinicInfoPanel({
                 onPress={() => openUrl(clinicMapsUrl(clinic))}
               >
                 <Ionicons name="logo-google" size={18} color="#fff" />
-                <Text style={styles.navBtnPrimaryText}>Google Negócio</Text>
+                <Text style={styles.navBtnPrimaryText}>Google</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.navBtn, styles.navBtnSecondary]}
@@ -160,16 +160,6 @@ export function ClinicInfoPanel({
                 <Ionicons name="navigate" size={18} color="#33ccff" />
                 <Text style={styles.navBtnSecondaryText}>Waze</Text>
               </TouchableOpacity>
-            </View>
-
-            <View style={styles.hoursBox}>
-              <Text style={styles.hoursTitle}>Horário de funcionamento</Text>
-              {clinic.hours.map((h) => (
-                <View key={h.label} style={styles.hoursLine}>
-                  <Text style={styles.hoursLabel}>{h.label}</Text>
-                  <Text style={styles.hoursValue}>{h.value}</Text>
-                </View>
-              ))}
             </View>
           </ScrollView>
         </View>
@@ -334,7 +324,7 @@ const styles = StyleSheet.create({
   navRow: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 20,
+    marginBottom: 8,
   },
   navBtn: {
     flex: 1,
@@ -362,32 +352,5 @@ const styles = StyleSheet.create({
     color: '#0e7490',
     fontWeight: '700',
     fontSize: 14,
-  },
-  hoursBox: {
-    padding: 16,
-    backgroundColor: '#fdf2f8',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#fce7f3',
-  },
-  hoursTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#9d174d',
-    marginBottom: 10,
-  },
-  hoursLine: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  hoursLabel: {
-    fontSize: 13,
-    color: '#9d174d',
-  },
-  hoursValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#9d174d',
   },
 });

@@ -19,9 +19,6 @@ import { AnamnesisFlow } from '../../anamnesis/AnamnesisFlow';
 const LABELS: Record<string, string> = {
   fullName: 'Nome completo',
   birthDate: 'Data de nascimento',
-  sex: 'Sexo',
-  phone: 'Telefone',
-  email: 'E-mail',
   diagnosedDisease: 'Doença diagnosticada',
   diagnosedDiseaseDetails: 'Quais doenças',
   medicalTreatment: 'Tratamento médico',
@@ -70,9 +67,6 @@ const LABELS: Record<string, string> = {
   regions: 'Regiões',
   mainGoal: 'Objetivo principal',
   objective: 'Objetivo',
-  name: 'Nome',
-  howKnew: 'Como conheceu',
-  address: 'Endereço',
 };
 
 const VALUE_LABELS: Record<string, string> = {
@@ -117,6 +111,16 @@ const VALUE_LABELS: Record<string, string> = {
   peeling: 'Peeling',
 };
 
+type SectionMeta = {
+  key: string;
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  accent: string;
+  accentSoft: string;
+  value: any;
+  hideNegatives?: boolean;
+};
+
 export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth();
   const [data, setData] = useState<any | null>(null);
@@ -156,12 +160,37 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
     );
   }
 
-  const sections = data
+  const personal = data?.personalData || {};
+  const fullName = personal.fullName || personal.name || '—';
+  const birthDate = personal.birthDate || '—';
+
+  const detailSections: SectionMeta[] = data
     ? [
-        { title: 'Dados pessoais', value: data.personalData },
-        { title: 'Saúde', value: data.healthData },
-        { title: 'Estilo de vida & pele', value: data.lifestyleData },
-        { title: 'Objetivos', value: data.objectivesData },
+        {
+          key: 'health',
+          title: 'Saúde',
+          icon: 'heart',
+          accent: brand.roseDeep,
+          accentSoft: brand.blush,
+          value: data.healthData,
+          hideNegatives: true,
+        },
+        {
+          key: 'lifestyle',
+          title: 'Estilo de vida & pele',
+          icon: 'leaf',
+          accent: '#9a6b3c',
+          accentSoft: brand.champagne,
+          value: data.lifestyleData,
+        },
+        {
+          key: 'objectives',
+          title: 'Objetivos',
+          icon: 'sparkles',
+          accent: '#8a6d1f',
+          accentSoft: '#f5ecd0',
+          value: data.objectivesData,
+        },
       ]
     : [];
 
@@ -194,7 +223,7 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
           }
         >
           <View style={styles.info}>
-            <Ionicons name="heart" size={22} color={brand.rose} />
+            <Ionicons name="heart" size={20} color={brand.rose} />
             <Text style={styles.infoText}>
               Suas respostas ajudam a clínica a cuidar de você com mais segurança.
             </Text>
@@ -213,10 +242,7 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
               <Text style={styles.hint}>
                 No primeiro acesso, o app abre o questionário completo para você.
               </Text>
-              <TouchableOpacity
-                style={styles.editBtn}
-                onPress={() => setEditing(true)}
-              >
+              <TouchableOpacity style={styles.editBtn} onPress={() => setEditing(true)}>
                 <Text style={styles.editBtnText}>Preencher agora</Text>
               </TouchableOpacity>
             </View>
@@ -227,25 +253,67 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
                 <Text style={styles.editBtnText}>Atualizar ficha</Text>
               </TouchableOpacity>
               <View style={styles.updated}>
-                <Ionicons name="time-outline" size={16} color={brand.muted} />
+                <Ionicons name="time-outline" size={15} color={brand.muted} />
                 <Text style={styles.updatedText}>
                   Atualizada em {new Date(data.updatedAt).toLocaleDateString('pt-BR')}
                   {data.termsAccepted ? ' · Completa' : ' · Pendente'}
                 </Text>
               </View>
-              {sections.map((section) => (
-                <View key={section.title} style={styles.section}>
-                  <Text style={styles.sectionTitle}>{section.title}</Text>
-                  <View style={styles.card}>
-                    {readableEntries(section.value).map(([key, value]) => (
-                      <View key={key} style={styles.row}>
-                        <Text style={styles.label}>{labelFor(key)}</Text>
-                        <Text style={styles.value}>{formatValue(value)}</Text>
-                      </View>
-                    ))}
+
+              {/* Dados pessoais — só nome + nascimento */}
+              <View style={styles.section}>
+                <View style={[styles.sectionHeader, { backgroundColor: '#f3e8ff' }]}>
+                  <View style={[styles.sectionIcon, { backgroundColor: '#ede9fe' }]}>
+                    <Ionicons name="person" size={16} color="#7c3aed" />
+                  </View>
+                  <Text style={[styles.sectionTitle, { color: '#5b21b6' }]}>Dados pessoais</Text>
+                </View>
+                <View style={styles.personalCard}>
+                  <View style={styles.personalRow}>
+                    <Text style={styles.personalLabel}>Nome completo</Text>
+                    <Text style={styles.personalValue}>{String(fullName)}</Text>
+                  </View>
+                  <View style={styles.personalDivider} />
+                  <View style={styles.personalRow}>
+                    <Text style={styles.personalLabel}>Data de nascimento</Text>
+                    <Text style={styles.personalValue}>{String(birthDate)}</Text>
                   </View>
                 </View>
-              ))}
+              </View>
+
+              {detailSections.map((section) => {
+                const entries = readableEntries(section.value, section.hideNegatives);
+                return (
+                  <View key={section.key} style={styles.section}>
+                    <View style={[styles.sectionHeader, { backgroundColor: section.accentSoft }]}>
+                      <View style={[styles.sectionIcon, { backgroundColor: brand.white }]}>
+                        <Ionicons name={section.icon} size={16} color={section.accent} />
+                      </View>
+                      <Text style={[styles.sectionTitle, { color: section.accent }]}>
+                        {section.title}
+                      </Text>
+                      <Text style={[styles.sectionCount, { color: section.accent }]}>
+                        {entries.length}
+                      </Text>
+                    </View>
+                    <View style={styles.card}>
+                      {entries.length === 0 ? (
+                        <Text style={styles.emptySection}>Nada relevante informado</Text>
+                      ) : (
+                        entries.map(([key, value], index) => (
+                          <FieldRow
+                            key={key}
+                            label={labelFor(key)}
+                            value={value}
+                            isLast={index === entries.length - 1}
+                            accent={section.accent}
+                          />
+                        ))
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
             </>
           )}
         </ScrollView>
@@ -254,19 +322,86 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
-function readableEntries(value: any): [string, any][] {
+function FieldRow({
+  label,
+  value,
+  isLast,
+  accent,
+}: {
+  label: string;
+  value: any;
+  isLast: boolean;
+  accent: string;
+}) {
+  const isBool = typeof value === 'boolean';
+  const isYesNo =
+    isBool || value === 'yes' || value === 'no' || value === true || value === false;
+  const isArray = Array.isArray(value);
+
+  return (
+    <View style={[styles.row, !isLast && styles.rowBorder]}>
+      <Text style={styles.label}>{label}</Text>
+      {isArray ? (
+        <View style={styles.chips}>
+          {value.map((v: any) => (
+            <View key={String(v)} style={[styles.chip, { backgroundColor: `${accent}18` }]}>
+              <Text style={[styles.chipText, { color: accent }]}>
+                {VALUE_LABELS[String(v)] || String(v)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : isYesNo ? (
+        <View
+          style={[
+            styles.chip,
+            {
+              backgroundColor:
+                value === true || value === 'yes' ? '#d1fae5' : '#f3f4f6',
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.chipText,
+              {
+                color:
+                  value === true || value === 'yes' ? '#047857' : brand.muted,
+              },
+            ]}
+          >
+            {formatValue(value)}
+          </Text>
+        </View>
+      ) : (
+        <Text style={styles.value}>{formatValue(value)}</Text>
+      )}
+    </View>
+  );
+}
+
+function readableEntries(value: any, hideNegatives = false): [string, any][] {
   if (!value || typeof value !== 'object') {
-    return [['Informações', value || 'Não informado']];
+    return [];
   }
   return Object.entries(value).filter(([, v]) => {
     if (v == null || v === '') return false;
     if (Array.isArray(v) && v.length === 0) return false;
+    if (hideNegatives) {
+      if (v === false || v === 'no' || v === 'never') return false;
+    }
     return true;
   });
 }
 
 function labelFor(key: string) {
-  return LABELS[key] || key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/^./, (l) => l.toUpperCase());
+  return (
+    LABELS[key] ||
+    key
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/_/g, ' ')
+      .replace(/^./, (l) => l.toUpperCase())
+  );
 }
 
 function formatValue(value: any): string {
@@ -298,7 +433,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: { fontSize: 18, fontWeight: '700', color: brand.ink },
-  content: { padding: 20, paddingBottom: 40 },
+  content: { padding: 16, paddingBottom: 40 },
   center: {
     flex: 1,
     minHeight: 300,
@@ -308,40 +443,106 @@ const styles = StyleSheet.create({
   },
   info: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
     backgroundColor: brand.blush,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
   },
-  infoText: { flex: 1, color: brand.roseDeep, lineHeight: 19 },
+  infoText: { flex: 1, color: brand.roseDeep, lineHeight: 18, fontSize: 13 },
   updated: {
     flexDirection: 'row',
     gap: 6,
     alignItems: 'center',
-    marginVertical: 17,
+    marginTop: 12,
+    marginBottom: 14,
   },
-  updatedText: { color: brand.muted, fontSize: 13 },
-  section: { marginBottom: 20 },
+  updatedText: { color: brand.muted, fontSize: 12 },
+  section: { marginBottom: 14 },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  sectionIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sectionTitle: {
-    color: brand.ink,
-    fontSize: 18,
+    flex: 1,
+    fontSize: 14,
     fontWeight: '700',
-    marginBottom: 10,
   },
+  sectionCount: {
+    fontSize: 12,
+    fontWeight: '700',
+    opacity: 0.7,
+  },
+  personalCard: {
+    backgroundColor: brand.white,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: brand.border,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+  },
+  personalRow: {
+    paddingVertical: 10,
+  },
+  personalDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: brand.border,
+  },
+  personalLabel: { color: brand.muted, fontSize: 11, marginBottom: 2 },
+  personalValue: { color: brand.ink, fontSize: 15, fontWeight: '700' },
   card: {
     backgroundColor: brand.white,
-    borderRadius: 14,
-    padding: 16,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderWidth: 1,
+    borderTopWidth: 0,
     borderColor: brand.border,
   },
   row: {
-    paddingVertical: 9,
+    paddingVertical: 8,
+  },
+  rowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: brand.border,
   },
-  label: { color: brand.muted, fontSize: 12, marginBottom: 3 },
-  value: { color: brand.ink, fontSize: 15, fontWeight: '600' },
+  label: { color: brand.muted, fontSize: 11, marginBottom: 4 },
+  value: { color: brand.ink, fontSize: 14, fontWeight: '600', lineHeight: 19 },
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  chip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  emptySection: {
+    color: brand.muted,
+    fontSize: 13,
+    paddingVertical: 10,
+    fontStyle: 'italic',
+  },
   error: { color: '#b91c1c', textAlign: 'center' },
   retry: { color: brand.rose, fontWeight: '700', marginTop: 12 },
   empty: {
@@ -360,14 +561,14 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     backgroundColor: brand.rose,
     borderRadius: 999,
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 16,
-    marginBottom: 4,
+    marginTop: 14,
+    marginBottom: 2,
   },
   editBtnText: {
     color: brand.white,

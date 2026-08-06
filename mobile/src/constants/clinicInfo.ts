@@ -19,9 +19,8 @@ export interface ClinicInfo {
   whatsappDisplay: string;
   instagramHandle: string;
   instagramUrl: string;
-  email: string;
+  websiteUrl: string;
   googleBusinessUrl: string;
-  hours: { label: string; value: string }[];
 }
 
 export const ACTIVE_CLINIC: ClinicInfo = {
@@ -36,16 +35,10 @@ export const ACTIVE_CLINIC: ClinicInfo = {
   longitude: -46.4748,
   whatsappE164: '5511913129669',
   whatsappDisplay: '(11) 91312-9669',
-  instagramHandle: '@charme.bela',
-  instagramUrl: 'https://www.instagram.com/charme.bela',
-  email: 'contato@charmebela.com.br',
-  googleBusinessUrl:
-    'https://www.google.com/maps/search/?api=1&query=Av.+Paranagu%C3%A1,+1672,+Ermelino+Matarazzo+-+SP',
-  hours: [
-    { label: 'Segunda a Sexta', value: '8h às 18h' },
-    { label: 'Sábado', value: '8h às 14h' },
-    { label: 'Domingo', value: 'Fechado' },
-  ],
+  instagramHandle: '@espacocharmebela',
+  instagramUrl: 'https://www.instagram.com/espacocharmebela/',
+  websiteUrl: 'https://www.charmebela.com.br/',
+  googleBusinessUrl: 'https://share.google/sK3BaUJYV5qZXoiXg',
 };
 
 export function clinicWazeUrl(clinic: ClinicInfo = ACTIVE_CLINIC): string {

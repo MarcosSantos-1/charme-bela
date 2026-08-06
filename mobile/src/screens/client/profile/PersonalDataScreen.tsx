@@ -385,7 +385,6 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
               {displayUserName(user).charAt(0).toUpperCase()}
             </Text>
           </View>
-          <Text style={styles.initialHint}>Foto de perfil em breve no app multi-clínica</Text>
         </View>
 
         <View style={styles.form}>
@@ -633,15 +632,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#ec4899',
   },
-  initialHint: {
-    marginTop: 10,
-    fontSize: 12,
-    color: '#9ca3af',
-    textAlign: 'center',
-    paddingHorizontal: 32,
-  },
-  // SaaS: estilos de upload de foto
-  // avatarSection / editAvatarButton
   form: {
     paddingHorizontal: 20,
   },

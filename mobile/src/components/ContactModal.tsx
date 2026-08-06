@@ -1,104 +1,128 @@
 import { View, Text, TouchableOpacity, Modal, Linking, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ACTIVE_CLINIC, type ClinicInfo } from '../constants/clinicInfo';
 
 interface ContactModalProps {
   visible: boolean;
   onClose: () => void;
+  /** SaaS: clínica ativa; default Charme & Bela */
+  clinic?: ClinicInfo;
 }
 
-export function ContactModal({ visible, onClose }: ContactModalProps) {
+function openUrl(url: string) {
+  Linking.openURL(url).catch(() => {});
+}
+
+export function ContactModal({
+  visible,
+  onClose,
+  clinic = ACTIVE_CLINIC,
+}: ContactModalProps) {
   const handleWhatsApp = () => {
-    const phoneNumber = '5511999999999'; // Número da clínica
-    const message = 'Olá! Gostaria de falar sobre meus agendamentos.';
-    const url = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
-    
-    Linking.openURL(url).catch(() => {
-      // Fallback para web se o app não estiver instalado
-      const webUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
-      Linking.openURL(webUrl);
+    const message = 'Olá! Gostaria de falar sobre meus agendamentos no app Charme & Bela.';
+    const appUrl = `whatsapp://send?phone=${clinic.whatsappE164}&text=${encodeURIComponent(message)}`;
+    Linking.openURL(appUrl).catch(() => {
+      openUrl(`https://wa.me/${clinic.whatsappE164}?text=${encodeURIComponent(message)}`);
     });
   };
 
-  const handleEmail = () => {
-    const email = 'contato@charmebela.com.br';
-    const subject = 'Contato via App';
-    const body = 'Olá! Gostaria de entrar em contato sobre...';
-    const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    
-    Linking.openURL(url);
-  };
-
-  const handlePhone = () => {
-    const phoneNumber = '5511999999999';
-    const url = `tel:${phoneNumber}`;
-    Linking.openURL(url);
-  };
-
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.modal}>
-          {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Fale Conosco</Text>
+            <View>
+              <Text style={styles.title}>Fale Conosco</Text>
+              <Text style={styles.clinicName}>{clinic.name}</Text>
+            </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color="#6b7280" />
             </TouchableOpacity>
           </View>
 
-          {/* Content */}
           <View style={styles.content}>
             <Text style={styles.subtitle}>
-              Escolha a melhor forma de entrar em contato conosco:
+              Tire dúvidas sobre agendamentos, planos ou procedimentos.
             </Text>
 
-            {/* WhatsApp */}
             <TouchableOpacity style={styles.contactButton} onPress={handleWhatsApp}>
               <View style={[styles.contactIcon, { backgroundColor: '#25d366' }]}>
                 <Ionicons name="logo-whatsapp" size={24} color="white" />
               </View>
               <View style={styles.contactInfo}>
                 <Text style={styles.contactTitle}>WhatsApp</Text>
-                <Text style={styles.contactSubtitle}>Resposta rápida</Text>
+                <Text style={styles.contactSubtitle}>{clinic.whatsappDisplay}</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#d1d5db" />
             </TouchableOpacity>
 
-            {/* Email */}
-            <TouchableOpacity style={styles.contactButton} onPress={handleEmail}>
-              <View style={[styles.contactIcon, { backgroundColor: '#ec4899' }]}>
-                <Ionicons name="mail" size={24} color="white" />
-              </View>
-              <View style={styles.contactInfo}>
-                <Text style={styles.contactTitle}>Email</Text>
-                <Text style={styles.contactSubtitle}>contato@charmebela.com.br</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#d1d5db" />
-            </TouchableOpacity>
-
-            {/* Telefone */}
-            <TouchableOpacity style={styles.contactButton} onPress={handlePhone}>
+            <TouchableOpacity
+              style={styles.contactButton}
+              onPress={() => openUrl(`tel:+${clinic.whatsappE164}`)}
+            >
               <View style={[styles.contactIcon, { backgroundColor: '#6366f1' }]}>
                 <Ionicons name="call" size={24} color="white" />
               </View>
               <View style={styles.contactInfo}>
                 <Text style={styles.contactTitle}>Telefone</Text>
-                <Text style={styles.contactSubtitle}>(11) 99999-9999</Text>
+                <Text style={styles.contactSubtitle}>{clinic.whatsappDisplay}</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#d1d5db" />
             </TouchableOpacity>
 
-            {/* Horário de funcionamento */}
-            <View style={styles.hoursContainer}>
-              <Text style={styles.hoursTitle}>Horário de Funcionamento</Text>
-              <Text style={styles.hoursText}>Segunda a Sexta: 8h às 18h</Text>
-              <Text style={styles.hoursText}>Sábado: 8h às 14h</Text>
-              <Text style={styles.hoursText}>Domingo: Fechado</Text>
+            <TouchableOpacity
+              style={styles.contactButton}
+              onPress={() => openUrl(clinic.instagramUrl)}
+            >
+              <View style={[styles.contactIcon, { backgroundColor: '#E1306C' }]}>
+                <Ionicons name="logo-instagram" size={24} color="white" />
+              </View>
+              <View style={styles.contactInfo}>
+                <Text style={styles.contactTitle}>Instagram</Text>
+                <Text style={styles.contactSubtitle}>{clinic.instagramHandle}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#d1d5db" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.contactButton}
+              onPress={() => openUrl(clinic.websiteUrl)}
+            >
+              <View style={[styles.contactIcon, { backgroundColor: '#ec4899' }]}>
+                <Ionicons name="globe-outline" size={24} color="white" />
+              </View>
+              <View style={styles.contactInfo}>
+                <Text style={styles.contactTitle}>Site</Text>
+                <Text style={styles.contactSubtitle}>charmebela.com.br</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#d1d5db" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.contactButton}
+              onPress={() =>
+                openUrl(
+                  `mailto:${clinic.contactEmail}?subject=${encodeURIComponent('Contato via App Charme & Bela')}`
+                )
+              }
+            >
+              <View style={[styles.contactIcon, { backgroundColor: '#111827' }]}>
+                <Ionicons name="mail" size={24} color="white" />
+              </View>
+              <View style={styles.contactInfo}>
+                <Text style={styles.contactTitle}>E-mail</Text>
+                <Text style={styles.contactSubtitle}>{clinic.contactEmail}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#d1d5db" />
+            </TouchableOpacity>
+
+            <View style={styles.addressBox}>
+              <Ionicons name="location" size={18} color="#9d174d" />
+              <Text style={styles.addressText}>
+                {clinic.addressLine1}
+                {'\n'}
+                {clinic.addressLine2} — {clinic.cityState}
+              </Text>
             </View>
           </View>
         </View>
@@ -120,12 +144,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     width: '100%',
     maxWidth: 400,
-    maxHeight: '80%',
+    maxHeight: '85%',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#f3f4f6',
@@ -134,6 +158,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#111827',
+  },
+  clinicName: {
+    marginTop: 2,
+    fontSize: 13,
+    color: '#ec4899',
+    fontWeight: '600',
   },
   closeButton: {
     width: 32,
@@ -147,18 +177,19 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#6b7280',
-    marginBottom: 24,
+    marginBottom: 20,
     textAlign: 'center',
+    lineHeight: 21,
   },
   contactButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: 14,
     backgroundColor: '#f9fafb',
     borderRadius: 12,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   contactIcon: {
     width: 48,
@@ -166,7 +197,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
+    marginRight: 14,
   },
   contactInfo: {
     flex: 1,
@@ -178,26 +209,25 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   contactSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6b7280',
   },
-  hoursContainer: {
-    marginTop: 24,
-    padding: 16,
-    backgroundColor: '#f0f9ff',
+  addressBox: {
+    marginTop: 12,
+    padding: 14,
+    backgroundColor: '#fdf2f8',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e0f2fe',
+    borderColor: '#fce7f3',
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
   },
-  hoursTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0369a1',
-    marginBottom: 8,
-  },
-  hoursText: {
+  addressText: {
+    flex: 1,
     fontSize: 13,
-    color: '#0369a1',
-    marginBottom: 2,
+    color: '#9d174d',
+    lineHeight: 19,
+    fontWeight: '500',
   },
 });

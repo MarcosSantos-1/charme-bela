@@ -20,6 +20,7 @@ export interface ClinicInfo {
   instagramHandle: string;
   instagramUrl: string;
   websiteUrl: string;
+  contactEmail: string;
   googleBusinessUrl: string;
 }
 
@@ -38,6 +39,7 @@ export const ACTIVE_CLINIC: ClinicInfo = {
   instagramHandle: '@espacocharmebela',
   instagramUrl: 'https://www.instagram.com/espacocharmebela/',
   websiteUrl: 'https://www.charmebela.com.br/',
+  contactEmail: 'contato@charmeebela.com',
   googleBusinessUrl: 'https://share.google/sK3BaUJYV5qZXoiXg',
 };
 

@@ -142,7 +142,21 @@ export function ProfileScreen() {
     return <LanguageScreen onBack={() => setCurrentScreen('main')} />;
   }
   if (currentScreen === 'help') {
-    return <HelpCenterScreen onBack={() => setCurrentScreen('main')} />;
+    return (
+      <HelpCenterScreen
+        onBack={() => setCurrentScreen('main')}
+        onOpenPlan={() => setCurrentScreen('plan')}
+        onOpenAnamnesis={() => setCurrentScreen('anamnesis')}
+        onOpenServices={() => {
+          setCurrentScreen('main');
+          navigation.navigate('Services');
+        }}
+        onOpenContact={() => {
+          setCurrentScreen('main');
+          setShowContactModal(true);
+        }}
+      />
+    );
   }
   if (currentScreen === 'privacy') {
     return <PrivacyScreen onBack={() => setCurrentScreen('main')} />;

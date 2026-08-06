@@ -11,6 +11,7 @@ import { useCommercial } from '../../contexts/CommercialContext';
 import { CATEGORY_META, isExpiredUnpaidHold, isOnlinePaymentHold, type ServiceCategory } from '../../types/commercial';
 import { displayUserFirstName } from '../../lib/userDisplay';
 import { CATEGORY_ILLUSTRATIONS, logoSource } from '../../assets/brandAssets';
+import { getUnreadNotificationsCount } from '../../lib/api';
 
 const { width } = Dimensions.get('window');
 
@@ -58,6 +59,7 @@ export function ClientHomeScreen() {
   const { services, appointments, subscription, loading, refreshing, error, refresh } = useCommercial();
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [clinicInfoVisible, setClinicInfoVisible] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const firstName = displayUserFirstName(user);
 
@@ -65,12 +67,25 @@ export function ClientHomeScreen() {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, []);
 
+  const refreshUnread = useCallback(async () => {
+    if (!user?.id) {
+      setUnreadNotifications(0);
+      return;
+    }
+    try {
+      setUnreadNotifications(await getUnreadNotificationsCount(user.id));
+    } catch {
+      // silencioso — painel tenta de novo ao abrir
+    }
+  }, [user?.id]);
+
   useFocusEffect(
     useCallback(() => {
       scrollToTop();
+      void refreshUnread();
       const unsubscribe = navigation.addListener('tabPress', scrollToTop);
       return unsubscribe;
-    }, [navigation, scrollToTop])
+    }, [navigation, scrollToTop, refreshUnread])
   );
 
   const showInitialSkeleton = loading && services.length === 0;
@@ -152,9 +167,20 @@ export function ClientHomeScreen() {
           <TouchableOpacity
             style={styles.notificationButton}
             onPress={() => setNotificationsVisible(true)}
+            accessibilityLabel={
+              unreadNotifications > 0
+                ? `${unreadNotifications} notificações não lidas`
+                : 'Notificações'
+            }
           >
             <Ionicons name="notifications-outline" size={24} color="#111827" />
-            <View style={styles.notificationBadge} />
+            {unreadNotifications > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {unreadNotifications > 9 ? '9+' : String(unreadNotifications)}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -269,6 +295,21 @@ export function ClientHomeScreen() {
       <NotificationsPanel
         visible={notificationsVisible}
         onClose={() => setNotificationsVisible(false)}
+        userId={user?.id}
+        onUnreadCountChange={setUnreadNotifications}
+        onNavigate={(target) => {
+          if (target.stack === 'Plan') {
+            navigation.navigate('Plan');
+            return;
+          }
+          if (target.tab === 'Profile' && target.profileScreen) {
+            navigation.navigate('Profile', { openScreen: target.profileScreen as 'history' });
+            return;
+          }
+          if (target.tab) {
+            navigation.navigate(target.tab);
+          }
+        }}
       />
       <ClinicInfoPanel
         visible={clinicInfoVisible}
@@ -536,12 +577,20 @@ const styles = StyleSheet.create({
   },
   notificationBadge: {
     position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: 6,
+    right: 4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
     backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
   },
   softErrorBanner: {
     marginHorizontal: 20,

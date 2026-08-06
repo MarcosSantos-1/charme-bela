@@ -108,13 +108,34 @@ export function ClinicInfoPanel({
             </TouchableOpacity>
 
             <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Localização</Text>
-            <Text style={styles.address}>
-              {clinic.addressLine1}
-              {'\n'}
-              {clinic.addressLine2}
-              {'\n'}
-              {clinic.cityState}
-            </Text>
+
+            <View style={styles.locationRow}>
+              <View style={styles.addressCol}>
+                <Text style={styles.address}>
+                  {clinic.addressLine1}
+                  {'\n'}
+                  {clinic.addressLine2}
+                  {'\n'}
+                  {clinic.cityState}
+                </Text>
+              </View>
+              <View style={styles.navCol}>
+                <TouchableOpacity
+                  style={[styles.navBtn, styles.navBtnPrimary]}
+                  onPress={() => openUrl(clinicMapsUrl(clinic))}
+                >
+                  <Ionicons name="logo-google" size={14} color="#fff" />
+                  <Text style={styles.navBtnPrimaryText}>Google</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.navBtn, styles.navBtnSecondary]}
+                  onPress={() => openUrl(clinicWazeUrl(clinic))}
+                >
+                  <Ionicons name="navigate" size={14} color="#0e7490" />
+                  <Text style={styles.navBtnSecondaryText}>Waze</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
             <TouchableOpacity
               style={styles.mapWrap}
@@ -144,23 +165,6 @@ export function ClinicInfoPanel({
                 <Text style={styles.mapHintText}>Toque para abrir no Google</Text>
               </View>
             </TouchableOpacity>
-
-            <View style={styles.navRow}>
-              <TouchableOpacity
-                style={[styles.navBtn, styles.navBtnPrimary]}
-                onPress={() => openUrl(clinicMapsUrl(clinic))}
-              >
-                <Ionicons name="logo-google" size={18} color="#fff" />
-                <Text style={styles.navBtnPrimaryText}>Google</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.navBtn, styles.navBtnSecondary]}
-                onPress={() => openUrl(clinicWazeUrl(clinic))}
-              >
-                <Ionicons name="navigate" size={18} color="#33ccff" />
-                <Text style={styles.navBtnSecondaryText}>Waze</Text>
-              </TouchableOpacity>
-            </View>
           </ScrollView>
         </View>
       </View>
@@ -288,17 +292,30 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginTop: 2,
   },
-  address: {
-    fontSize: 15,
-    color: '#374151',
-    lineHeight: 22,
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     marginBottom: 12,
+  },
+  addressCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  address: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 21,
+  },
+  navCol: {
+    width: 96,
+    gap: 6,
   },
   mapWrap: {
     height: 160,
     borderRadius: 14,
     overflow: 'hidden',
-    marginBottom: 12,
+    marginBottom: 8,
     backgroundColor: '#e5e7eb',
   },
   map: {
@@ -321,19 +338,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  navRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 8,
-  },
   navBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
+    gap: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 10,
   },
   navBtnPrimary: {
     backgroundColor: '#111827',
@@ -341,7 +353,7 @@ const styles = StyleSheet.create({
   navBtnPrimaryText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 12,
   },
   navBtnSecondary: {
     backgroundColor: '#ecfeff',
@@ -351,6 +363,6 @@ const styles = StyleSheet.create({
   navBtnSecondaryText: {
     color: '#0e7490',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 12,
   },
 });

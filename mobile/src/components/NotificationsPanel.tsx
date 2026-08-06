@@ -1,136 +1,324 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  clearAllNotifications,
+  deleteNotification,
+  getNotifications,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
+  type AppNotification,
+} from '../lib/api';
+import { formatTimeAgo } from '../lib/formatTimeAgo';
+import { brand } from '../theme/brand';
 
-interface Notification {
+type UiTone = 'success' | 'warning' | 'info' | 'error';
+
+type UiNotification = {
   id: string;
-  type: 'appointment' | 'payment' | 'plan' | 'promo';
+  tone: UiTone;
   title: string;
   message: string;
   time: string;
   read: boolean;
+  icon: string;
+  actionUrl?: string;
+};
+
+function mapTone(apiType: string): UiTone {
+  if (apiType.includes('SUCCEEDED') || apiType.includes('COMPLETED') || apiType.includes('CONFIRMED') || apiType.includes('WELCOME') || apiType.includes('ACTIVATED') || apiType.includes('RENEWED')) {
+    return 'success';
+  }
+  if (apiType.includes('FAILED') || apiType.includes('CANCELED')) return 'error';
+  if (apiType.includes('REMINDER') || apiType.includes('EXPIRING') || apiType.includes('LIMIT')) {
+    return 'warning';
+  }
+  return 'info';
 }
 
-const MOCK_NOTIFICATIONS: Notification[] = [
-  {
-    id: '1',
-    type: 'appointment',
-    title: 'Lembrete de Agendamento',
-    message: 'Você tem um agendamento amanhã às 14:00 - Limpeza de Pele',
-    time: '2h atrás',
-    read: false
-  },
-  {
-    id: '2',
-    type: 'payment',
-    title: 'Pagamento Confirmado',
-    message: 'Seu pagamento de R$ 300,00 foi confirmado com sucesso',
-    time: '1 dia atrás',
-    read: false
-  },
-  {
-    id: '3',
-    type: 'plan',
-    title: 'Plano Renovado',
-    message: 'Seu plano Premium Experience foi renovado automaticamente',
-    time: '3 dias atrás',
-    read: true
-  },
-  {
-    id: '4',
-    type: 'promo',
-    title: 'Promoção Especial! 🎉',
-    message: 'Ganhe 20% de desconto em tratamentos faciais este mês',
-    time: '5 dias atrás',
-    read: true
-  },
-];
+function iconFor(iconName: string, tone: UiTone): {
+  name: keyof typeof Ionicons.glyphMap;
+  color: string;
+  bg: string;
+} {
+  const byTone = {
+    success: { color: '#059669', bg: '#d1fae5' },
+    warning: { color: '#d97706', bg: '#fef3c7' },
+    error: { color: '#dc2626', bg: '#fee2e2' },
+    info: { color: '#4b5563', bg: '#f3f4f6' },
+  }[tone];
+
+  const map: Record<string, keyof typeof Ionicons.glyphMap> = {
+    BELL: 'notifications',
+    CALENDAR: 'calendar',
+    CARD: 'card',
+    SPARKLES: 'gift',
+    ALERT: 'alert-circle',
+    CHECK: 'checkmark-circle',
+    INFO: 'information-circle',
+    GIFT: 'gift',
+    STAR: 'star',
+    USER: 'person',
+  };
+
+  return {
+    name: map[iconName] || 'notifications',
+    ...byTone,
+  };
+}
+
+/** Mapeia actionUrl do web para destino no app. */
+export function resolveNotificationNav(
+  actionUrl?: string
+): { tab?: string; profileScreen?: string; stack?: string } | null {
+  if (!actionUrl) return null;
+  const path = actionUrl.toLowerCase();
+  if (path.includes('agenda')) return { tab: 'Agenda' };
+  if (path.includes('historico')) return { tab: 'Profile', profileScreen: 'history' };
+  if (path.includes('plano') || path.includes('pagamentos') || path.includes('/planos')) {
+    return { stack: 'Plan' };
+  }
+  if (path.includes('servico') || path.includes('serviços') || path.includes('servicos')) {
+    return { tab: 'Services' };
+  }
+  return null;
+}
 
 interface NotificationsPanelProps {
   visible: boolean;
   onClose: () => void;
+  userId?: string | null;
+  onUnreadCountChange?: (count: number) => void;
+  onNavigate?: (target: NonNullable<ReturnType<typeof resolveNotificationNav>>) => void;
 }
 
-export function NotificationsPanel({ visible, onClose }: NotificationsPanelProps) {
-  const getIcon = (type: string) => {
-    switch (type) {
-      case 'appointment': return { name: 'calendar', color: '#3b82f6', bg: '#dbeafe' };
-      case 'payment': return { name: 'card', color: '#10b981', bg: '#d1fae5' };
-      case 'plan': return { name: 'star', color: '#f59e0b', bg: '#fef3c7' };
-      case 'promo': return { name: 'pricetag', color: '#ec4899', bg: '#fce7f3' };
-      default: return { name: 'notifications', color: '#6b7280', bg: '#f3f4f6' };
+export function NotificationsPanel({
+  visible,
+  onClose,
+  userId,
+  onUnreadCountChange,
+  onNavigate,
+}: NotificationsPanelProps) {
+  const [items, setItems] = useState<UiNotification[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const unreadCount = items.filter((n) => !n.read).length;
+
+  const load = useCallback(async (silent = false) => {
+    if (!userId) {
+      setItems([]);
+      onUnreadCountChange?.(0);
+      return;
+    }
+    if (!silent) setLoading(true);
+    try {
+      const data = await getNotifications({ userId, limit: 50 });
+      const formatted: UiNotification[] = data.map((n: AppNotification) => ({
+        id: n.id,
+        tone: mapTone(n.type),
+        title: n.title,
+        message: n.message,
+        time: formatTimeAgo(n.createdAt),
+        read: n.read,
+        icon: n.icon,
+        actionUrl: n.actionUrl,
+      }));
+      setItems(formatted);
+      onUnreadCountChange?.(formatted.filter((n) => !n.read).length);
+    } catch (error) {
+      console.error('Erro ao carregar notificações:', error);
+      if (!silent) setItems([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [userId, onUnreadCountChange]);
+
+  useEffect(() => {
+    if (!userId) return;
+    void load(true);
+    const interval = setInterval(() => void load(true), 30000);
+    return () => clearInterval(interval);
+  }, [userId, load]);
+
+  useEffect(() => {
+    if (visible && userId) void load();
+  }, [visible, userId, load]);
+
+  const markAsRead = async (id: string) => {
+    try {
+      await markNotificationAsRead(id);
+      setItems((prev) => {
+        const next = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+        onUnreadCountChange?.(next.filter((n) => !n.read).length);
+        return next;
+      });
+    } catch (error) {
+      console.error('Erro ao marcar como lida:', error);
     }
   };
 
-  const unreadCount = MOCK_NOTIFICATIONS.filter(n => !n.read).length;
+  const handlePress = async (notification: UiNotification) => {
+    if (!notification.read) await markAsRead(notification.id);
+    const target = resolveNotificationNav(notification.actionUrl);
+    if (target && onNavigate) {
+      onClose();
+      onNavigate(target);
+    }
+  };
+
+  const markAllAsRead = async () => {
+    if (!userId) return;
+    try {
+      await markAllNotificationsAsRead(userId);
+      setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+      onUnreadCountChange?.(0);
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível marcar todas como lidas.');
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    Alert.alert('Remover', 'Remover esta notificação?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Remover',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteNotification(id);
+            setItems((prev) => {
+              const next = prev.filter((n) => n.id !== id);
+              onUnreadCountChange?.(next.filter((n) => !n.read).length);
+              return next;
+            });
+          } catch {
+            Alert.alert('Erro', 'Não foi possível remover.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleClearAll = () => {
+    if (!userId || items.length === 0) return;
+    Alert.alert('Limpar tudo', 'Remover todas as notificações?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Limpar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await clearAllNotifications(userId);
+            setItems([]);
+            onUnreadCountChange?.(0);
+          } catch {
+            Alert.alert('Erro', 'Não foi possível limpar.');
+          }
+        },
+      },
+    ]);
+  };
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
+        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
         <View style={styles.modalContent}>
-          {/* Header */}
           <View style={styles.header}>
             <View>
               <Text style={styles.headerTitle}>Notificações</Text>
-              {unreadCount > 0 && (
-                <Text style={styles.unreadText}>
-                  {unreadCount} não {unreadCount === 1 ? 'lida' : 'lidas'}
-                </Text>
-              )}
+              <Text style={styles.unreadText}>
+                {unreadCount === 0
+                  ? 'Tudo em dia'
+                  : `${unreadCount} não ${unreadCount === 1 ? 'lida' : 'lidas'}`}
+              </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color="#111827" />
+              <Ionicons name="close" size={22} color={brand.ink} />
             </TouchableOpacity>
           </View>
 
-          {/* Notifications List */}
-          <ScrollView style={styles.notificationsList} showsVerticalScrollIndicator={false}>
-            {MOCK_NOTIFICATIONS.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="notifications-outline" size={64} color="#d1d5db" />
-                <Text style={styles.emptyStateText}>
-                  Nenhuma notificação
-                </Text>
-              </View>
-            ) : (
-              MOCK_NOTIFICATIONS.map(notification => {
-                const icon = getIcon(notification.type);
-                return (
-                  <TouchableOpacity
-                    key={notification.id}
-                    style={[
-                      styles.notificationItem,
-                      !notification.read && styles.notificationItemUnread
-                    ]}
-                  >
-                    <View style={[styles.notificationIcon, { backgroundColor: icon.bg }]}>
-                      <Ionicons name={icon.name as any} size={24} color={icon.color} />
-                    </View>
-                    <View style={styles.notificationContent}>
-                      <Text style={styles.notificationTitle}>
-                        {notification.title}
-                        {!notification.read && <View style={styles.unreadDot} />}
-                      </Text>
-                      <Text style={styles.notificationMessage} numberOfLines={2}>
-                        {notification.message}
-                      </Text>
-                      <Text style={styles.notificationTime}>{notification.time}</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-          </ScrollView>
+          {loading && items.length === 0 ? (
+            <View style={styles.emptyState}>
+              <ActivityIndicator color={brand.rose} size="large" />
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.notificationsList}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={() => {
+                    setRefreshing(true);
+                    void load(true);
+                  }}
+                  tintColor={brand.rose}
+                />
+              }
+            >
+              {items.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="notifications-outline" size={64} color="#d1d5db" />
+                  <Text style={styles.emptyStateText}>Nenhuma notificação</Text>
+                  <Text style={styles.emptyHint}>
+                    Avisos de agendamentos, pagamentos e plano aparecem aqui.
+                  </Text>
+                </View>
+              ) : (
+                items.map((notification) => {
+                  const icon = iconFor(notification.icon, notification.tone);
+                  return (
+                    <TouchableOpacity
+                      key={notification.id}
+                      style={styles.notificationItem}
+                      onPress={() => void handlePress(notification)}
+                      onLongPress={() => handleDelete(notification.id)}
+                      activeOpacity={0.85}
+                    >
+                      <View style={[styles.notificationIcon, { backgroundColor: icon.bg }]}>
+                        <Ionicons name={icon.name} size={22} color={icon.color} />
+                      </View>
+                      <View style={styles.notificationContent}>
+                        <View style={styles.titleRow}>
+                          <Text style={styles.notificationTitle} numberOfLines={2}>
+                            {notification.title}
+                          </Text>
+                          {!notification.read && <View style={styles.unreadDot} />}
+                        </View>
+                        <Text style={styles.notificationMessage} numberOfLines={3}>
+                          {notification.message}
+                        </Text>
+                        <Text style={styles.notificationTime}>{notification.time}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          )}
 
-          {/* Actions */}
-          {MOCK_NOTIFICATIONS.length > 0 && (
+          {items.length > 0 && (
             <View style={styles.footer}>
-              <TouchableOpacity style={styles.footerButton}>
-                <Text style={styles.footerButtonText}>Marcar todas como lidas</Text>
+              {unreadCount > 0 && (
+                <TouchableOpacity style={styles.footerButton} onPress={() => void markAllAsRead()}>
+                  <Text style={styles.footerButtonText}>Marcar todas como lidas</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.footerButtonMuted} onPress={handleClearAll}>
+                <Text style={styles.footerButtonMutedText}>Limpar todas</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -143,15 +331,18 @@ export function NotificationsPanel({ visible, onClose }: NotificationsPanelProps
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
     justifyContent: 'flex-end',
   },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: brand.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '85%',
-    paddingBottom: 20,
+    maxHeight: '88%',
+    paddingBottom: 16,
   },
   header: {
     flexDirection: 'row',
@@ -162,34 +353,31 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f3f4f6',
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontSize: 22,
+    fontWeight: '800',
+    color: brand.ink,
     marginBottom: 4,
   },
   unreadText: {
     fontSize: 13,
-    color: '#6b7280',
+    color: brand.muted,
   },
   closeButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: brand.blush,
     alignItems: 'center',
     justifyContent: 'center',
   },
   notificationsList: {
-    flex: 1,
+    flexGrow: 0,
   },
   notificationItem: {
     flexDirection: 'row',
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#f3f4f6',
-  },
-  notificationItemUnread: {
-    backgroundColor: '#fef3f8',
   },
   notificationIcon: {
     width: 48,
@@ -202,24 +390,27 @@ const styles = StyleSheet.create({
   notificationContent: {
     flex: 1,
   },
-  notificationTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  notificationTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: brand.ink,
   },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#ec4899',
-    marginLeft: 8,
+    backgroundColor: brand.rose,
   },
   notificationMessage: {
     fontSize: 14,
-    color: '#6b7280',
+    color: brand.muted,
     lineHeight: 20,
     marginBottom: 4,
   },
@@ -229,18 +420,28 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 64,
+    paddingVertical: 56,
+    paddingHorizontal: 24,
   },
   emptyStateText: {
     fontSize: 16,
-    color: '#6b7280',
+    fontWeight: '600',
+    color: brand.muted,
     marginTop: 16,
+  },
+  emptyHint: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#9ca3af',
+    textAlign: 'center',
+    lineHeight: 18,
   },
   footer: {
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#f3f4f6',
+    gap: 4,
   },
   footerButton: {
     alignItems: 'center',
@@ -248,10 +449,16 @@ const styles = StyleSheet.create({
   },
   footerButtonText: {
     fontSize: 15,
+    fontWeight: '700',
+    color: brand.rose,
+  },
+  footerButtonMuted: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  footerButtonMutedText: {
+    fontSize: 13,
     fontWeight: '600',
-    color: '#ec4899',
+    color: brand.muted,
   },
 });
-
-
-

@@ -323,4 +323,60 @@ export async function saveMinimalAnamnesis(userId: string, data: Record<string, 
   });
 }
 
+// ============================================
+// NOTIFICAÇÕES
+// ============================================
+
+export interface AppNotification {
+  id: string;
+  userId?: string | null;
+  type: string;
+  title: string;
+  message: string;
+  icon: string;
+  priority: string;
+  read: boolean;
+  readAt?: string;
+  metadata?: unknown;
+  actionUrl?: string;
+  actionLabel?: string;
+  expiresAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getNotifications(params?: {
+  userId?: string;
+  unreadOnly?: boolean;
+  limit?: number;
+}): Promise<AppNotification[]> {
+  const response = await api.get('/notifications', { params });
+  return unwrap<AppNotification[]>(response.data);
+}
+
+export async function getUnreadNotificationsCount(userId: string): Promise<number> {
+  const response = await api.get('/notifications/unread-count', { params: { userId } });
+  const data = unwrap<{ count: number }>(response.data);
+  return data?.count ?? 0;
+}
+
+export async function markNotificationAsRead(id: string): Promise<AppNotification> {
+  const response = await api.put(`/notifications/${id}/read`);
+  return unwrap<AppNotification>(response.data);
+}
+
+export async function markAllNotificationsAsRead(userId: string): Promise<{ count: number }> {
+  const response = await api.put('/notifications/mark-all-read', { userId });
+  return unwrap<{ count: number }>(response.data);
+}
+
+export async function deleteNotification(id: string): Promise<void> {
+  await api.delete(`/notifications/${id}`);
+}
+
+export async function clearAllNotifications(userId: string): Promise<{ count: number }> {
+  const response = await api.delete('/notifications/clear-all', { params: { userId } });
+  return unwrap<{ count: number }>(response.data);
+}
+
 export default api;

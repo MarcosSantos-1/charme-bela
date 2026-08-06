@@ -12,8 +12,8 @@ import { MyPlanScreen } from './profile/MyPlanScreen';
 import { AnamnesisScreen } from './profile/AnamnesisScreen';
 import { HistoryScreen } from './profile/HistoryScreen';
 import { NotificationsScreen } from './profile/NotificationsScreen';
-import { LanguageScreen } from './profile/LanguageScreen';
 import { HelpCenterScreen } from './profile/HelpCenterScreen';
+// LanguageScreen: escondido até i18n real (app só pt-BR por enquanto)
 import { PrivacyScreen } from './profile/PrivacyScreen';
 import { ContactModal } from '../../components/ContactModal';
 import { ClinicInfoPanel } from '../../components/ClinicInfoPanel';
@@ -37,7 +37,7 @@ function nextBillingDate(startDate: string) {
   return next;
 }
 
-type SubScreen = 'main' | 'personal-data' | 'plan' | 'anamnesis' | 'history' | 'notifications' | 'language' | 'help' | 'privacy';
+type SubScreen = 'main' | 'personal-data' | 'plan' | 'anamnesis' | 'history' | 'notifications' | 'help' | 'privacy';
 
 export function ProfileScreen() {
   const { user, signOut } = useAuth();
@@ -137,9 +137,6 @@ export function ProfileScreen() {
   }
   if (currentScreen === 'notifications') {
     return <NotificationsScreen onBack={() => setCurrentScreen('main')} />;
-  }
-  if (currentScreen === 'language') {
-    return <LanguageScreen onBack={() => setCurrentScreen('main')} />;
   }
   if (currentScreen === 'help') {
     return (
@@ -266,13 +263,6 @@ export function ProfileScreen() {
                 title="Modo Escuro"
                 subtitle="Em breve"
                 disabled
-              />
-              <Divider />
-              <MenuItem
-                icon="language-outline"
-                title="Idioma"
-                subtitle="Português (BR)"
-                onPress={() => setCurrentScreen('language')}
               />
             </View>
 

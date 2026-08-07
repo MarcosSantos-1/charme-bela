@@ -12,12 +12,16 @@ import { CATEGORY_META, isExpiredUnpaidHold, isOnlinePaymentHold, type ServiceCa
 import { displayUserFirstName } from '../../lib/userDisplay';
 import { CATEGORY_ILLUSTRATIONS, logoSource } from '../../assets/brandAssets';
 import { getUnreadNotificationsCount } from '../../lib/api';
+import {
+  HOME_BANNER_ASPECT_RATIO,
+  HOME_BANNER_BORDER_RADIUS,
+} from '../../constants/homeBanner';
 
 const { width } = Dimensions.get('window');
 
 /**
  * TODO(promo-carousel): este card será um carrossel/slide de promoções nas próximas
- * atualizações. Enquanto isso, exibe o CTA de assinatura quando não há plano ativo.
+ * atualizações. Aspecto fixo 2:1 (1200×600) já alinhado com assets/IA.
  */
 const NO_PLAN_CARD = {
   gradientColors: ['#ec4899', '#be185d'] as const,
@@ -652,38 +656,49 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   planCardSkeleton: {
-    borderRadius: 20,
+    borderRadius: HOME_BANNER_BORDER_RADIUS,
     padding: 20,
     backgroundColor: '#f3f4f6',
-    minHeight: 160,
+    aspectRatio: HOME_BANNER_ASPECT_RATIO,
+    width: '100%',
+    justifyContent: 'center',
   },
   planCardContainer: {
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
   planCard: {
-    borderRadius: 20,
+    borderRadius: HOME_BANNER_BORDER_RADIUS,
     padding: 20,
+    aspectRatio: HOME_BANNER_ASPECT_RATIO,
+    width: '100%',
+    overflow: 'hidden',
+    justifyContent: 'space-between',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 4,
   },
+  /** Overlay de imagem futura: cover dentro do mesmo aspect 2:1. */
+  planCardImage: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: HOME_BANNER_BORDER_RADIUS,
+  },
   planCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   planName: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: 'white',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   planNextPayment: {
-    fontSize: 13,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.8)',
   },
   statusBadge: {
@@ -707,12 +722,12 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   progressSection: {
-    marginTop: 8,
+    marginTop: 4,
   },
   progressLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.9)',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   progressBarContainer: {
     flexDirection: 'row',
@@ -732,37 +747,37 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   progressText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
     color: 'white',
   },
   remainingText: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
     color: 'white',
-    marginTop: 12,
-  },
-  noPlanContent: {
     marginTop: 8,
   },
+  noPlanContent: {
+    marginTop: 4,
+  },
   noPlanText: {
-    fontSize: 14,
+    fontSize: 13,
     color: 'rgba(255,255,255,0.9)',
-    lineHeight: 22,
-    marginBottom: 16,
+    lineHeight: 18,
+    marginBottom: 10,
   },
   subscribeCTA: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'white',
-    paddingVertical: 14,
+    paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 12,
     gap: 8,
   },
   subscribeCTAText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
     color: '#be185d',
   },

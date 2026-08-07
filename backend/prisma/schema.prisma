@@ -37,6 +37,12 @@ model User {
   createdBy          String?            // ID do admin que criou (se aplicável)
   /** Quando o cliente já viu a tela de boas-vindas pós-anamnese (SubscriptionCheck). */
   clubWelcomeSeenAt  DateTime?
+  /** Token Expo Push (ExponentPushToken[...]) do dispositivo atual. */
+  expoPushToken      String?
+  /** Master switch: recebe push no aparelho. */
+  pushAllEnabled     Boolean            @default(true)
+  /** Lembretes de agendamento via push. */
+  appointmentRemindersEnabled Boolean   @default(true)
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 

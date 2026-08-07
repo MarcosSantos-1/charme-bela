@@ -12,7 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenHeader } from '../../../components/ScreenHeader';
 import { useAuth } from '../../../contexts/AuthContext';
-import { clearAllNotifications } from '../../../lib/api';
+import { clearAllNotifications, updateUser } from '../../../lib/api';
 import { brand } from '../../../theme/brand';
 
 const PREFS_KEY = 'notification_prefs_v1';
@@ -20,14 +20,6 @@ const PREFS_KEY = 'notification_prefs_v1';
 type NotificationPrefs = {
   pushAll: boolean;
   appointmentReminders: boolean;
-  // SaaS: promoções / ofertas
-  // promotions: boolean;
-  // SaaS: atualizações do plano
-  // planUpdates: boolean;
-  // SaaS: e-mail (confirmação, lembretes, newsletter)
-  // emailConfirmations: boolean;
-  // emailReminders: boolean;
-  // newsletter: boolean;
 };
 
 const DEFAULT_PREFS: NotificationPrefs = {
@@ -39,29 +31,63 @@ const SWITCH_TRACK = { false: '#e5e7eb', true: brand.rose };
 const SWITCH_THUMB = '#ffffff';
 
 export function NotificationsScreen({ onBack }: { onBack: () => void }) {
-  const { user } = useAuth();
+  const { user, setUserProfile } = useAuth();
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(PREFS_KEY)
-      .then((raw) => {
-        if (!raw) return;
-        const parsed = JSON.parse(raw) as Partial<NotificationPrefs>;
-        setPrefs({ ...DEFAULT_PREFS, ...parsed });
-      })
-      .catch(() => {})
-      .finally(() => setLoaded(true));
-  }, []);
+    let cancelled = false;
+    (async () => {
+      try {
+        // Prefs do backend têm prioridade quando o usuário está logado
+        if (user) {
+          const fromServer: NotificationPrefs = {
+            pushAll: user.pushAllEnabled ?? true,
+            appointmentReminders: user.appointmentRemindersEnabled ?? true,
+          };
+          if (!cancelled) {
+            setPrefs(fromServer);
+            await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(fromServer));
+          }
+          return;
+        }
+        const raw = await AsyncStorage.getItem(PREFS_KEY);
+        if (raw && !cancelled) {
+          const parsed = JSON.parse(raw) as Partial<NotificationPrefs>;
+          setPrefs({ ...DEFAULT_PREFS, ...parsed });
+        }
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.pushAllEnabled, user?.appointmentRemindersEnabled]);
 
-  const persist = useCallback(async (next: NotificationPrefs) => {
-    setPrefs(next);
-    try {
-      await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(next));
-    } catch {
-      // ignore
-    }
-  }, []);
+  const persist = useCallback(
+    async (next: NotificationPrefs) => {
+      setPrefs(next);
+      try {
+        await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      if (!user?.id) return;
+      try {
+        const updated = await updateUser(user.id, {
+          pushAllEnabled: next.pushAll,
+          appointmentRemindersEnabled: next.appointmentReminders,
+        });
+        await setUserProfile(updated);
+      } catch {
+        // UI já refletiu; sync pode falhar offline
+      }
+    },
+    [user?.id, setUserProfile],
+  );
 
   const setPref = (key: keyof NotificationPrefs, value: boolean) => {
     const next = { ...prefs, [key]: value };
@@ -126,12 +152,14 @@ export function NotificationsScreen({ onBack }: { onBack: () => void }) {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notificações no app</Text>
+          <Text style={styles.sectionTitle}>Notificações no aparelho</Text>
 
           <View style={styles.settingItem}>
             <View style={styles.settingInfo}>
               <Text style={styles.settingTitle}>Todas as notificações</Text>
-              <Text style={styles.settingSubtitle}>Ativar avisos do app</Text>
+              <Text style={styles.settingSubtitle}>
+                Ativar avisos push e no app
+              </Text>
             </View>
             <Switch
               value={prefs.pushAll}
@@ -158,36 +186,7 @@ export function NotificationsScreen({ onBack }: { onBack: () => void }) {
               ios_backgroundColor="#e5e7eb"
             />
           </View>
-
-          {/* SaaS: Promoções e ofertas
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Promoções e ofertas</Text>
-              <Text style={styles.settingSubtitle}>Receber ofertas especiais</Text>
-            </View>
-            <Switch value={prefs.promotions} ... />
-          </View>
-          */}
-
-          {/* SaaS: Atualizações do plano
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Atualizações do plano</Text>
-              <Text style={styles.settingSubtitle}>Informações sobre sua assinatura</Text>
-            </View>
-            <Switch value={prefs.planUpdates} ... />
-          </View>
-          */}
         </View>
-
-        {/* SaaS: Notificações por Email (todas)
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notificações por Email</Text>
-          <View style={styles.settingItem}>... confirmação ...</View>
-          <View style={styles.settingItem}>... lembretes ...</View>
-          <View style={styles.settingItem}>... newsletter ...</View>
-        </View>
-        */}
 
         <TouchableOpacity style={styles.clearButton} onPress={handleClearInbox}>
           <Text style={styles.clearButtonText}>Limpar todas as notificações</Text>

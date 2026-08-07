@@ -40,7 +40,14 @@
     },
     "plugins": [
       "expo-web-browser",
-      "./plugins/withWindowsCmakeObjectPathMax"
+      "./plugins/withWindowsCmakeObjectPathMax",
+      [
+        "expo-notifications",
+        {
+          "color": "#ec4899",
+          "defaultChannel": "default"
+        }
+      ]
     ]
   }
 }

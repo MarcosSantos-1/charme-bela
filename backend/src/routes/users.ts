@@ -385,6 +385,9 @@ export async function usersRoutes(app: FastifyInstance) {
         profileImageUrl,
         isActive,
         clubWelcomeSeenAt,
+        expoPushToken,
+        pushAllEnabled,
+        appointmentRemindersEnabled,
       } = request.body as {
         name?: string
         email?: string
@@ -392,6 +395,10 @@ export async function usersRoutes(app: FastifyInstance) {
         profileImageUrl?: string
         isActive?: boolean
         clubWelcomeSeenAt?: string | Date | null
+        /** Passar `null` para limpar o token (logout). */
+        expoPushToken?: string | null
+        pushAllEnabled?: boolean
+        appointmentRemindersEnabled?: boolean
       }
       
       // Verifica se usuário existe
@@ -423,6 +430,9 @@ export async function usersRoutes(app: FastifyInstance) {
           ...(profileImageUrl !== undefined && { profileImageUrl }),
           ...(isActive !== undefined && { isActive }),
           ...(welcomeSeenValue !== undefined && { clubWelcomeSeenAt: welcomeSeenValue }),
+          ...(expoPushToken !== undefined && { expoPushToken }),
+          ...(pushAllEnabled !== undefined && { pushAllEnabled }),
+          ...(appointmentRemindersEnabled !== undefined && { appointmentRemindersEnabled }),
         },
         include: {
           subscription: {

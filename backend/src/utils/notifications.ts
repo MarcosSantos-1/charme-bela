@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma'
 import { logger } from './logger'
+import { sendPushForUserNotification } from './expoPush'
 
 // ============================================
 // TIPOS E INTERFACES
@@ -77,6 +78,21 @@ export async function createNotification(params: CreateNotificationParams) {
     })
     
     logger.info(`🔔 Notificação criada: ${params.type} para ${params.userId || 'ADMIN'}`)
+
+    // Push no aparelho (não bloqueia; só para clientes com userId real)
+    const targetUserId =
+      params.userId && params.userId !== 'admin' ? params.userId : null
+    if (targetUserId && notification.userId) {
+      void sendPushForUserNotification({
+        userId: targetUserId,
+        notificationId: notification.id,
+        type: notification.type,
+        title: notification.title,
+        message: notification.message,
+        actionUrl: notification.actionUrl,
+      })
+    }
+
     return notification
   } catch (error: any) {
     logger.error('Erro ao criar notificação:', error)

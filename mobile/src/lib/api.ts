@@ -77,6 +77,9 @@ export interface User {
   firebaseUid?: string;
   profileImageUrl?: string;
   clubWelcomeSeenAt?: string | null;
+  expoPushToken?: string | null;
+  pushAllEnabled?: boolean;
+  appointmentRemindersEnabled?: boolean;
   subscription?: any;
   anamnesisForm?: any;
 }
@@ -116,6 +119,9 @@ export async function updateUser(
     phone?: string;
     email?: string;
     clubWelcomeSeenAt?: string | null;
+    expoPushToken?: string | null;
+    pushAllEnabled?: boolean;
+    appointmentRemindersEnabled?: boolean;
   },
 ): Promise<User> {
   const response = await api.put(`/users/${userId}`, data);

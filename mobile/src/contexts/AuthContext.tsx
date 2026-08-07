@@ -20,6 +20,10 @@ import * as WebBrowser from 'expo-web-browser';
 import { auth } from '../lib/firebase';
 import { getOrCreateUserFromFirebase, getUserByFirebaseUid, updateUser, User } from '../lib/api';
 import { looksLikePhoneName } from '../lib/userDisplay';
+import {
+  clearPushTokenOnBackend,
+  syncPushTokenToBackend,
+} from '../lib/pushNotifications';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -155,6 +159,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(backendUser));
         await AsyncStorage.setItem(LAST_EMAIL_KEY, backendUser.email);
         setLastEmail(backendUser.email);
+        // Registra push em background (não bloqueia o splash)
+        void syncPushTokenToBackend(backendUser.id);
       } catch (error) {
         console.error('Erro ao sincronizar usuário com backend:', error);
         // Sem perfil no backend, não entra no app — volta ao login
@@ -287,14 +293,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [setUserProfile]);
 
   const signOut = useCallback(async () => {
+    const currentId = user?.id;
     try {
+      if (currentId) {
+        await clearPushTokenOnBackend(currentId);
+      }
       await firebaseSignOut(auth);
     } finally {
       await AsyncStorage.removeItem(USER_CACHE_KEY);
       setUser(null);
       setFirebaseUser(null);
     }
-  }, []);
+  }, [user?.id]);
 
   return (
     <AuthContext.Provider

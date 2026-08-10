@@ -51,6 +51,8 @@ export async function vouchersRoutes(app: FastifyInstance) {
     logger.route('GET', `/vouchers/user/${userId}`)
     
     try {
+      // Disponíveis = não usados, não expirados e sem agendamento ativo
+      // (pagamento pendente / confirmado suspende o voucher até cancelar ou concluir)
       const vouchers = await prisma.voucher.findMany({
         where: {
           userId,
@@ -58,7 +60,14 @@ export async function vouchersRoutes(app: FastifyInstance) {
           OR: [
             { expiresAt: null },
             { expiresAt: { gte: new Date() } }
-          ]
+          ],
+          NOT: {
+            appointments: {
+              some: {
+                status: { in: ['PENDING', 'CONFIRMED'] }
+              }
+            }
+          }
         },
         orderBy: { createdAt: 'desc' }
       })

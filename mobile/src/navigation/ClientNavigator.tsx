@@ -28,7 +28,7 @@ export type ClientTabParamList = {
 
 export type ClientStackParamList = {
   ClientTabs: { screen?: keyof ClientTabParamList; params?: any } | undefined;
-  Booking: { serviceId: string; appointmentId?: string };
+  Booking: { serviceId: string; appointmentId?: string; applyVoucherId?: string };
   Plan: undefined;
   AnamnesisBridge: { serviceId?: string; appointmentId?: string } | undefined;
 };

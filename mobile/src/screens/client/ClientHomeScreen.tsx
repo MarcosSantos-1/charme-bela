@@ -11,7 +11,7 @@ import { useCommercial } from '../../contexts/CommercialContext';
 import { CATEGORY_META, isExpiredUnpaidHold, isOnlinePaymentHold, type ServiceCategory } from '../../types/commercial';
 import { displayUserFirstName } from '../../lib/userDisplay';
 import { CATEGORY_ILLUSTRATIONS, logoSource } from '../../assets/brandAssets';
-import { getBanners, getUnreadNotificationsCount, type Banner } from '../../lib/api';
+import { getUnreadNotificationsCount } from '../../lib/api';
 import { HomePromoCarousel } from '../../components/HomePromoCarousel';
 import {
   HOME_BANNER_ASPECT_RATIO,
@@ -20,10 +20,6 @@ import {
 
 const { width } = Dimensions.get('window');
 
-/**
- * TODO(promo-carousel): este card será um carrossel/slide de promoções nas próximas
- * atualizações. Aspecto fixo 2:1 (1200×600) já alinhado com assets/IA.
- */
 const NO_PLAN_CARD = {
   gradientColors: ['#ec4899', '#be185d'] as const,
 };
@@ -61,11 +57,19 @@ function friendlyLoadError(error: string | null) {
 export function ClientHomeScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
-  const { services, appointments, subscription, loading, refreshing, error, refresh } = useCommercial();
+  const {
+    services,
+    appointments,
+    subscription,
+    clientBanners,
+    loading,
+    refreshing,
+    error,
+    refresh,
+  } = useCommercial();
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [clinicInfoVisible, setClinicInfoVisible] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [promoBanners, setPromoBanners] = useState<Banner[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const firstName = displayUserFirstName(user);
 
@@ -85,28 +89,18 @@ export function ClientHomeScreen() {
     }
   }, [user?.id]);
 
-  const loadPromoBanners = useCallback(async () => {
-    try {
-      const banners = await getBanners({ location: 'CLIENT', activeOnly: true });
-      setPromoBanners(Array.isArray(banners) ? banners : []);
-    } catch (err) {
-      console.warn('[Home] falha ao carregar banners CLIENT', err);
-      setPromoBanners([]);
-    }
-  }, []);
-
   const refreshHome = useCallback(async () => {
-    await Promise.all([refresh(), loadPromoBanners(), refreshUnread()]);
-  }, [refresh, loadPromoBanners, refreshUnread]);
+    await Promise.all([refresh(), refreshUnread()]);
+  }, [refresh, refreshUnread]);
 
+  // Home só consome banners já preparados no loading — sem refetch no focus
   useFocusEffect(
     useCallback(() => {
       scrollToTop();
       void refreshUnread();
-      void loadPromoBanners();
       const unsubscribe = navigation.addListener('tabPress', scrollToTop);
       return unsubscribe;
-    }, [navigation, scrollToTop, refreshUnread, loadPromoBanners])
+    }, [navigation, scrollToTop, refreshUnread])
   );
 
   const showInitialSkeleton = loading && services.length === 0;
@@ -220,7 +214,7 @@ export function ClientHomeScreen() {
             <PlanCardSkeleton />
           ) : (
             <HomePromoCarousel
-              banners={promoBanners}
+              banners={clientBanners}
               planSlide={
                 activePlan ? (
                   <TouchableOpacity

@@ -206,6 +206,7 @@ export interface Banner {
   location: BannerLocation;
   isActive: boolean;
   sortOrder: number;
+  updatedAt?: string;
 }
 
 export async function getBanners(params?: {

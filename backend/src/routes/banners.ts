@@ -138,6 +138,52 @@ export async function bannerRoutes(app: FastifyInstance) {
     }
   })
 
+  // PUT - Reordenar banners de uma localização (orderedIds = posição 01, 02, 03…)
+  app.put('/banners/reorder', async (request, reply) => {
+    logger.route('PUT', '/banners/reorder')
+
+    try {
+      const { location, orderedIds } = request.body as {
+        location?: string
+        orderedIds?: string[]
+      }
+
+      const parsedLocation = parseLocation(location)
+      if (!parsedLocation || !Array.isArray(orderedIds) || orderedIds.length === 0) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Envie location e orderedIds (array de ids na ordem desejada)'
+        })
+      }
+
+      await prisma.$transaction(
+        orderedIds.map((id, index) =>
+          prisma.banner.updateMany({
+            where: { id, location: parsedLocation },
+            data: { sortOrder: index }
+          })
+        )
+      )
+
+      const banners = await prisma.banner.findMany({
+        where: { location: parsedLocation },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
+      })
+
+      logger.success(`Banners reordenados (${parsedLocation}): ${orderedIds.length}`)
+      return reply.status(200).send({
+        success: true,
+        data: banners
+      })
+    } catch (error) {
+      logger.error('Erro ao reordenar banners:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao reordenar banners'
+      })
+    }
+  })
+
   // PUT - Atualizar banner
   app.put('/banners/:id', async (request, reply) => {
     const { id } = request.params as { id: string }

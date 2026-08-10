@@ -1,11 +1,32 @@
-import { useCallback, useRef, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, TextInput, Image } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  RefreshControl,
+  TextInput,
+  Image,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { CATEGORY_ILLUSTRATIONS } from '../../assets/brandAssets';
 import { useCommercial } from '../../contexts/CommercialContext';
-import { CATEGORY_META, type Service, type ServiceCategory, type Subscription } from '../../types/commercial';
+import {
+  CATEGORY_META,
+  type Service,
+  type ServiceCategory,
+  type Subscription,
+  type Voucher,
+} from '../../types/commercial';
+import {
+  HOME_BANNER_ASPECT_RATIO,
+  HOME_BANNER_BORDER_RADIUS,
+} from '../../constants/homeBanner';
 
 function formatCurrency(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -22,13 +43,51 @@ function isServiceInPlan(service: Service, subscription: Subscription | null) {
   return subscription.plan.services.some((planService) => planService.id === service.id);
 }
 
+function isUsableServiceVoucher(voucher: Voucher) {
+  if (voucher.isUsed) return false;
+  if (voucher.type === 'FREE_MONTH') return false;
+  if (voucher.expiresAt && new Date(voucher.expiresAt) < new Date()) return false;
+  return voucher.type === 'FREE_TREATMENT' || voucher.type === 'DISCOUNT';
+}
+
+function voucherAppliesToService(voucher: Voucher, service: Service) {
+  // DISCOUNT costuma valer na lista inteira (mesmo critério do Booking)
+  if (voucher.type === 'DISCOUNT') return true;
+  if (voucher.anyService) return true;
+  return Boolean(voucher.serviceId && voucher.serviceId === service.id);
+}
+
+function priceWithVoucher(service: Service, voucher: Voucher) {
+  if (voucher.type === 'FREE_TREATMENT') return 0;
+  if (voucher.discountPercent != null && voucher.discountPercent > 0) {
+    return Math.max(0, service.price * (1 - voucher.discountPercent / 100));
+  }
+  if (voucher.discountAmount != null && voucher.discountAmount > 0) {
+    return Math.max(0, service.price - voucher.discountAmount);
+  }
+  return service.price;
+}
+
+function voucherBenefitLabel(voucher: Voucher) {
+  if (voucher.type === 'FREE_TREATMENT') return 'Tratamento cortesia';
+  if (voucher.discountPercent) return `${voucher.discountPercent}% OFF`;
+  if (voucher.discountAmount) return `${formatCurrency(voucher.discountAmount)} OFF`;
+  return 'Desconto disponível';
+}
+
 export function ServicesScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { services, subscription, loading, refreshing, error, refresh } = useCommercial();
+  const { services, subscription, vouchers, loading, refreshing, error, refresh } = useCommercial();
   const [selectedCategory, setSelectedCategory] = useState<ServiceCategory | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [voucherApplied, setVoucherApplied] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  const activeVoucher = useMemo(
+    () => vouchers.find(isUsableServiceVoucher) ?? null,
+    [vouchers],
+  );
 
   const scrollToTop = useCallback(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -45,7 +104,7 @@ export function ServicesScreen() {
       scrollToTop();
       const unsubscribe = navigation.addListener('tabPress', scrollToTop);
       return unsubscribe;
-    }, [navigation, route.params?.category, scrollToTop])
+    }, [navigation, route.params?.category, scrollToTop]),
   );
 
   const categories = (Object.keys(CATEGORY_META) as ServiceCategory[])
@@ -62,12 +121,23 @@ export function ServicesScreen() {
   const filteredServices = services.filter((service) => {
     const query = searchQuery.trim().toLowerCase();
     const matchesSearch =
-      !query || `${service.name} ${service.description} ${CATEGORY_META[service.category].label}`.toLowerCase().includes(query);
-    // Busca é global: com texto na pesquisa, ignora o chip de categoria
+      !query ||
+      `${service.name} ${service.description} ${CATEGORY_META[service.category].label}`
+        .toLowerCase()
+        .includes(query);
     if (query) return matchesSearch;
     const matchesCategory = !selectedCategory || service.category === selectedCategory;
     return matchesCategory;
   });
+
+  const bookService = (service: Service) => {
+    navigation.navigate('Booking', {
+      serviceId: service.id,
+      ...(voucherApplied && activeVoucher
+        ? { applyVoucherId: activeVoucher.id }
+        : {}),
+    });
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -94,52 +164,57 @@ export function ServicesScreen() {
         </View>
       </View>
 
-      <ScrollView ref={scrollRef} style={styles.content} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoriesScroll}
-          contentContainerStyle={styles.categoriesContent}
-        >
+      <ScrollView
+        ref={scrollRef}
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}
+      >
+        {/* Filtros — todos visíveis, sem scroll horizontal */}
+        <View style={styles.categoriesWrap}>
           <TouchableOpacity
-            style={[
-              styles.categoryChip,
-              !selectedCategory && styles.categoryChipActive
-            ]}
+            style={[styles.categoryChip, !selectedCategory && styles.categoryChipActive]}
             onPress={() => setSelectedCategory(null)}
           >
-            <Text style={[
-              styles.categoryChipText,
-              !selectedCategory && styles.categoryChipTextActive
-            ]}>
+            <Text style={[styles.categoryChipText, !selectedCategory && styles.categoryChipTextActive]}>
               Todos
             </Text>
           </TouchableOpacity>
 
-          {categories.map(category => (
+          {categories.map((category) => (
             <TouchableOpacity
               key={category.id}
               style={[
                 styles.categoryChip,
-                selectedCategory === category.id && styles.categoryChipActive
+                selectedCategory === category.id && styles.categoryChipActive,
               ]}
               onPress={() => setSelectedCategory(category.id)}
             >
               <MaterialCommunityIcons
                 name={category.icon as any}
-                size={18}
+                size={16}
                 color={selectedCategory === category.id ? 'white' : '#6b7280'}
                 style={styles.categoryIcon}
               />
-              <Text style={[
-                styles.categoryChipText,
-                selectedCategory === category.id && styles.categoryChipTextActive
-              ]}>
+              <Text
+                style={[
+                  styles.categoryChipText,
+                  selectedCategory === category.id && styles.categoryChipTextActive,
+                ]}
+              >
                 {category.label}
               </Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
+
+        {activeVoucher ? (
+          <VoucherPromoBanner
+            voucher={activeVoucher}
+            applied={voucherApplied}
+            onToggle={() => setVoucherApplied((prev) => !prev)}
+          />
+        ) : null}
 
         <View style={styles.servicesList}>
           {loading ? (
@@ -149,25 +224,36 @@ export function ServicesScreen() {
               <Ionicons name="cloud-offline-outline" size={58} color="#d1d5db" />
               <Text style={styles.emptyStateTitle}>Não foi possível carregar</Text>
               <Text style={styles.emptyStateText}>{error}</Text>
-              <TouchableOpacity style={[styles.bookButton, { marginTop: 18 }]} onPress={refresh}><Text style={styles.bookButtonText}>Tentar novamente</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.bookButton, { marginTop: 18 }]} onPress={refresh}>
+                <Text style={styles.bookButtonText}>Tentar novamente</Text>
+              </TouchableOpacity>
             </View>
           ) : filteredServices.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="search-outline" size={64} color="#d1d5db" />
               <Text style={styles.emptyStateTitle}>Nenhum serviço encontrado</Text>
-              <Text style={styles.emptyStateText}>
-                Tente outro termo ou categoria
-              </Text>
+              <Text style={styles.emptyStateText}>Tente outro termo ou categoria</Text>
             </View>
           ) : (
-            filteredServices.map(service => (
-              <ServiceCard
-                key={service.id}
-                service={service}
-                includedInPlan={isServiceInPlan(service, subscription)}
-                onBook={() => navigation.navigate('Booking', { serviceId: service.id })}
-              />
-            ))
+            filteredServices.map((service) => {
+              const applies =
+                voucherApplied && activeVoucher
+                  ? voucherAppliesToService(activeVoucher, service)
+                  : false;
+              const discounted =
+                applies && activeVoucher ? priceWithVoucher(service, activeVoucher) : null;
+
+              return (
+                <ServiceCard
+                  key={service.id}
+                  service={service}
+                  includedInPlan={isServiceInPlan(service, subscription)}
+                  discountActive={applies}
+                  discountedPrice={discounted}
+                  onBook={() => bookService(service)}
+                />
+              );
+            })
           )}
         </View>
       </ScrollView>
@@ -175,19 +261,80 @@ export function ServicesScreen() {
   );
 }
 
+function VoucherPromoBanner({
+  voucher,
+  applied,
+  onToggle,
+}: {
+  voucher: Voucher;
+  applied: boolean;
+  onToggle: () => void;
+}) {
+  const benefit = voucherBenefitLabel(voucher);
+  const scope = voucher.anyService
+    ? 'Válido em tratamentos avulsos elegíveis'
+    : 'Válido no tratamento indicado pela clínica';
+
+  return (
+    <View style={styles.voucherBannerWrap}>
+      <LinearGradient
+        colors={applied ? ['#059669', '#047857'] : ['#ec4899', '#db2777', '#a21caf']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.voucherBanner}
+      >
+        <View style={styles.voucherBannerTop}>
+          <View style={styles.voucherPill}>
+            <Ionicons name="ticket-outline" size={14} color="#be185d" />
+            <Text style={styles.voucherPillText}>Voucher disponível</Text>
+          </View>
+          <Text style={styles.voucherBenefit}>{benefit}</Text>
+        </View>
+        <Text style={styles.voucherTitle} numberOfLines={2}>
+          {voucher.description || 'Você tem um benefício para usar'}
+        </Text>
+        <Text style={styles.voucherScope}>{scope}</Text>
+        <TouchableOpacity
+          style={[styles.voucherCta, applied && styles.voucherCtaApplied]}
+          onPress={onToggle}
+          activeOpacity={0.9}
+        >
+          <Text style={[styles.voucherCtaText, applied && styles.voucherCtaTextApplied]}>
+            {applied ? 'Voucher aplicado — toque para remover' : 'Usar voucher nos preços'}
+          </Text>
+          <Ionicons
+            name={applied ? 'checkmark-circle' : 'arrow-forward'}
+            size={18}
+            color={applied ? '#047857' : '#be185d'}
+          />
+        </TouchableOpacity>
+      </LinearGradient>
+    </View>
+  );
+}
+
 function ServiceCard({
   service,
   includedInPlan,
+  discountActive,
+  discountedPrice,
   onBook,
 }: {
   service: Service;
   includedInPlan: boolean;
+  discountActive: boolean;
+  discountedPrice: number | null;
   onBook: () => void;
 }) {
   const meta = CATEGORY_META[service.category];
+  const showDiscount =
+    discountActive && discountedPrice !== null && discountedPrice < service.price;
 
   return (
-    <TouchableOpacity style={styles.serviceCard} onPress={onBook}>
+    <TouchableOpacity
+      style={[styles.serviceCard, showDiscount && styles.serviceCardDiscount]}
+      onPress={onBook}
+    >
       <View style={styles.serviceHeader}>
         <View style={[styles.serviceIconContainer, { backgroundColor: `${meta.color}18` }]}>
           <Image
@@ -218,11 +365,20 @@ function ServiceCard({
             <Ionicons name="time-outline" size={16} color="#6b7280" />
             <Text style={styles.serviceDetailText}>{service.duration} min</Text>
           </View>
-          <View style={styles.serviceDetail}>
-            <Ionicons name="cash-outline" size={16} color="#6b7280" />
-            <Text style={styles.serviceDetailText}>
-              {formatCurrency(service.price)}
-            </Text>
+          <View style={styles.priceBlock}>
+            {showDiscount ? (
+              <>
+                <Text style={styles.priceStruck}>{formatCurrency(service.price)}</Text>
+                <Text style={styles.priceDiscount}>
+                  {discountedPrice === 0 ? 'Grátis' : formatCurrency(discountedPrice!)}
+                </Text>
+              </>
+            ) : (
+              <View style={styles.serviceDetail}>
+                <Ionicons name="cash-outline" size={16} color="#6b7280" />
+                <Text style={styles.serviceDetailText}>{formatCurrency(service.price)}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -276,21 +432,21 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  categoriesScroll: {
-    paddingVertical: 20,
-  },
-  categoriesContent: {
+  categoriesWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     paddingHorizontal: 24,
-    gap: 12,
+    paddingTop: 18,
+    paddingBottom: 8,
+    gap: 8,
   },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     backgroundColor: '#f3f4f6',
     borderRadius: 20,
-    marginRight: 8,
   },
   categoryChipActive: {
     backgroundColor: '#ec4899',
@@ -299,12 +455,85 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   categoryChipText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#6b7280',
   },
   categoryChipTextActive: {
     color: 'white',
+  },
+  voucherBannerWrap: {
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  voucherBanner: {
+    width: '100%',
+    aspectRatio: HOME_BANNER_ASPECT_RATIO,
+    borderRadius: HOME_BANNER_BORDER_RADIUS,
+    padding: 18,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+  },
+  voucherBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  voucherPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  voucherPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#be185d',
+  },
+  voucherBenefit: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  voucherTitle: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: '800',
+    lineHeight: 26,
+    marginTop: 8,
+  },
+  voucherScope: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  voucherCta: {
+    marginTop: 10,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  voucherCtaApplied: {
+    backgroundColor: '#ecfdf5',
+  },
+  voucherCtaText: {
+    color: '#be185d',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  voucherCtaTextApplied: {
+    color: '#047857',
   },
   servicesList: {
     paddingHorizontal: 24,
@@ -342,6 +571,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+  },
+  serviceCardDiscount: {
+    borderColor: '#6ee7b7',
+    backgroundColor: '#f0fdf4',
   },
   serviceHeader: {
     flexDirection: 'row',
@@ -406,6 +639,8 @@ const styles = StyleSheet.create({
   serviceDetails: {
     flexDirection: 'row',
     gap: 16,
+    alignItems: 'center',
+    flexShrink: 1,
   },
   serviceDetail: {
     flexDirection: 'row',
@@ -416,6 +651,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
     fontWeight: '500',
+  },
+  priceBlock: {
+    gap: 2,
+  },
+  priceStruck: {
+    fontSize: 12,
+    color: '#9ca3af',
+    textDecorationLine: 'line-through',
+    fontWeight: '600',
+  },
+  priceDiscount: {
+    fontSize: 16,
+    color: '#059669',
+    fontWeight: '900',
   },
   bookButton: {
     flexDirection: 'row',

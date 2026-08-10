@@ -60,11 +60,27 @@ export function BookingScreen({ route, navigation }: Props) {
   const [bookingOrigin, setBookingOrigin] = useState<BookableOrigin>('SINGLE');
   const [originInitialized, setOriginInitialized] = useState(false);
 
-  const matchingVoucher = useMemo(() => vouchers.find((voucher) => {
-    if (voucher.type === 'FREE_MONTH') return false;
-    if (voucher.expiresAt && new Date(voucher.expiresAt) < new Date()) return false;
-    return voucher.type === 'DISCOUNT' || voucher.anyService || voucher.serviceId === service?.id;
-  }), [service?.id, vouchers]);
+  const preferredVoucherId = route.params.applyVoucherId;
+
+  const matchingVoucher = useMemo(() => {
+    const usable = vouchers.filter((voucher) => {
+      if (voucher.type === 'FREE_MONTH') return false;
+      if (voucher.expiresAt && new Date(voucher.expiresAt) < new Date()) return false;
+      return voucher.type === 'DISCOUNT' || voucher.type === 'FREE_TREATMENT';
+    });
+    if (preferredVoucherId) {
+      const preferred = usable.find((voucher) => voucher.id === preferredVoucherId);
+      if (
+        preferred &&
+        (preferred.anyService || preferred.serviceId === service?.id || preferred.type === 'DISCOUNT')
+      ) {
+        return preferred;
+      }
+    }
+    return usable.find((voucher) => {
+      return voucher.anyService || voucher.serviceId === service?.id || voucher.type === 'DISCOUNT';
+    });
+  }, [preferredVoucherId, service?.id, vouchers]);
 
   const serviceInUserPlan = Boolean(
     subscription?.status === 'ACTIVE' &&
@@ -102,11 +118,13 @@ export function BookingScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     if (originInitialized || !service) return;
-    if (matchingVoucher) setBookingOrigin('VOUCHER');
+    // Veio da lista de serviços com "Usar voucher" → força origem VOUCHER
+    if (preferredVoucherId && matchingVoucher) setBookingOrigin('VOUCHER');
+    else if (matchingVoucher) setBookingOrigin('VOUCHER');
     else if (canUsePlan) setBookingOrigin('SUBSCRIPTION');
     else setBookingOrigin('SINGLE');
     setOriginInitialized(true);
-  }, [canUsePlan, matchingVoucher, originInitialized, service]);
+  }, [canUsePlan, matchingVoucher, originInitialized, preferredVoucherId, service]);
 
   useEffect(() => {
     if (!date || !service) return;

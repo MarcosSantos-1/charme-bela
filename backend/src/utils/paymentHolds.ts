@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma'
 import { logger } from './logger'
 import { notifyAppointmentCanceled } from './notifications'
+import { releaseVoucherOnCancel } from './vouchers'
 
 /**
  * Reserva de horário com pagamento online pendente ("hold").
@@ -69,6 +70,12 @@ export async function releaseExpiredPaymentHolds(): Promise<number> {
           cancelReason
         }
       })
+
+      try {
+        await releaseVoucherOnCancel(appointment.voucherId)
+      } catch (voucherError) {
+        logger.error(`Erro ao liberar voucher do hold ${appointment.id}:`, voucherError)
+      }
 
       try {
         await notifyAppointmentCanceled(appointment.userId, {

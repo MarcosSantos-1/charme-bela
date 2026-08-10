@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Upload, X, Plus, Trash2, Loader2 } from 'lucide-react'
+import { Upload, X, Plus, Trash2, Loader2, GripVertical } from 'lucide-react'
 import { Button } from '@/components/Button'
 import Image from 'next/image'
 import toast from 'react-hot-toast'
@@ -18,11 +18,20 @@ type Draft = {
 
 const emptyDraft = (): Draft => ({ title: '', imageUrl: null })
 
+function positionLabel(index: number) {
+  return String(index + 1).padStart(2, '0')
+}
+
+function sortBanners(list: Banner[]) {
+  return [...list].sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title))
+}
+
 export default function PromocoesPage() {
   const [landingBanners, setLandingBanners] = useState<Banner[]>([])
   const [clientBanners, setClientBanners] = useState<Banner[]>([])
   const [loading, setLoading] = useState(true)
   const [savingLocation, setSavingLocation] = useState<BannerLocation | null>(null)
+  const [reordering, setReordering] = useState<BannerLocation | null>(null)
   const [landingDraft, setLandingDraft] = useState<Draft>(emptyDraft)
   const [clientDraft, setClientDraft] = useState<Draft>(emptyDraft)
 
@@ -33,8 +42,8 @@ export default function PromocoesPage() {
         api.getBanners({ location: 'LANDING' }),
         api.getBanners({ location: 'CLIENT' }),
       ])
-      setLandingBanners(Array.isArray(landing) ? landing : [])
-      setClientBanners(Array.isArray(client) ? client : [])
+      setLandingBanners(sortBanners(Array.isArray(landing) ? landing : []))
+      setClientBanners(sortBanners(Array.isArray(client) ? client : []))
     } catch (error) {
       console.error(error)
       toast.error('Erro ao carregar banners')
@@ -49,6 +58,7 @@ export default function PromocoesPage() {
 
   const handleSave = async (location: BannerLocation) => {
     const draft = location === 'LANDING' ? landingDraft : clientDraft
+    const existing = location === 'LANDING' ? landingBanners : clientBanners
     if (!draft.title.trim()) {
       toast.error('Informe o título do banner')
       return
@@ -60,15 +70,22 @@ export default function PromocoesPage() {
 
     setSavingLocation(location)
     try {
+      // Novo banner entra no fim da pilha (02, 03, 04…)
+      const nextOrder =
+        existing.length === 0
+          ? 0
+          : Math.max(...existing.map((b) => b.sortOrder)) + 1
+
       await api.createBanner({
         title: draft.title.trim(),
         imageUrl: draft.imageUrl,
         location,
+        sortOrder: nextOrder,
         imageWidth: draft.imageWidth,
         imageHeight: draft.imageHeight,
         isActive: true,
       })
-      toast.success('Banner adicionado')
+      toast.success(`Banner ${positionLabel(existing.length)} adicionado`)
       if (location === 'LANDING') setLandingDraft(emptyDraft())
       else setClientDraft(emptyDraft())
       await loadBanners()
@@ -102,6 +119,30 @@ export default function PromocoesPage() {
     }
   }
 
+  const handleReorder = async (location: BannerLocation, next: Banner[]) => {
+    const previous = location === 'LANDING' ? landingBanners : clientBanners
+    if (location === 'LANDING') setLandingBanners(next)
+    else setClientBanners(next)
+
+    setReordering(location)
+    try {
+      const saved = await api.reorderBanners(
+        location,
+        next.map((b) => b.id),
+      )
+      const sorted = sortBanners(Array.isArray(saved) ? saved : next)
+      if (location === 'LANDING') setLandingBanners(sorted)
+      else setClientBanners(sorted)
+    } catch (error) {
+      console.error(error)
+      toast.error('Erro ao reordenar banners')
+      if (location === 'LANDING') setLandingBanners(previous)
+      else setClientBanners(previous)
+    } finally {
+      setReordering(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -112,13 +153,13 @@ export default function PromocoesPage() {
       </div>
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-sm text-blue-800 font-medium mb-2">Dimensões do card (formato do app)</p>
+        <p className="text-sm text-blue-800 font-medium mb-2">Dimensões e ordem</p>
         <div className="text-sm text-blue-700 space-y-1">
           <p>
             • <strong>Master:</strong> {HOME_BANNER.sizeHint}px (proporção {HOME_BANNER.aspectLabel})
           </p>
-          <p>• Arraste a imagem para o dropzone — o preview usa o mesmo formato do mobile</p>
-          <p>• Formato: JPG, PNG ou WebP (comprimido automaticamente)</p>
+          <p>• Arraste pelo ícone ⋮⋮ para definir a posição (01, 02, 03…)</p>
+          <p>• Novos banners entram no fim da pilha</p>
         </div>
       </div>
 
@@ -137,9 +178,11 @@ export default function PromocoesPage() {
             draft={landingDraft}
             setDraft={setLandingDraft}
             saving={savingLocation === 'LANDING'}
+            reordering={reordering === 'LANDING'}
             onSave={() => handleSave('LANDING')}
             onToggle={handleToggle}
             onDelete={handleDelete}
+            onReorder={(next) => handleReorder('LANDING', next)}
           />
           <BannerSection
             title="Banner — Área do Cliente"
@@ -149,9 +192,11 @@ export default function PromocoesPage() {
             draft={clientDraft}
             setDraft={setClientDraft}
             saving={savingLocation === 'CLIENT'}
+            reordering={reordering === 'CLIENT'}
             onSave={() => handleSave('CLIENT')}
             onToggle={handleToggle}
             onDelete={handleDelete}
+            onReorder={(next) => handleReorder('CLIENT', next)}
           />
         </div>
       )}
@@ -167,9 +212,11 @@ function BannerSection({
   draft,
   setDraft,
   saving,
+  reordering,
   onSave,
   onToggle,
   onDelete,
+  onReorder,
 }: {
   title: string
   description: string
@@ -178,10 +225,23 @@ function BannerSection({
   draft: Draft
   setDraft: (draft: Draft) => void
   saving: boolean
+  reordering: boolean
   onSave: () => void
   onToggle: (banner: Banner) => void
   onDelete: (banner: Banner) => void
+  onReorder: (next: Banner[]) => void
 }) {
+  const dragIndex = useRef<number | null>(null)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
+
+  const move = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= banners.length || to >= banners.length) return
+    const next = [...banners]
+    const [item] = next.splice(from, 1)
+    next.splice(to, 0, item)
+    onReorder(next)
+  }
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
       <div>
@@ -220,50 +280,95 @@ function BannerSection({
       </Button>
 
       <div className="border-t border-gray-100 pt-4 space-y-3">
-        <h4 className="text-sm font-semibold text-gray-800">
-          Banners {location === 'LANDING' ? 'da landing' : 'da área do cliente'} ({banners.length})
-        </h4>
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="text-sm font-semibold text-gray-800">
+            Ordem do carrossel ({banners.length})
+          </h4>
+          {reordering ? (
+            <span className="text-xs text-pink-600 flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Salvando ordem…
+            </span>
+          ) : null}
+        </div>
         {banners.length === 0 ? (
           <p className="text-sm text-gray-500">Nenhum banner ainda. Adicione o primeiro acima.</p>
         ) : (
-          banners.map((banner) => (
-            <div
-              key={banner.id}
-              className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg"
-            >
-              <div className="relative w-28 aspect-[2/1] rounded overflow-hidden bg-gray-100 flex-shrink-0">
-                {banner.imageUrl.startsWith('data:') ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={banner.imageUrl} alt={banner.title} className="absolute inset-0 w-full h-full object-cover" />
-                ) : (
-                  <Image src={banner.imageUrl} alt={banner.title} fill className="object-cover" unoptimized />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-gray-900 truncate">{banner.title}</div>
+          <div className="space-y-2">
+            {banners.map((banner, index) => (
+              <div
+                key={banner.id}
+                draggable
+                onDragStart={() => {
+                  dragIndex.current = index
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setOverIndex(index)
+                }}
+                onDragLeave={() => {
+                  if (overIndex === index) setOverIndex(null)
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  const from = dragIndex.current
+                  dragIndex.current = null
+                  setOverIndex(null)
+                  if (from === null) return
+                  move(from, index)
+                }}
+                onDragEnd={() => {
+                  dragIndex.current = null
+                  setOverIndex(null)
+                }}
+                className={`flex items-center gap-3 p-3 border rounded-lg bg-white transition-colors ${
+                  overIndex === index ? 'border-pink-400 bg-pink-50' : 'border-gray-200'
+                }`}
+              >
+                <div
+                  className="flex flex-col items-center gap-1 text-gray-400 cursor-grab active:cursor-grabbing shrink-0"
+                  title="Arraste para reordenar"
+                >
+                  <GripVertical className="w-5 h-5" />
+                  <span className="text-[10px] font-bold text-pink-600">{positionLabel(index)}</span>
+                </div>
+                <div className="relative w-28 aspect-[2/1] rounded overflow-hidden bg-gray-100 flex-shrink-0">
+                  {banner.imageUrl.startsWith('data:') ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={banner.imageUrl} alt={banner.title} className="absolute inset-0 w-full h-full object-cover" />
+                  ) : (
+                    <Image src={banner.imageUrl} alt={banner.title} fill className="object-cover" unoptimized />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-gray-900 truncate">{banner.title}</div>
+                  <button
+                    type="button"
+                    onClick={() => onToggle(banner)}
+                    className={`mt-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                      banner.isActive
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    {banner.isActive ? 'Ativo' : 'Inativo'}
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => onToggle(banner)}
-                  className={`mt-1 text-xs px-2 py-0.5 rounded-full font-medium ${
-                    banner.isActive
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
+                  onClick={() => onDelete(banner)}
+                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                  aria-label="Remover"
                 >
-                  {banner.isActive ? 'Ativo' : 'Inativo'}
+                  <Trash2 className="w-4 h-4" />
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={() => onDelete(banner)}
-                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                aria-label="Remover"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          ))
+            ))}
+          </div>
         )}
+        <p className="text-xs text-gray-500">
+          Posição 01 = primeiro slide do carrossel ({location === 'CLIENT' ? 'antes do plano' : 'na landing'}).
+        </p>
       </div>
     </div>
   )

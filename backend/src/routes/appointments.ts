@@ -14,6 +14,7 @@ import {
   notifyAdminClientCanceled,
   createNotification
 } from '../utils/notifications'
+import { markVoucherUsed, releaseVoucherOnCancel, voucherHasActiveHold } from '../utils/vouchers'
 
 // Lançado dentro da transação quando o slot foi ocupado por outra requisição
 class SlotTakenError extends Error {
@@ -121,6 +122,8 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         }
       })
 
+      await releaseVoucherOnCancel(appointment.voucherId)
+
       await notifyAppointmentCanceled(appointment.userId, {
         serviceName: appointment.service.name,
         startTime: appointment.startTime,
@@ -212,6 +215,14 @@ export async function appointmentsRoutes(app: FastifyInstance) {
             updatedAt: new Date()
           }
         })
+
+        if (appointment.voucherId) {
+          try {
+            await markVoucherUsed(appointment.voucherId)
+          } catch (voucherError) {
+            logger.error(`Erro ao consumir voucher no auto-complete ${appointment.id}:`, voucherError)
+          }
+        }
         
         completedIds.push(appointment.id)
         
@@ -579,6 +590,13 @@ export async function appointmentsRoutes(app: FastifyInstance) {
             error: 'Voucher expirado'
           })
         }
+
+        if (await voucherHasActiveHold(voucher.id)) {
+          return reply.status(400).send({
+            success: false,
+            error: 'Este voucher está suspenso em outro agendamento. Conclua o pagamento ou cancele a reserva para usá-lo novamente.'
+          })
+        }
         
         if (voucher.userId !== userId) {
           return reply.status(400).send({
@@ -730,10 +748,20 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         throw txError
       }
       
-      // 12. NÃO marca voucher como usado ainda - só quando COMPLETAR o tratamento!
-      // O voucher fica "reservado" pelo voucherId no appointment
+      // 12. Voucher:
+      // - 100% grátis (PAID na criação) → consome imediatamente
+      // - com valor restante (hold PENDING) → fica suspenso até pagar ou cancelar
+      // - pagamento aprovado (Stripe/complete) → consome
       if (voucherApplied) {
-        logger.info(`🎫 Voucher ${voucherApplied.id} reservado (será marcado como usado ao completar tratamento)`)
+        if (effectivePaymentStatus === 'PAID') {
+          try {
+            await markVoucherUsed(voucherApplied.id)
+          } catch (voucherError) {
+            logger.error('Erro ao consumir voucher gratuito:', voucherError)
+          }
+        } else {
+          logger.info(`🎫 Voucher ${voucherApplied.id} suspenso no hold de pagamento`)
+        }
       }
       
       // 13. Notifica admin sobre novo agendamento (exceto se criado pelo admin)
@@ -861,20 +889,12 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         }
       })
       
-      // Marcar voucher como usado se tratamento tinha voucher
+      // Garante consumo do voucher ao concluir (pago / realizado)
       if (appointment.voucherId) {
         try {
-          await prisma.voucher.update({
-            where: { id: appointment.voucherId },
-            data: {
-              isUsed: true,
-              usedAt: new Date()
-            }
-          })
-          logger.success(`✅ Voucher ${appointment.voucherId} marcado como usado`)
+          await markVoucherUsed(appointment.voucherId)
         } catch (voucherError) {
           logger.error('Erro ao marcar voucher como usado:', voucherError)
-          // Não falhar a conclusão se voucher falhar
         }
       }
       
@@ -1119,6 +1139,15 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           service: true
         }
       })
+
+      // Cancelado sem conclusão → voucher volta a ficar disponível
+      if (appointment.status !== 'COMPLETED') {
+        try {
+          await releaseVoucherOnCancel(appointment.voucherId)
+        } catch (voucherError) {
+          logger.error('Erro ao liberar voucher no cancelamento:', voucherError)
+        }
+      }
       
       // Notifica conforme quem cancelou
       if (canceledBy === 'client') {

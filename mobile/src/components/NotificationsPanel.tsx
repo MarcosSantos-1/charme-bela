@@ -124,7 +124,11 @@ export function NotificationsPanel({
     if (!silent) setLoading(true);
     try {
       const data = await getNotifications({ userId, limit: 50 });
-      const formatted: UiNotification[] = data.map((n: AppNotification) => ({
+      const sorted = [...data].sort(
+        (a: AppNotification, b: AppNotification) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      const formatted: UiNotification[] = sorted.map((n: AppNotification) => ({
         id: n.id,
         tone: mapTone(n.type),
         title: n.title,

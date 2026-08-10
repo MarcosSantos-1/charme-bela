@@ -66,7 +66,10 @@ export default function NotificationsPanel({ userId }: NotificationsPanelProps) 
         limit: 50
       })
       
-      const formattedNotifications: Notification[] = data.map(n => ({
+      const sorted = [...data].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+      const formattedNotifications: Notification[] = sorted.map(n => ({
         id: n.id,
         type: mapNotificationType(n.type),
         title: n.title,

@@ -358,6 +358,16 @@ export async function deleteBanner(id: string) {
   })
 }
 
+export async function reorderBanners(
+  location: BannerLocation,
+  orderedIds: string[]
+): Promise<Banner[]> {
+  return apiRequest('/banners/reorder', {
+    method: 'PUT',
+    body: JSON.stringify({ location, orderedIds }),
+  })
+}
+
 // ============================================
 // SERVICES
 // ============================================

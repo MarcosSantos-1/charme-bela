@@ -1240,6 +1240,15 @@ async function handlePaymentCompleted(session: Stripe.Checkout.Session) {
           paymentExpiresAt: null
         }
       })
+
+      if (appointment.voucherId) {
+        try {
+          const { markVoucherUsed } = await import('../utils/vouchers')
+          await markVoucherUsed(appointment.voucherId)
+        } catch (voucherError) {
+          logger.error('Erro ao consumir voucher após pagamento Stripe:', voucherError)
+        }
+      }
       
       logger.success(`✅ Agendamento ${appointmentId} pago e confirmado`)
     } else {
@@ -1281,6 +1290,14 @@ async function handlePaymentCompleted(session: Stripe.Checkout.Session) {
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
         
         revived = true
+        if (appointment.voucherId) {
+          try {
+            const { markVoucherUsed } = await import('../utils/vouchers')
+            await markVoucherUsed(appointment.voucherId)
+          } catch (voucherError) {
+            logger.error('Erro ao consumir voucher após revive do pagamento:', voucherError)
+          }
+        }
         logger.success(`♻️ Agendamento ${appointmentId} revivido: pagamento chegou após expirar, horário ainda livre`)
       } catch {
         revived = false

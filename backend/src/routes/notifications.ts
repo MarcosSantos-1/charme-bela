@@ -34,10 +34,8 @@ export async function notificationRoutes(app: FastifyInstance) {
       
       const notifications = await prisma.notification.findMany({
         where,
-        orderBy: [
-          { read: 'asc' },      // Não lidas primeiro
-          { createdAt: 'desc' } // Mais recentes primeiro
-        ],
+        // Sempre cronológico: mais recente em cima
+        orderBy: { createdAt: 'desc' },
         take: limit ? parseInt(limit) : undefined,
         include: {
           user: {

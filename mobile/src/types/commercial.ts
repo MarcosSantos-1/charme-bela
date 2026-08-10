@@ -39,6 +39,7 @@ export interface Appointment {
   paymentStatus: PaymentStatus;
   paymentAmount?: number | null;
   paymentExpiresAt?: string | null;
+  voucherId?: string | null;
   voucher?: Voucher | null;
   cancelReason?: string | null;
 }

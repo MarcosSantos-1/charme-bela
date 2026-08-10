@@ -24,6 +24,13 @@ class SlotTakenError extends Error {
   }
 }
 
+class VoucherUnavailableError extends Error {
+  constructor(message = 'Voucher indisponível') {
+    super(message)
+    this.name = 'VoucherUnavailableError'
+  }
+}
+
 // Função auxiliar para verificar e atualizar uso mensal.
 // Aceita um client transacional para rodar atomicamente com a criação do agendamento.
 async function updateMonthlyUsage(
@@ -692,6 +699,29 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           if (overlappingNow >= maxSimultaneous) {
             throw new SlotTakenError()
           }
+
+          // Consome o voucher NA MESMA transação do create — evita reuso em race
+          // (dois agendamentos pendentes com o mesmo voucher). Cancelamento libera.
+          if (voucherApplied) {
+            const locked = await tx.voucher.findUnique({ where: { id: voucherApplied.id } })
+            if (!locked || locked.isUsed) {
+              throw new VoucherUnavailableError('Voucher já foi utilizado')
+            }
+            if (locked.expiresAt && locked.expiresAt < new Date()) {
+              throw new VoucherUnavailableError('Voucher expirado')
+            }
+            const activeHold = await tx.appointment.count({
+              where: {
+                voucherId: locked.id,
+                status: { in: ['PENDING', 'CONFIRMED'] }
+              }
+            })
+            if (activeHold > 0) {
+              throw new VoucherUnavailableError(
+                'Este voucher está suspenso em outro agendamento. Conclua o pagamento ou cancele a reserva.'
+              )
+            }
+          }
           
           const created = await tx.appointment.create({
             data: {
@@ -721,6 +751,13 @@ export async function appointmentsRoutes(app: FastifyInstance) {
               service: true
             }
           })
+
+          if (voucherApplied) {
+            await tx.voucher.update({
+              where: { id: voucherApplied.id },
+              data: { isUsed: true, usedAt: new Date() }
+            })
+          }
           
           // Atualiza uso mensal se for de assinatura (atômico com a criação)
           if (origin === 'SUBSCRIPTION') {
@@ -737,6 +774,13 @@ export async function appointmentsRoutes(app: FastifyInstance) {
             error: 'Já existe um agendamento neste horário'
           })
         }
+        if (txError instanceof VoucherUnavailableError) {
+          logger.warning(`❌ Voucher indisponível: ${txError.message}`)
+          return reply.status(400).send({
+            success: false,
+            error: txError.message
+          })
+        }
         // P2034: conflito de serialização (outra transação gravou o mesmo slot primeiro)
         if (txError?.code === 'P2034') {
           logger.warning(`❌ Conflito de concorrência em ${startTime}`)
@@ -747,21 +791,9 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         }
         throw txError
       }
-      
-      // 12. Voucher:
-      // - 100% grátis (PAID na criação) → consome imediatamente
-      // - com valor restante (hold PENDING) → fica suspenso até pagar ou cancelar
-      // - pagamento aprovado (Stripe/complete) → consome
+
       if (voucherApplied) {
-        if (effectivePaymentStatus === 'PAID') {
-          try {
-            await markVoucherUsed(voucherApplied.id)
-          } catch (voucherError) {
-            logger.error('Erro ao consumir voucher gratuito:', voucherError)
-          }
-        } else {
-          logger.info(`🎫 Voucher ${voucherApplied.id} suspenso no hold de pagamento`)
-        }
+        logger.success(`🎫 Voucher ${voucherApplied.id} consumido no agendamento ${appointment.id} (libera se cancelar)`)
       }
       
       // 13. Notifica admin sobre novo agendamento (exceto se criado pelo admin)

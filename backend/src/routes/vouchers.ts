@@ -51,8 +51,36 @@ export async function vouchersRoutes(app: FastifyInstance) {
     logger.route('GET', `/vouchers/user/${userId}`)
     
     try {
-      // Disponíveis = não usados, não expirados e sem agendamento ativo
-      // (pagamento pendente / confirmado suspende o voucher até cancelar ou concluir)
+      // Cura holds antigos: agendamento PENDING/CONFIRMED com voucher ainda isUsed=false
+      // → marca como usado (suspenso). Cancelamento libera de novo.
+      const activeHolds = await prisma.appointment.findMany({
+        where: {
+          userId,
+          status: { in: ['PENDING', 'CONFIRMED'] },
+          voucherId: { not: null }
+        },
+        select: { voucherId: true }
+      })
+      const heldIds = [
+        ...new Set(
+          activeHolds
+            .map((a) => a.voucherId)
+            .filter((id): id is string => Boolean(id))
+        )
+      ]
+      if (heldIds.length > 0) {
+        const healed = await prisma.voucher.updateMany({
+          where: { id: { in: heldIds }, isUsed: false },
+          data: { isUsed: true, usedAt: new Date() }
+        })
+        if (healed.count > 0) {
+          logger.warning(
+            `🎫 ${healed.count} voucher(s) suspenso(s) por agendamento ativo (pagamento pendente/confirmado)`
+          )
+        }
+      }
+
+      // Disponíveis = não usados e não expirados (holds ativos já foram marcados acima)
       const vouchers = await prisma.voucher.findMany({
         where: {
           userId,
@@ -60,14 +88,7 @@ export async function vouchersRoutes(app: FastifyInstance) {
           OR: [
             { expiresAt: null },
             { expiresAt: { gte: new Date() } }
-          ],
-          NOT: {
-            appointments: {
-              some: {
-                status: { in: ['PENDING', 'CONFIRMED'] }
-              }
-            }
-          }
+          ]
         },
         orderBy: { createdAt: 'desc' }
       })

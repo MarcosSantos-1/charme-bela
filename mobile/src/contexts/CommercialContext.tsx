@@ -34,6 +34,20 @@ interface CommercialContextValue {
 
 const CommercialContext = createContext<CommercialContextValue | null>(null);
 
+/** Esconde voucher usado OU já vinculado a agendamento ativo (pagamento pendente/confirmado). */
+function filterAvailableVouchers(vouchers: Voucher[], appointments: Appointment[]): Voucher[] {
+  const heldIds = new Set(
+    appointments
+      .filter(
+        (apt) =>
+          Boolean(apt.voucherId) &&
+          (apt.status === 'PENDING' || apt.status === 'CONFIRMED'),
+      )
+      .map((apt) => apt.voucherId as string),
+  );
+  return vouchers.filter((voucher) => !voucher.isUsed && !heldIds.has(voucher.id));
+}
+
 export function CommercialProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [services, setServices] = useState<Service[]>([]);
@@ -80,7 +94,7 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
       setAppointments(nextAppointments);
       setPlans(nextPlans);
       setSubscription(nextSubscription);
-      setVouchers(nextVouchers.filter((voucher) => !voucher.isUsed));
+      setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments));
 
       // Pull-to-refresh: força rede nos banners (sem limpar UI antes)
       await refreshBanners(true);
@@ -126,7 +140,7 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
       setAppointments(nextAppointments);
       setPlans(nextPlans);
       setSubscription(nextSubscription);
-      setVouchers(nextVouchers.filter((voucher) => !voucher.isUsed));
+      setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments));
     } catch (requestError) {
       setError(getApiErrorMessage(requestError, 'Não foi possível carregar seus dados'));
     } finally {
@@ -168,7 +182,7 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
           setAppointments(nextAppointments);
           setPlans(nextPlans);
           setSubscription(nextSubscription);
-          setVouchers(nextVouchers.filter((voucher) => !voucher.isUsed));
+          setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments));
 
           if (!isBannerCacheFresh(bannersFetchedAtRef.current)) {
             await refreshBanners(true);

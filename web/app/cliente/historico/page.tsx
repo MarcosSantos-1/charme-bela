@@ -374,11 +374,13 @@ export default function HistoricoPage() {
                           ? 'bg-green-100 text-green-700'
                           : 'bg-gray-100 text-gray-700'
                       }`}>
-                        {appointment.origin === 'ADMIN_CREATED' 
-                          ? (appointment.paymentStatus === 'PAID' ? '💰 Pago na Clínica' : '💰 Pagar na Clínica')
+                        {appointment.origin === 'ADMIN_CREATED'
+                          ? (appointment.paymentStatus === 'PAID' ? '💰 Pago na Clínica' : '💰 Clínica')
                           : appointment.origin === 'SUBSCRIPTION' ? 'Plano'
                           : appointment.origin === 'VOUCHER' ? 'Voucher'
-                          : appointment.paymentAmount ? `R$ ${appointment.paymentAmount.toFixed(2)}` : 'Avulso'}
+                          : appointment.status === 'CANCELED' && appointment.cancelReason && /pagamento/i.test(appointment.cancelReason)
+                            ? 'Cancelado — sem pagamento'
+                            : appointment.paymentAmount ? `R$ ${appointment.paymentAmount.toFixed(2)}` : 'Avulso'}
                       </span>
                     </div>
                     

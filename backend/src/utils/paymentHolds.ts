@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma'
 import { logger } from './logger'
+import { notifyAppointmentCanceled } from './notifications'
 
 /**
  * Reserva de horário com pagamento online pendente ("hold").
@@ -38,28 +39,50 @@ export function stripeCheckoutExpiresAtUnix(nowMs: number = Date.now()): number 
  * Cancela agendamentos cujo hold de pagamento expirou, liberando os horários.
  * Só afeta linhas com paymentExpiresAt preenchido (holds de checkout online) —
  * nunca toca em "pagar na clínica" (ADMIN_CREATED), assinatura ou voucher grátis.
+ * Cria notificação in-app para cada cliente afetado.
  */
 export async function releaseExpiredPaymentHolds(): Promise<number> {
   try {
-    const result = await prisma.appointment.updateMany({
+    const expired = await prisma.appointment.findMany({
       where: {
         status: 'PENDING',
         paymentStatus: 'PENDING',
         paymentExpiresAt: { lt: new Date() }
       },
-      data: {
-        status: 'CANCELED',
-        canceledBy: 'system',
-        canceledAt: new Date(),
-        cancelReason: `Pagamento não concluído em ${PAYMENT_HOLD_MINUTES} minutos`
+      include: {
+        service: { select: { name: true } }
       }
     })
 
-    if (result.count > 0) {
-      logger.warning(`⏰ ${result.count} reserva(s) com pagamento expirado liberada(s)`)
+    if (expired.length === 0) return 0
+
+    const cancelReason = `Pagamento não concluído em ${PAYMENT_HOLD_MINUTES} minutos`
+    const canceledAt = new Date()
+
+    for (const appointment of expired) {
+      await prisma.appointment.update({
+        where: { id: appointment.id },
+        data: {
+          status: 'CANCELED',
+          canceledBy: 'system',
+          canceledAt,
+          cancelReason
+        }
+      })
+
+      try {
+        await notifyAppointmentCanceled(appointment.userId, {
+          serviceName: appointment.service.name,
+          startTime: appointment.startTime,
+          cancelReason
+        })
+      } catch (notifyError) {
+        logger.error(`Erro ao notificar cancelamento do hold ${appointment.id}:`, notifyError)
+      }
     }
 
-    return result.count
+    logger.warning(`⏰ ${expired.length} reserva(s) com pagamento expirado liberada(s)`)
+    return expired.length
   } catch (error) {
     logger.error('Erro ao liberar holds de pagamento expirados:', error)
     return 0

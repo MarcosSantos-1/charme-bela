@@ -84,7 +84,9 @@ export async function appointmentsRoutes(app: FastifyInstance) {
     try {
       const appointment = await prisma.appointment.findUnique({
         where: { id },
-        select: { id: true, status: true, paymentStatus: true, paymentExpiresAt: true }
+        include: {
+          service: { select: { name: true } }
+        }
       })
       
       if (!appointment) {
@@ -108,14 +110,21 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         })
       }
       
+      const cancelReason = 'Pagamento cancelado no checkout'
       await prisma.appointment.update({
         where: { id },
         data: {
           status: 'CANCELED',
           canceledBy: 'client',
           canceledAt: new Date(),
-          cancelReason: 'Pagamento cancelado no checkout'
+          cancelReason
         }
+      })
+
+      await notifyAppointmentCanceled(appointment.userId, {
+        serviceName: appointment.service.name,
+        startTime: appointment.startTime,
+        cancelReason
       })
       
       logger.success(`🔓 Reserva liberada (checkout cancelado): ${id}`)
@@ -151,7 +160,8 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       
       logger.info(`🌙 Buscando tratamentos do dia anterior: ${yesterdayStart.toLocaleDateString('pt-BR')}`)
       
-      // Busca agendamentos do dia anterior que não foram concluídos
+      // Busca agendamentos do dia anterior que não foram concluídos.
+      // Nunca auto-completa pagamento pendente (hold online ou pagar na clínica).
       const pendingAppointments = await prisma.appointment.findMany({
         where: {
           startTime: {
@@ -160,7 +170,11 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           },
           status: {
             in: ['PENDING', 'CONFIRMED']
-          }
+          },
+          OR: [
+            { paymentStatus: null },
+            { paymentStatus: 'PAID' }
+          ]
         },
         include: {
           user: {

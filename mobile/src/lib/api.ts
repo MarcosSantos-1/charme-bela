@@ -197,6 +197,30 @@ export async function getPlans(): Promise<Plan[]> {
   return unwrap<Plan[]>(response.data);
 }
 
+export type BannerLocation = 'LANDING' | 'CLIENT';
+
+export interface Banner {
+  id: string;
+  title: string;
+  imageUrl: string;
+  location: BannerLocation;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export async function getBanners(params?: {
+  location?: BannerLocation;
+  activeOnly?: boolean;
+}): Promise<Banner[]> {
+  const response = await api.get('/banners', {
+    params: {
+      ...(params?.location ? { location: params.location } : {}),
+      ...(params?.activeOnly ? { activeOnly: 'true' } : {}),
+    },
+  });
+  return unwrap<Banner[]>(response.data);
+}
+
 export async function getAvailableSlots(date: string, serviceId?: string): Promise<AvailableSlots> {
   const response = await api.get('/schedule/available', { params: { date, serviceId } });
   return unwrap<AvailableSlots>(response.data);

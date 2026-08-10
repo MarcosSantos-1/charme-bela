@@ -300,8 +300,13 @@ function AppointmentCard({
   const hold = isOnlinePaymentHold(appointment);
   const expired = isExpiredUnpaidHold(appointment);
   const status = effectiveAppointmentStatus(appointment);
+  const payAtClinic =
+    appointment.origin === 'ADMIN_CREATED' &&
+    appointment.paymentStatus === 'PENDING' &&
+    status !== 'CANCELED' &&
+    status !== 'COMPLETED';
   return (
-    <TouchableOpacity style={[styles.card, hold && styles.cardHold]} onPress={onPress}>
+    <TouchableOpacity style={[styles.card, hold && styles.cardHold, payAtClinic && styles.cardClinic]} onPress={onPress}>
       <View style={styles.dateBox}><Text style={styles.day}>{date.slice(8, 10)}</Text><Text style={styles.month}>{shortMonth(date)}</Text></View>
       <View style={styles.cardInfo}>
         <Text style={styles.service} numberOfLines={1}>{appointment.service.name}</Text>
@@ -312,6 +317,11 @@ function AppointmentCard({
           <Text style={[styles.status, { color: hold ? '#c2410c' : statusColor(status) }]}>
             {hold ? 'Pagar' : statusLabel(status)}
           </Text>
+          {payAtClinic ? (
+            <View style={styles.clinicBadge}>
+              <Text style={styles.clinicBadgeText}>Pagar na clínica</Text>
+            </View>
+          ) : null}
         </View>
         {hold ? <HoldCountdown expiresAt={appointment.paymentExpiresAt!} onExpired={onHoldExpired} /> : null}
         {expired ? <Text style={styles.holdExpiredHint}>Pagamento não concluído</Text> : null}
@@ -408,22 +418,28 @@ function AppointmentDetail({ appointment, onClose, onCancel, onReschedule, onRef
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}><TouchableOpacity style={styles.backdrop} onPress={onClose} /><View style={styles.sheet}>
         <View style={styles.handle} /><View style={styles.sheetHeader}><Text style={styles.sheetTitle}>Detalhes do horário</Text><TouchableOpacity onPress={onClose}><Ionicons name="close-circle" size={30} color="#9ca3af" /></TouchableOpacity></View>
-        <View style={[styles.statusBadge, { backgroundColor: hold ? '#ffedd5' : `${statusColor(status)}18` }]}>
-          <View style={[styles.dot, { backgroundColor: hold ? '#f97316' : statusColor(status) }]} />
-          <Text style={[styles.status, { color: hold ? '#c2410c' : statusColor(status) }]}>
-            {hold ? 'Pagamento pendente' : statusLabel(status)}
-          </Text>
+        <View style={styles.statusBadgeRow}>
+          <View style={[styles.statusBadge, { backgroundColor: hold ? '#ffedd5' : `${statusColor(status)}18` }]}>
+            <View style={[styles.dot, { backgroundColor: hold ? '#f97316' : statusColor(status) }]} />
+            <Text style={[styles.status, { color: hold ? '#c2410c' : statusColor(status) }]}>
+              {hold ? 'Pagamento pendente' : statusLabel(status)}
+            </Text>
+          </View>
+          {appointment.origin === 'ADMIN_CREATED' &&
+          appointment.paymentStatus === 'PENDING' &&
+          status !== 'CANCELED' &&
+          status !== 'COMPLETED' ? (
+            <View style={styles.clinicBadge}>
+              <Text style={styles.clinicBadgeText}>Pagar na clínica</Text>
+            </View>
+          ) : null}
         </View>
         <Text style={styles.detailService}>{appointment.service.name}</Text>
         <Detail icon="calendar-outline" text={longDate(datePart(appointment.startTime))} />
         <Detail icon="time-outline" text={`${timePart(appointment.startTime)} • ${appointment.service.duration} minutos`} />
         <Detail
           icon="wallet-outline"
-          text={
-            expired
-              ? 'Pagamento não concluído'
-              : originLabel(appointment.origin, appointment.paymentStatus)
-          }
+          text={originLabel(appointment.origin, appointment.paymentStatus, status, appointment.cancelReason)}
         />
         {hold ? (
           <View style={styles.holdBox}>
@@ -457,7 +473,22 @@ function longDate(value: string) { return new Date(`${value}T12:00:00`).toLocale
 function shortMonth(value: string) { return new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''); }
 function statusColor(status: string) { return status === 'CONFIRMED' || status === 'COMPLETED' ? '#10b981' : status === 'PENDING' ? PINK : '#ef4444'; }
 function statusLabel(status: string) { return ({ PENDING: 'Agendado', CONFIRMED: 'Confirmado', COMPLETED: 'Concluído', CANCELED: 'Cancelado', NO_SHOW: 'Não compareceu' } as any)[status] || status; }
-function originLabel(origin: string, payment: string | null) { if (origin === 'SUBSCRIPTION') return 'Descontado do plano'; if (origin === 'VOUCHER') return 'Voucher aplicado'; if (origin === 'SINGLE') return payment === 'PAID' ? 'Pagamento confirmado' : 'Pagamento pendente'; return 'Criado pela clínica'; }
+function originLabel(
+  origin: string,
+  payment: string | null,
+  status?: string,
+  cancelReason?: string | null,
+) {
+  if (status === 'CANCELED') {
+    if (cancelReason && /pagamento/i.test(cancelReason)) return 'Cancelado por falta de pagamento';
+    return cancelReason ? cancelReason : 'Agendamento cancelado';
+  }
+  if (origin === 'SUBSCRIPTION') return 'Descontado do plano';
+  if (origin === 'VOUCHER') return 'Voucher aplicado';
+  if (origin === 'SINGLE') return payment === 'PAID' ? 'Pagamento confirmado' : 'Pagamento pendente';
+  if (origin === 'ADMIN_CREATED' && payment === 'PENDING') return 'Pagar na clínica';
+  return 'Criado pela clínica';
+}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
@@ -479,6 +510,10 @@ const styles = StyleSheet.create({
   list: { gap: 12 },
   card: { backgroundColor: 'white', borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb' },
   cardHold: { backgroundColor: '#fff7ed', borderColor: '#fb923c' },
+  cardClinic: { backgroundColor: '#fefce8', borderColor: '#facc15' },
+  clinicBadge: { marginLeft: 6, backgroundColor: '#fef08a', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  clinicBadgeText: { color: '#854d0e', fontSize: 10, fontWeight: '800' },
+  statusBadgeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 16 },
   dateBox: { width: 54, height: 58, borderRadius: 12, backgroundColor: '#fdf2f8', alignItems: 'center', justifyContent: 'center', marginRight: 13 },
   day: { fontSize: 21, color: '#ec4899', fontWeight: '800' },
   month: { color: '#9d174d', fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
@@ -506,7 +541,7 @@ const styles = StyleSheet.create({
   handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: '#d1d5db', alignSelf: 'center', marginBottom: 18 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sheetTitle: { fontSize: 20, fontWeight: '800', color: '#111827' },
-  statusBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 12, marginTop: 16 },
+  statusBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 12 },
   detailService: { fontSize: 23, fontWeight: '800', color: '#111827', marginVertical: 20 },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   detailText: { color: '#4b5563', fontSize: 15 },

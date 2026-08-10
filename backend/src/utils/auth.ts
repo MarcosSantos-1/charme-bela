@@ -204,6 +204,7 @@ export const PUBLIC_ROUTE_EXACT = new Set([
   'GET /services',
   'GET /plans',
   'GET /testimonials',
+  'GET /banners',
   'GET /config',
   'GET /schedule/available',
 ])
@@ -224,6 +225,7 @@ export function isPublicRoute(method: string, url: string): boolean {
   if (method === 'GET' && /^\/plans\/[^/]+$/.test(path)) return true
   if (method === 'GET' && /^\/plans\/tier\/[^/]+$/.test(path)) return true
   if (method === 'GET' && path === '/testimonials') return true
+  if (method === 'GET' && path === '/banners') return true
 
   const key = `${method} ${path}`
   return PUBLIC_ROUTE_EXACT.has(key)

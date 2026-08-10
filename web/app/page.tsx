@@ -5,6 +5,9 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Button } from '@/components/Button'
 import { SavedAccountButton } from '@/components/SavedAccountButton'
+import { BannerSlider } from '@/components/BannerSlider'
+import * as api from '@/lib/api'
+import type { Banner } from '@/lib/api'
 import {
   Sparkles,
   Calendar,
@@ -28,6 +31,19 @@ import {
 export default function LandingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  const [landingBanners, setLandingBanners] = useState<Banner[]>([])
+
+  useEffect(() => {
+    async function loadBanners() {
+      try {
+        const banners = await api.getBanners({ location: 'LANDING', activeOnly: true })
+        setLandingBanners(Array.isArray(banners) ? banners : [])
+      } catch {
+        setLandingBanners([])
+      }
+    }
+    void loadBanners()
+  }, [])
 
   const galleryImages = Array.from({ length: 9 }, (_, i) => `/gallery/${i + 1}.jpeg`)
 
@@ -205,6 +221,12 @@ export default function LandingPage() {
       {/* Treatment Categories Section */}
       <section id="servicos" className="py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {landingBanners.length > 0 ? (
+            <div className="mb-16">
+              <BannerSlider banners={landingBanners} roundedClassName="rounded-2xl" />
+            </div>
+          ) : null}
+
           {/* Section Header */}
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">

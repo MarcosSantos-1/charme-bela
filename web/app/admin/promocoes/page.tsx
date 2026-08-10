@@ -1,216 +1,375 @@
 'use client'
 
-import { useState } from 'react'
-import { Upload, X, Eye, Save } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Upload, X, Plus, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/Button'
 import Image from 'next/image'
+import toast from 'react-hot-toast'
+import * as api from '@/lib/api'
+import type { Banner, BannerLocation } from '@/lib/api'
+import { HOME_BANNER, fileToHomeBannerDataUrl } from '@/lib/homeBanner'
 
-interface Banner {
-  id: string
+type Draft = {
   title: string
-  imageUrl: string
-  location: 'landing' | 'cliente'
-  isActive: boolean
+  imageUrl: string | null
+  imageWidth?: number
+  imageHeight?: number
 }
 
+const emptyDraft = (): Draft => ({ title: '', imageUrl: null })
+
 export default function PromocoesPage() {
-  const [banners, setBanners] = useState<Banner[]>([
-    {
-      id: '1',
-      title: 'Promoção de Outubro',
-      imageUrl: '/images/promo-placeholder.jpg',
-      location: 'landing',
-      isActive: true
+  const [landingBanners, setLandingBanners] = useState<Banner[]>([])
+  const [clientBanners, setClientBanners] = useState<Banner[]>([])
+  const [loading, setLoading] = useState(true)
+  const [savingLocation, setSavingLocation] = useState<BannerLocation | null>(null)
+  const [landingDraft, setLandingDraft] = useState<Draft>(emptyDraft)
+  const [clientDraft, setClientDraft] = useState<Draft>(emptyDraft)
+
+  const loadBanners = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [landing, client] = await Promise.all([
+        api.getBanners({ location: 'LANDING' }),
+        api.getBanners({ location: 'CLIENT' }),
+      ])
+      setLandingBanners(Array.isArray(landing) ? landing : [])
+      setClientBanners(Array.isArray(client) ? client : [])
+    } catch (error) {
+      console.error(error)
+      toast.error('Erro ao carregar banners')
+    } finally {
+      setLoading(false)
     }
-  ])
+  }, [])
 
-  const [previewImage, setPreviewImage] = useState<string | null>(null)
+  useEffect(() => {
+    void loadBanners()
+  }, [loadBanners])
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, location: 'landing' | 'cliente') => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setPreviewImage(reader.result as string)
-      }
-      reader.readAsDataURL(file)
+  const handleSave = async (location: BannerLocation) => {
+    const draft = location === 'LANDING' ? landingDraft : clientDraft
+    if (!draft.title.trim()) {
+      toast.error('Informe o título do banner')
+      return
+    }
+    if (!draft.imageUrl) {
+      toast.error('Arraste ou selecione uma imagem 2:1')
+      return
+    }
+
+    setSavingLocation(location)
+    try {
+      await api.createBanner({
+        title: draft.title.trim(),
+        imageUrl: draft.imageUrl,
+        location,
+        imageWidth: draft.imageWidth,
+        imageHeight: draft.imageHeight,
+        isActive: true,
+      })
+      toast.success('Banner adicionado')
+      if (location === 'LANDING') setLandingDraft(emptyDraft())
+      else setClientDraft(emptyDraft())
+      await loadBanners()
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error?.message || 'Erro ao salvar banner')
+    } finally {
+      setSavingLocation(null)
+    }
+  }
+
+  const handleToggle = async (banner: Banner) => {
+    try {
+      await api.updateBanner(banner.id, { isActive: !banner.isActive })
+      await loadBanners()
+    } catch (error) {
+      console.error(error)
+      toast.error('Erro ao atualizar banner')
+    }
+  }
+
+  const handleDelete = async (banner: Banner) => {
+    if (!confirm(`Remover o banner "${banner.title}"?`)) return
+    try {
+      await api.deleteBanner(banner.id)
+      toast.success('Banner removido')
+      await loadBanners()
+    } catch (error) {
+      console.error(error)
+      toast.error('Erro ao remover banner')
     }
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Promoções e Banners</h2>
-        <p className="text-gray-600 mt-1">Gerencie os banners promocionais do site e área do cliente</p>
+        <p className="text-gray-600 mt-1">
+          Gerencie o slider da landing e da área do cliente (app + web)
+        </p>
       </div>
 
-      {/* Banner Dimensions Info */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-sm text-blue-800 font-medium mb-2">
-          📐 Dimensões recomendadas:
-        </p>
+        <p className="text-sm text-blue-800 font-medium mb-2">Dimensões do card (formato do app)</p>
         <div className="text-sm text-blue-700 space-y-1">
-          <p>• <strong>Desktop:</strong> 1400px × 400px (proporção 7:2)</p>
-          <p>• <strong>Mobile:</strong> A imagem será redimensionada automaticamente</p>
-          <p>• <strong>Formato:</strong> JPG, PNG ou WebP</p>
+          <p>
+            • <strong>Master:</strong> {HOME_BANNER.sizeHint}px (proporção {HOME_BANNER.aspectLabel})
+          </p>
+          <p>• Arraste a imagem para o dropzone — o preview usa o mesmo formato do mobile</p>
+          <p>• Formato: JPG, PNG ou WebP (comprimido automaticamente)</p>
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Banner Landing Page */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Banner - Landing Page
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Será exibido acima da seção "Nossos Tratamentos"
-          </p>
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-gray-500">
+          <Loader2 className="w-6 h-6 animate-spin mr-2" />
+          Carregando banners…
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-2 gap-6">
+          <BannerSection
+            title="Banner — Landing Page"
+            description='Exibido acima da seção "Nossos Tratamentos"'
+            location="LANDING"
+            banners={landingBanners}
+            draft={landingDraft}
+            setDraft={setLandingDraft}
+            saving={savingLocation === 'LANDING'}
+            onSave={() => handleSave('LANDING')}
+            onToggle={handleToggle}
+            onDelete={handleDelete}
+          />
+          <BannerSection
+            title="Banner — Área do Cliente"
+            description="Exibido no dashboard do cliente (web) e na home do app"
+            location="CLIENT"
+            banners={clientBanners}
+            draft={clientDraft}
+            setDraft={setClientDraft}
+            saving={savingLocation === 'CLIENT'}
+            onSave={() => handleSave('CLIENT')}
+            onToggle={handleToggle}
+            onDelete={handleDelete}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
 
-          {/* Upload Area */}
-          <div className="mb-4">
-            <label className="block">
-              <div className="relative aspect-[7/2] border-2 border-dashed border-gray-300 rounded-lg hover:border-pink-400 transition-colors cursor-pointer overflow-hidden bg-gray-50">
-                {previewImage ? (
-                  <>
-                    <Image
-                      src={previewImage}
-                      alt="Preview"
-                      fill
-                      className="object-cover"
-                    />
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault()
-                        setPreviewImage(null)
-                      }}
-                      className="absolute top-2 right-2 w-8 h-8 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600 transition-colors z-10"
-                    >
-                      <X className="w-5 h-5 text-white" />
-                    </button>
-                  </>
+function BannerSection({
+  title,
+  description,
+  location,
+  banners,
+  draft,
+  setDraft,
+  saving,
+  onSave,
+  onToggle,
+  onDelete,
+}: {
+  title: string
+  description: string
+  location: BannerLocation
+  banners: Banner[]
+  draft: Draft
+  setDraft: (draft: Draft) => void
+  saving: boolean
+  onSave: () => void
+  onToggle: (banner: Banner) => void
+  onDelete: (banner: Banner) => void
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+        <p className="text-sm text-gray-600 mt-1">{description}</p>
+      </div>
+
+      <BannerDropzone
+        imageUrl={draft.imageUrl}
+        onImage={(imageUrl, width, height) =>
+          setDraft({ ...draft, imageUrl, imageWidth: width, imageHeight: height })
+        }
+        onClear={() => setDraft({ ...draft, imageUrl: null })}
+      />
+
+      <input
+        type="text"
+        value={draft.title}
+        onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+        placeholder="Título do banner (ex: Promoção de Outubro)"
+        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 placeholder:text-gray-500"
+      />
+
+      <Button variant="primary" className="w-full" onClick={onSave} disabled={saving}>
+        {saving ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Salvando…
+          </>
+        ) : (
+          <>
+            <Plus className="w-4 h-4 mr-2" />
+            Adicionar banner
+          </>
+        )}
+      </Button>
+
+      <div className="border-t border-gray-100 pt-4 space-y-3">
+        <h4 className="text-sm font-semibold text-gray-800">
+          Banners {location === 'LANDING' ? 'da landing' : 'da área do cliente'} ({banners.length})
+        </h4>
+        {banners.length === 0 ? (
+          <p className="text-sm text-gray-500">Nenhum banner ainda. Adicione o primeiro acima.</p>
+        ) : (
+          banners.map((banner) => (
+            <div
+              key={banner.id}
+              className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg"
+            >
+              <div className="relative w-28 aspect-[2/1] rounded overflow-hidden bg-gray-100 flex-shrink-0">
+                {banner.imageUrl.startsWith('data:') ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={banner.imageUrl} alt={banner.title} className="absolute inset-0 w-full h-full object-cover" />
                 ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <Upload className="w-12 h-12 text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-600">Clique para fazer upload</p>
-                    <p className="text-xs text-gray-500 mt-1">1400px × 400px</p>
-                  </div>
+                  <Image src={banner.imageUrl} alt={banner.title} fill className="object-cover" unoptimized />
                 )}
               </div>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleImageUpload(e, 'landing')}
-                className="hidden"
-              />
-            </label>
-          </div>
-
-          <div className="space-y-3">
-            <input
-              type="text"
-              placeholder="Título do banner (ex: Promoção de Outubro)"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 placeholder:text-gray-500"
-            />
-
-            <div className="flex space-x-2">
-              <Button variant="outline" className="flex-1">
-                <Eye className="w-4 h-4 mr-2" />
-                Visualizar
-              </Button>
-              <Button variant="primary" className="flex-1">
-                <Save className="w-4 h-4 mr-2" />
-                Salvar
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Banner Área do Cliente */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Banner - Área do Cliente
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Será exibido no dashboard do cliente
-          </p>
-
-          {/* Upload Area */}
-          <div className="mb-4">
-            <label className="block">
-              <div className="relative aspect-[7/2] border-2 border-dashed border-gray-300 rounded-lg hover:border-pink-400 transition-colors cursor-pointer overflow-hidden bg-gray-50">
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <Upload className="w-12 h-12 text-gray-400 mb-2" />
-                  <p className="text-sm text-gray-600">Clique para fazer upload</p>
-                  <p className="text-xs text-gray-500 mt-1">1400px × 400px</p>
-                </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-gray-900 truncate">{banner.title}</div>
+                <button
+                  type="button"
+                  onClick={() => onToggle(banner)}
+                  className={`mt-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                    banner.isActive
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  {banner.isActive ? 'Ativo' : 'Inativo'}
+                </button>
               </div>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleImageUpload(e, 'cliente')}
-                className="hidden"
-              />
-            </label>
-          </div>
-
-          <div className="space-y-3">
-            <input
-              type="text"
-              placeholder="Título do banner"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 placeholder:text-gray-500"
-            />
-
-            <div className="flex space-x-2">
-              <Button variant="outline" className="flex-1">
-                <Eye className="w-4 h-4 mr-2" />
-                Visualizar
-              </Button>
-              <Button variant="primary" className="flex-1">
-                <Save className="w-4 h-4 mr-2" />
-                Salvar
-              </Button>
+              <button
+                type="button"
+                onClick={() => onDelete(banner)}
+                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                aria-label="Remover"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Banners Ativos */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Banners Ativos
-        </h3>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-            <div className="flex items-center space-x-4">
-              <div className="w-32 h-16 bg-gray-100 rounded overflow-hidden flex-shrink-0">
-                <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
-                  Preview
-                </div>
-              </div>
-              <div>
-                <div className="font-medium text-gray-900">Banner Landing Page</div>
-                <div className="text-sm text-gray-500">Criado em 14/10/2025</div>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                Ativo
-              </span>
-              <Button variant="ghost" size="sm">
-                Editar
-              </Button>
-              <Button variant="ghost" size="sm">
-                <X className="w-4 h-4 text-red-600" />
-              </Button>
-            </div>
-          </div>
-        </div>
+          ))
+        )}
       </div>
     </div>
   )
 }
 
+function BannerDropzone({
+  imageUrl,
+  onImage,
+  onClear,
+}: {
+  imageUrl: string | null
+  onImage: (dataUrl: string, width: number, height: number) => void
+  onClear: () => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const [processing, setProcessing] = useState(false)
 
+  const processFile = async (file: File | undefined) => {
+    if (!file) return
+    setProcessing(true)
+    try {
+      const result = await fileToHomeBannerDataUrl(file)
+      onImage(result.dataUrl, result.width, result.height)
+      toast.success('Imagem pronta no formato 2:1')
+    } catch (error: any) {
+      toast.error(error?.message || 'Falha ao processar imagem')
+    } finally {
+      setProcessing(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => !processing && inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click()
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault()
+          setDragging(true)
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault()
+          setDragging(false)
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragging(false)
+          void processFile(e.dataTransfer.files?.[0])
+        }}
+        className={`relative aspect-[2/1] border-2 border-dashed rounded-xl cursor-pointer overflow-hidden transition-colors ${
+          dragging
+            ? 'border-pink-500 bg-pink-50'
+            : 'border-gray-300 hover:border-pink-400 bg-gray-50'
+        }`}
+      >
+        {imageUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imageUrl} alt="Preview" className="absolute inset-0 w-full h-full object-cover" />
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onClear()
+              }}
+              className="absolute top-2 right-2 w-8 h-8 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600 z-10"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </>
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center">
+            {processing ? (
+              <>
+                <Loader2 className="w-10 h-10 text-pink-500 animate-spin mb-2" />
+                <p className="text-sm text-gray-600">Processando imagem…</p>
+              </>
+            ) : (
+              <>
+                <Upload className="w-10 h-10 text-gray-400 mb-2" />
+                <p className="text-sm text-gray-700 font-medium">Arraste a imagem ou clique</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {HOME_BANNER.sizeHint} ({HOME_BANNER.aspectLabel})
+                </p>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => void processFile(e.target.files?.[0])}
+      />
+    </div>
+  )
+}

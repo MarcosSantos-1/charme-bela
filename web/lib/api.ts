@@ -292,6 +292,73 @@ export async function deleteTestimonial(id: string) {
 }
 
 // ============================================
+// BANNERS / PROMOÇÕES
+// ============================================
+
+export type BannerLocation = 'LANDING' | 'CLIENT'
+
+export interface Banner {
+  id: string
+  title: string
+  imageUrl: string
+  location: BannerLocation
+  isActive: boolean
+  sortOrder: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export async function getBanners(params?: {
+  location?: BannerLocation
+  activeOnly?: boolean
+}): Promise<Banner[]> {
+  const search = new URLSearchParams()
+  if (params?.location) search.set('location', params.location)
+  if (params?.activeOnly) search.set('activeOnly', 'true')
+  const qs = search.toString()
+  return apiRequest(`/banners${qs ? `?${qs}` : ''}`, { method: 'GET' })
+}
+
+export async function createBanner(data: {
+  title: string
+  imageUrl: string
+  location: BannerLocation
+  sortOrder?: number
+  isActive?: boolean
+  imageWidth?: number
+  imageHeight?: number
+}): Promise<Banner> {
+  return apiRequest('/banners', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  })
+}
+
+export async function updateBanner(
+  id: string,
+  data: {
+    title?: string
+    imageUrl?: string
+    location?: BannerLocation
+    sortOrder?: number
+    isActive?: boolean
+    imageWidth?: number
+    imageHeight?: number
+  }
+): Promise<Banner> {
+  return apiRequest(`/banners/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  })
+}
+
+export async function deleteBanner(id: string) {
+  return apiRequest(`/banners/${id}`, {
+    method: 'DELETE'
+  })
+}
+
+// ============================================
 // SERVICES
 // ============================================
 

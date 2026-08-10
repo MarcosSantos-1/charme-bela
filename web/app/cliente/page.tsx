@@ -13,8 +13,10 @@ import { Calendar, Clock, Sparkles, ChevronRight, FileText, FileHeart } from 'lu
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import * as api from '@/lib/api'
+import type { Banner } from '@/lib/api'
 import { Service } from '@/types'
 import { isAppointmentUpcoming } from '@/lib/timeUtils'
+import { BannerSlider } from '@/components/BannerSlider'
 
 export default function ClientePage() {
   const { user } = useAuth()
@@ -23,6 +25,7 @@ export default function ClientePage() {
   const { subscription, hasSubscription, remainingTreatments, loading: subscriptionLoading } = useSubscription(user?.id)
   const { appointments, loading: appointmentsLoading } = useAppointments(user?.id)
   const [allServices, setAllServices] = useState<Service[]>([])
+  const [promoBanners, setPromoBanners] = useState<Banner[]>([])
   
   // Buscar todos os serviços para contar
   useEffect(() => {
@@ -35,6 +38,19 @@ export default function ClientePage() {
       }
     }
     loadServices()
+  }, [])
+
+  useEffect(() => {
+    async function loadBanners() {
+      try {
+        const banners = await api.getBanners({ location: 'CLIENT', activeOnly: true })
+        setPromoBanners(Array.isArray(banners) ? banners : [])
+      } catch (error) {
+        console.error('Erro ao carregar banners:', error)
+        setPromoBanners([])
+      }
+    }
+    void loadBanners()
   }, [])
   
   // Filtrar próximos: hora de parede (mesmo critério do admin), não UTC real
@@ -116,68 +132,75 @@ export default function ClientePage() {
             <NotificationsPanel userId={user?.id || null} />
           </div>
           
-          {/* My Plan Card - DINÂMICO */}
+          {/* Card principal: plano + promoções no mesmo carrossel */}
           {subscriptionLoading ? (
-            <div className="bg-gray-200 rounded-2xl p-6 animate-pulse h-48"></div>
-          ) : hasSubscription && subscription ? (
-            <div className={`bg-gradient-to-br ${getPlanColors().from} ${getPlanColors().to} rounded-2xl text-white p-6`}>
-              <div className="flex items-center justify-between mb-4">
-                <Sparkles className="w-8 h-8" />
-                <span className={`px-3 py-1 backdrop-blur-sm rounded-full text-xs font-medium ${
-                  subscription.status === 'ACTIVE' ? 'bg-green-500/30' : 'bg-red-500/30'
-                }`}>
-                  {subscription.status === 'ACTIVE' ? 'Ativo' : subscription.status}
-                </span>
-              </div>
-              <h3 className="text-2xl font-bold mb-1">{subscription.plan.name}</h3>
-              <p className="text-pink-100 text-sm mb-4">R$ {subscription.plan.price.toFixed(2)} / mês</p>
-              
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                <div className="text-sm text-pink-100 mb-2">Tratamentos usados este mês</div>
-            <div className="flex items-center space-x-3">
-                  <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-white rounded-full transition-all" 
-                      style={{ 
-                        width: `${((subscription.currentMonthUsage?.totalTreatments || 0) / subscription.plan.maxTreatmentsPerMonth) * 100}%` 
-                      }} 
-                    />
-                  </div>
-                  <div className="text-xl font-bold">
-                    {subscription.currentMonthUsage?.totalTreatments || 0}/{subscription.plan.maxTreatmentsPerMonth}
-              </div>
-            </div>
-                <div className="text-xs text-pink-200 mt-2">
-                  Restam: {remainingTreatments} tratamentos
-            </div>
-          </div>
-        </div>
+            <div className="bg-gray-200 rounded-2xl animate-pulse aspect-[2/1]" />
           ) : (
-            /* Sem assinatura */
-            <Link href="/cliente/plano">
-              <div className="bg-gradient-to-br from-gray-400 to-gray-500 rounded-2xl text-white p-6 hover:shadow-lg transition-all cursor-pointer">
-                <div className="flex items-center justify-between mb-4">
-                  <FileHeart className="w-8 h-8" />
-                  <span className="px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-xs font-medium">
-                    Sem Plano
-                  </span>
-                </div>
-                <h3 className="text-2xl font-bold mb-1">Assine um Plano</h3>
-                <p className="text-gray-100 text-sm mb-4">A partir de R$ 200,00 / mês</p>
-                
-                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                  <p className="text-sm">
-                    ✨ Até 6 tratamentos por mês<br/>
-                    💆 Acesso a diversos tratamentos<br/>
-                    🎯 Preço fixo mensal
-                  </p>
+            <BannerSlider
+              banners={promoBanners}
+              planSlide={
+                hasSubscription && subscription ? (
+                  <Link href="/cliente/plano" className="block h-full">
+                    <div className={`h-full bg-gradient-to-br ${getPlanColors().from} ${getPlanColors().to} text-white p-6 flex flex-col justify-between`}>
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <Sparkles className="w-7 h-7" />
+                          <span className={`px-3 py-1 backdrop-blur-sm rounded-full text-xs font-medium ${
+                            subscription.status === 'ACTIVE' ? 'bg-green-500/30' : 'bg-red-500/30'
+                          }`}>
+                            {subscription.status === 'ACTIVE' ? 'Ativo' : subscription.status}
+                          </span>
+                        </div>
+                        <h3 className="text-2xl font-bold mb-1">{subscription.plan.name}</h3>
+                        <p className="text-pink-100 text-sm">R$ {subscription.plan.price.toFixed(2)} / mês</p>
+                      </div>
+                      <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+                        <div className="text-sm text-pink-100 mb-2">Tratamentos usados este mês</div>
+                        <div className="flex items-center space-x-3">
+                          <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-white rounded-full transition-all"
+                              style={{
+                                width: `${((subscription.currentMonthUsage?.totalTreatments || 0) / subscription.plan.maxTreatmentsPerMonth) * 100}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="text-xl font-bold">
+                            {subscription.currentMonthUsage?.totalTreatments || 0}/{subscription.plan.maxTreatmentsPerMonth}
+                          </div>
+                        </div>
+                        <div className="text-xs text-pink-200 mt-2">
+                          Restam: {remainingTreatments} tratamentos
+                        </div>
+                      </div>
                     </div>
-                
-                <div className="mt-4 text-center">
-                  <span className="text-sm font-semibold">Toque para ver os planos →</span>
-                  </div>
-                </div>
-            </Link>
+                  </Link>
+                ) : (
+                  <Link href="/cliente/plano" className="block h-full">
+                    <div className="h-full bg-gradient-to-br from-gray-400 to-gray-500 text-white p-6 flex flex-col justify-between hover:brightness-105 transition-all">
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <FileHeart className="w-7 h-7" />
+                          <span className="px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-xs font-medium">
+                            Sem Plano
+                          </span>
+                        </div>
+                        <h3 className="text-2xl font-bold mb-1">Assine um Plano</h3>
+                        <p className="text-gray-100 text-sm">A partir de R$ 200,00 / mês</p>
+                      </div>
+                      <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+                        <p className="text-sm">
+                          ✨ Até 6 tratamentos por mês<br />
+                          💆 Acesso a diversos tratamentos<br />
+                          🎯 Preço fixo mensal
+                        </p>
+                        <div className="mt-3 text-sm font-semibold">Toque para ver os planos →</div>
+                      </div>
+                    </div>
+                  </Link>
+                )
+              }
+            />
           )}
 
               {/* Categorias de Procedimentos */}

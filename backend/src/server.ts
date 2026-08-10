@@ -13,6 +13,7 @@ import { vouchersRoutes } from './routes/vouchers'
 import { scheduleRoutes } from './routes/schedule'
 import { subscriptionsRoutes } from './routes/subscriptions'
 import { testimonialRoutes } from './routes/testimonials'
+import { bannerRoutes } from './routes/banners'
 import { stripeRoutes } from './routes/stripe'
 import { notificationRoutes } from './routes/notifications'
 import { setupCronJobs } from './utils/cron'
@@ -148,6 +149,7 @@ async function start() {
     await app.register(scheduleRoutes)
     await app.register(subscriptionsRoutes)
     await app.register(testimonialRoutes)
+    await app.register(bannerRoutes)
     await app.register(stripeRoutes)
     await app.register(notificationRoutes)
     logger.success('Rotas registradas com sucesso')

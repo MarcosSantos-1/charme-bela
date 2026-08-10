@@ -11,7 +11,8 @@ import { useCommercial } from '../../contexts/CommercialContext';
 import { CATEGORY_META, isExpiredUnpaidHold, isOnlinePaymentHold, type ServiceCategory } from '../../types/commercial';
 import { displayUserFirstName } from '../../lib/userDisplay';
 import { CATEGORY_ILLUSTRATIONS, logoSource } from '../../assets/brandAssets';
-import { getUnreadNotificationsCount } from '../../lib/api';
+import { getBanners, getUnreadNotificationsCount, type Banner } from '../../lib/api';
+import { HomePromoCarousel } from '../../components/HomePromoCarousel';
 import {
   HOME_BANNER_ASPECT_RATIO,
   HOME_BANNER_BORDER_RADIUS,
@@ -64,6 +65,7 @@ export function ClientHomeScreen() {
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [clinicInfoVisible, setClinicInfoVisible] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [promoBanners, setPromoBanners] = useState<Banner[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const firstName = displayUserFirstName(user);
 
@@ -83,13 +85,28 @@ export function ClientHomeScreen() {
     }
   }, [user?.id]);
 
+  const loadPromoBanners = useCallback(async () => {
+    try {
+      const banners = await getBanners({ location: 'CLIENT', activeOnly: true });
+      setPromoBanners(Array.isArray(banners) ? banners : []);
+    } catch (err) {
+      console.warn('[Home] falha ao carregar banners CLIENT', err);
+      setPromoBanners([]);
+    }
+  }, []);
+
+  const refreshHome = useCallback(async () => {
+    await Promise.all([refresh(), loadPromoBanners(), refreshUnread()]);
+  }, [refresh, loadPromoBanners, refreshUnread]);
+
   useFocusEffect(
     useCallback(() => {
       scrollToTop();
       void refreshUnread();
+      void loadPromoBanners();
       const unsubscribe = navigation.addListener('tabPress', scrollToTop);
       return unsubscribe;
-    }, [navigation, scrollToTop, refreshUnread])
+    }, [navigation, scrollToTop, refreshUnread, loadPromoBanners])
   );
 
   const showInitialSkeleton = loading && services.length === 0;
@@ -150,7 +167,7 @@ export function ClientHomeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView ref={scrollRef} style={styles.scrollView} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}>
+      <ScrollView ref={scrollRef} style={styles.scrollView} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refreshHome()} tintColor="#ec4899" />}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -197,14 +214,29 @@ export function ClientHomeScreen() {
           </TouchableOpacity>
         ) : null}
 
-        {/* Plan Card */}
-        {showInitialSkeleton ? (
-          <PlanCardSkeleton />
-        ) : activePlan ? (
-          <TouchableOpacity activeOpacity={0.9} onPress={() => navigation.navigate('Plan')}><ActivePlanCard plan={activePlan} /></TouchableOpacity>
-        ) : (
-          <NoPlanCard onPress={() => navigation.navigate('Plan')} />
-        )}
+        {/* Card principal: plano + banners no mesmo carrossel 2:1 */}
+        <View style={styles.planCardContainer}>
+          {showInitialSkeleton ? (
+            <PlanCardSkeleton />
+          ) : (
+            <HomePromoCarousel
+              banners={promoBanners}
+              planSlide={
+                activePlan ? (
+                  <TouchableOpacity
+                    activeOpacity={0.92}
+                    onPress={() => navigation.navigate('Plan')}
+                    style={styles.heroSlideFill}
+                  >
+                    <ActivePlanCard plan={activePlan} embedded />
+                  </TouchableOpacity>
+                ) : (
+                  <NoPlanCard onPress={() => navigation.navigate('Plan')} embedded />
+                )
+              }
+            />
+          )}
+        </View>
 
         {showHardError ? (
           <View style={styles.hardErrorBox}>
@@ -329,13 +361,11 @@ function SkeletonBlock({ style }: { style?: object }) {
 
 function PlanCardSkeleton() {
   return (
-    <View style={styles.planCardContainer}>
-      <View style={styles.planCardSkeleton}>
-        <SkeletonBlock style={{ width: '55%', height: 22, marginBottom: 10 }} />
-        <SkeletonBlock style={{ width: '40%', height: 14, marginBottom: 28 }} />
-        <SkeletonBlock style={{ width: '100%', height: 8, borderRadius: 4, marginBottom: 12 }} />
-        <SkeletonBlock style={{ width: '45%', height: 16 }} />
-      </View>
+    <View style={styles.planCardSkeleton}>
+      <SkeletonBlock style={{ width: '55%', height: 22, marginBottom: 10 }} />
+      <SkeletonBlock style={{ width: '40%', height: 14, marginBottom: 28 }} />
+      <SkeletonBlock style={{ width: '100%', height: 8, borderRadius: 4, marginBottom: 12 }} />
+      <SkeletonBlock style={{ width: '45%', height: 16 }} />
     </View>
   );
 }
@@ -370,15 +400,14 @@ function CategoriesSkeleton() {
   );
 }
 
-function ActivePlanCard({ plan }: { plan: any }) {
+function ActivePlanCard({ plan, embedded }: { plan: any; embedded?: boolean }) {
   const progress = (plan.usedTreatments / plan.totalTreatments) * 100;
   const remaining = plan.totalTreatments - plan.usedTreatments;
 
-  return (
-    <View style={styles.planCardContainer}>
+  const card = (
       <LinearGradient
         colors={plan.gradientColors}
-        style={styles.planCard}
+        style={[styles.planCard, embedded && styles.planCardEmbedded]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
@@ -412,16 +441,17 @@ function ActivePlanCard({ plan }: { plan: any }) {
           </Text>
         </View>
       </LinearGradient>
-    </View>
   );
+
+  if (embedded) return card;
+  return <View style={styles.planCardContainer}>{card}</View>;
 }
 
-function NoPlanCard({ onPress }: { onPress: () => void }) {
-  return (
-    <View style={styles.planCardContainer}>
+function NoPlanCard({ onPress, embedded }: { onPress: () => void; embedded?: boolean }) {
+  const card = (
       <LinearGradient
         colors={[...NO_PLAN_CARD.gradientColors]}
-        style={styles.planCard}
+        style={[styles.planCard, embedded && styles.planCardEmbedded]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
@@ -446,8 +476,10 @@ function NoPlanCard({ onPress }: { onPress: () => void }) {
           </TouchableOpacity>
         </View>
       </LinearGradient>
-    </View>
   );
+
+  if (embedded) return card;
+  return <View style={styles.planCardContainer}>{card}</View>;
 }
 
 function CategoryCard({ category, hasPlan, onPress }: { category: any; hasPlan: boolean; onPress: () => void }) {
@@ -667,6 +699,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
+  heroSlideFill: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
   planCard: {
     borderRadius: HOME_BANNER_BORDER_RADIUS,
     padding: 20,
@@ -679,6 +716,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 4,
+  },
+  planCardEmbedded: {
+    aspectRatio: undefined,
+    flex: 1,
+    height: '100%',
+    borderRadius: 0,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   /** Overlay de imagem futura: cover dentro do mesmo aspect 2:1. */
   planCardImage: {

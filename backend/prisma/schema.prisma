@@ -333,6 +333,28 @@ model Testimonial {
 }
 
 // ============================================
+// BANNERS / PROMOÇÕES (slider home)
+// ============================================
+
+enum BannerLocation {
+  LANDING
+  CLIENT
+}
+
+model Banner {
+  id          String         @id @default(cuid())
+  title       String
+  imageUrl    String         @db.Text // data URL ou URL pública (MVP)
+  location    BannerLocation
+  isActive    Boolean        @default(true)
+  sortOrder   Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([location, isActive, sortOrder])
+}
+
+// ============================================
 // CONFIGURAÇÕES DO SISTEMA
 // ============================================
 

@@ -10,7 +10,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { CATEGORY_META, isExpiredUnpaidHold, isOnlinePaymentHold, type ServiceCategory } from '../../types/commercial';
 import { displayUserFirstName } from '../../lib/userDisplay';
-import { CATEGORY_ILLUSTRATIONS, logoSource } from '../../assets/brandAssets';
+import { getCategoryIllustrations, logoSource } from '../../assets/brandAssets';
 import { getUnreadNotificationsCount } from '../../lib/api';
 import { HomePromoCarousel } from '../../components/HomePromoCarousel';
 import {
@@ -57,6 +57,7 @@ function friendlyLoadError(error: string | null) {
 export function ClientHomeScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
+  const categoryIllustrations = getCategoryIllustrations(user?.anamnesisForm?.personalData?.sex);
   const {
     services,
     appointments,
@@ -289,7 +290,13 @@ export function ClientHomeScreen() {
               ) : (
                 <View style={styles.categoriesGrid}>
                   {categories.map(category => (
-                    <CategoryCard key={category.id} category={category} hasPlan={category.included} onPress={() => navigation.navigate('Services', { category: category.id })} />
+                    <CategoryCard
+                      key={category.id}
+                      category={category}
+                      hasPlan={category.included}
+                      illustration={categoryIllustrations[category.id as ServiceCategory]}
+                      onPress={() => navigation.navigate('Services', { category: category.id })}
+                    />
                   ))}
                 </View>
               )}
@@ -476,9 +483,17 @@ function NoPlanCard({ onPress, embedded }: { onPress: () => void; embedded?: boo
   return <View style={styles.planCardContainer}>{card}</View>;
 }
 
-function CategoryCard({ category, hasPlan, onPress }: { category: any; hasPlan: boolean; onPress: () => void }) {
-  const illustration = CATEGORY_ILLUSTRATIONS[category.id as ServiceCategory];
-
+function CategoryCard({
+  category,
+  hasPlan,
+  illustration,
+  onPress,
+}: {
+  category: any;
+  hasPlan: boolean;
+  illustration: any;
+  onPress: () => void;
+}) {
   return (
     <TouchableOpacity
       style={[styles.categoryCard, { borderColor: category.color }]}

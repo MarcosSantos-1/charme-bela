@@ -9,7 +9,7 @@ import { PageIndicator } from './PageIndicator';
 const benefits = [
   'Tratamentos garantidos todo mês',
   'Até 60% de desconto em serviços',
-  'Atendimento prioritário e mimos exclusivos',
+  'Bronze, Prata ou Ouro — escolha o seu ritmo',
 ];
 
 interface ClubStepProps {
@@ -42,8 +42,8 @@ export function ClubStep({ total, current, onNext, onBack, onSelect, width }: Cl
         ]}
       >
         <View style={styles.badge}>
-          <Ionicons name="diamond-outline" size={14} color="#8a5a2d" />
-          <Text style={styles.badgeText}>Clube Charme & Bela</Text>
+          <Ionicons name="sparkles" size={14} color="#8a5a2d" />
+          <Text style={styles.badgeText}>Charme & Bela Club</Text>
         </View>
 
         <View style={styles.cardWrap}>
@@ -57,20 +57,21 @@ export function ClubStep({ total, current, onNext, onBack, onSelect, width }: Cl
             <View style={styles.vipTop}>
               <View style={styles.vipBrand}>
                 <Image source={logoSource} style={styles.vipLogo} resizeMode="contain" />
-                <Text style={styles.vipLabel}>VIP</Text>
+                <Text style={styles.vipLabel}>Club</Text>
               </View>
               <View style={styles.memberPill}>
                 <Text style={styles.memberPillText}>Membro</Text>
               </View>
             </View>
 
-            <Text style={styles.subLabel}>Assinatura</Text>
-            <Text style={styles.planName}>Plano Diamante</Text>
+            <Text style={styles.subLabel}>Assinatura mensal</Text>
+            <Text style={styles.planName}>Plano Ouro</Text>
+            <Text style={styles.planHint}>O plano mais completo do clube</Text>
 
             <View style={styles.vipBottom}>
               <View>
-                <Text style={styles.memberName}>Beatriz Almeida</Text>
-                <Text style={styles.memberCode}>•••• 2048</Text>
+                <Text style={styles.memberName}>Seu nome aqui</Text>
+                <Text style={styles.memberCode}>Até 6 sessões / mês</Text>
               </View>
               <View style={styles.offPill}>
                 <Ionicons name="pricetag" size={12} color={brand.white} />
@@ -80,7 +81,10 @@ export function ClubStep({ total, current, onNext, onBack, onSelect, width }: Cl
           </LinearGradient>
         </View>
 
-        <Text style={styles.title}>Seu plano de beleza recorrente.</Text>
+        <Text style={styles.title}>Beleza com previsibilidade.</Text>
+        <Text style={styles.subtitle}>
+          Assine, agende pelo app e aproveite tratamentos todo mês com valor fixo.
+        </Text>
         <View style={styles.benefits}>
           {benefits.map((b) => (
             <View key={b} style={styles.benefitRow}>
@@ -212,6 +216,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: brand.goldSoft,
   },
+  planHint: {
+    marginTop: 4,
+    fontSize: 12,
+    color: 'rgba(247, 233, 221, 0.55)',
+  },
   vipBottom: {
     marginTop: 24,
     flexDirection: 'row',
@@ -242,11 +251,17 @@ const styles = StyleSheet.create({
     color: brand.white,
   },
   title: {
-    marginTop: 28,
+    marginTop: 24,
     fontSize: 28,
     fontWeight: '600',
     lineHeight: 34,
     color: brand.ink,
+  },
+  subtitle: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: brand.muted,
   },
   benefits: {
     marginTop: 16,

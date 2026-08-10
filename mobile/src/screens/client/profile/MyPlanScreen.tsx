@@ -239,7 +239,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
           </LinearGradient>
         ) : (
           <LinearGradient
-            colors={['#fff5f9', '#fce4ef', '#f8cfe3']}
+            colors={['#ffffff', '#f9fafb', '#f3f4f6']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.noPlanCard}
@@ -251,7 +251,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
                 <Text style={styles.noPlanEyebrow}>Charme & Bela Club</Text>
               </View>
               <View style={styles.noPlanPill}>
-                <Ionicons name="diamond-outline" size={12} color={brand.roseDeep} />
+                <Ionicons name="sparkles" size={12} color={brand.roseDeep} />
                 <Text style={styles.noPlanPillText}>Sem plano</Text>
               </View>
             </View>
@@ -580,12 +580,12 @@ function statusLabel(status: string) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fdf2f7' },
+  container: { flex: 1, backgroundColor: '#f9fafb' },
   back: {
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: '#f3f4f6',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -795,7 +795,7 @@ const styles = StyleSheet.create({
   },
   optionCurrent: {
     borderColor: brand.rose,
-    backgroundColor: '#fff8fb',
+    backgroundColor: '#ffffff',
   },
   optionExpanded: {
     shadowColor: brand.roseDeep,
@@ -849,7 +849,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 14,
-    backgroundColor: '#fdf2f7',
+    backgroundColor: '#f3f4f6',
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 12,
@@ -878,7 +878,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    backgroundColor: '#fdf7f9',
+    backgroundColor: '#f9fafb',
     borderRadius: 12,
     padding: 12,
   },

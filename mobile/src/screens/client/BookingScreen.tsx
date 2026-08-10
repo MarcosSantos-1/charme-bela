@@ -14,7 +14,7 @@ import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ClientStackParamList } from '../../navigation/ClientNavigator';
-import { CATEGORY_ILLUSTRATIONS } from '../../assets/brandAssets';
+import { getCategoryIllustrations } from '../../assets/brandAssets';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -45,6 +45,7 @@ const SHIFT_META = [
 
 export function BookingScreen({ route, navigation }: Props) {
   const { user } = useAuth();
+  const categoryIllustrations = getCategoryIllustrations(user?.anamnesisForm?.personalData?.sex);
   const { services, plans, subscription, vouchers, refresh } = useCommercial();
   const service = services.find((item) => item.id === route.params.serviceId);
   const isRescheduling = Boolean(route.params.appointmentId);
@@ -258,7 +259,7 @@ export function BookingScreen({ route, navigation }: Props) {
           <>
             <View style={styles.heroIcon}>
               <Image
-                source={CATEGORY_ILLUSTRATIONS[service.category]}
+                source={categoryIllustrations[service.category]}
                 style={styles.heroCategoryIcon}
                 resizeMode="contain"
               />
@@ -362,8 +363,13 @@ export function BookingScreen({ route, navigation }: Props) {
                 minDate={minDate}
                 maxDate={lastNextMonth}
                 onDayPress={(day) => {
+                  if (date === day.dateString) {
+                    setDate('');
+                    setTime('');
+                    return;
+                  }
                   setDate(day.dateString);
-                  setStep('time');
+                  setTime('');
                 }}
                 markedDates={date ? { [date]: { selected: true, selectedColor: '#ec4899' } } : {}}
                 theme={{
@@ -383,6 +389,12 @@ export function BookingScreen({ route, navigation }: Props) {
                 }}
               />
             </View>
+            {date ? (
+              <View style={styles.dateConfirmBlock}>
+                <Text style={styles.dateConfirmLabel}>{formatConfirmDate(date)}</Text>
+                <PrimaryButton title="Confirmar" onPress={() => setStep('time')} />
+              </View>
+            ) : null}
           </>
         )}
 
@@ -665,6 +677,19 @@ function formatSlotDate(value: string) {
   const month = dateValue.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
   return `${weekday}, ${day} de ${month}.`;
 }
+/** Ex.: "Segunda-Feira, dia 27 de julho" */
+function formatConfirmDate(value: string) {
+  if (!value) return '';
+  const dateValue = new Date(`${value}T12:00:00`);
+  const weekdayRaw = dateValue.toLocaleDateString('pt-BR', { weekday: 'long' });
+  const weekday = weekdayRaw
+    .split('-')
+    .map((part) => capitalize(part))
+    .join('-');
+  const day = dateValue.toLocaleDateString('pt-BR', { day: 'numeric' });
+  const month = dateValue.toLocaleDateString('pt-BR', { month: 'long' });
+  return `${weekday}, dia ${day} de ${month}`;
+}
 function formatReviewDate(value: string) {
   if (!value) return '';
   const formatted = new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR', {
@@ -808,6 +833,16 @@ const styles = StyleSheet.create({
     padding: 6,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+  },
+  dateConfirmBlock: {
+    marginTop: 18,
+  },
+  dateConfirmLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 4,
   },
 
   legend: {

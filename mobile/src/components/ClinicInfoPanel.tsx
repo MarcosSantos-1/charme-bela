@@ -142,24 +142,36 @@ export function ClinicInfoPanel({
               activeOpacity={0.9}
               onPress={() => openUrl(clinicMapsUrl(clinic))}
             >
-              <MapView
-                style={styles.map}
-                pointerEvents="none"
-                initialRegion={{
-                  latitude: clinic.latitude,
-                  longitude: clinic.longitude,
-                  latitudeDelta: 0.008,
-                  longitudeDelta: 0.008,
-                }}
-              >
-                <Marker
-                  coordinate={{
+              {Platform.OS === 'ios' ? (
+                <MapView
+                  style={styles.map}
+                  pointerEvents="none"
+                  initialRegion={{
                     latitude: clinic.latitude,
                     longitude: clinic.longitude,
+                    latitudeDelta: 0.008,
+                    longitudeDelta: 0.008,
                   }}
-                  title={clinic.name}
-                />
-              </MapView>
+                >
+                  <Marker
+                    coordinate={{
+                      latitude: clinic.latitude,
+                      longitude: clinic.longitude,
+                    }}
+                    title={clinic.name}
+                  />
+                </MapView>
+              ) : (
+                <View style={styles.mapFallback} pointerEvents="none">
+                  <View style={styles.mapFallbackPin}>
+                    <Ionicons name="location" size={28} color="#ec4899" />
+                  </View>
+                  <Text style={styles.mapFallbackLabel}>{clinic.name}</Text>
+                  <Text style={styles.mapFallbackAddress}>
+                    {clinic.addressLine1} · {clinic.cityState}
+                  </Text>
+                </View>
+              )}
               <View style={styles.mapHint}>
                 <Ionicons name="expand-outline" size={14} color="#fff" />
                 <Text style={styles.mapHintText}>Toque para abrir no Google</Text>
@@ -320,6 +332,34 @@ const styles = StyleSheet.create({
   },
   map: {
     ...StyleSheet.absoluteFillObject,
+  },
+  mapFallback: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  mapFallbackPin: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#fce7f3',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  mapFallbackLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  mapFallbackAddress: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#6b7280',
+    textAlign: 'center',
   },
   mapHint: {
     position: 'absolute',

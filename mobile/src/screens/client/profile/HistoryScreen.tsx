@@ -532,13 +532,13 @@ function DetailRow({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text:
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: brand.background,
+    backgroundColor: '#f9fafb',
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: brand.blush,
+    backgroundColor: '#f3f4f6',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -551,7 +551,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: brand.blush,
+    backgroundColor: '#f3f4f6',
     alignItems: 'center',
     justifyContent: 'center',
   },

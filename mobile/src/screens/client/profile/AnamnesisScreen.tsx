@@ -171,7 +171,7 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
           title: 'Saúde',
           icon: 'heart',
           accent: brand.roseDeep,
-          accentSoft: brand.blush,
+          accentSoft: '#f3f4f6',
           value: data.healthData,
           hideNegatives: true,
         },
@@ -180,7 +180,7 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
           title: 'Estilo de vida & pele',
           icon: 'leaf',
           accent: '#9a6b3c',
-          accentSoft: brand.champagne,
+          accentSoft: '#f3f4f6',
           value: data.lifestyleData,
         },
         {
@@ -188,7 +188,7 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
           title: 'Objetivos',
           icon: 'sparkles',
           accent: '#8a6d1f',
-          accentSoft: '#f5ecd0',
+          accentSoft: '#f3f4f6',
           value: data.objectivesData,
         },
       ]
@@ -262,8 +262,8 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
 
               {/* Dados pessoais — só nome + nascimento */}
               <View style={styles.section}>
-                <View style={[styles.sectionHeader, { backgroundColor: '#f3e8ff' }]}>
-                  <View style={[styles.sectionIcon, { backgroundColor: '#ede9fe' }]}>
+                <View style={[styles.sectionHeader, { backgroundColor: '#f3f4f6' }]}>
+                  <View style={[styles.sectionIcon, { backgroundColor: '#ffffff' }]}>
                     <Ionicons name="person" size={16} color="#7c3aed" />
                   </View>
                   <Text style={[styles.sectionTitle, { color: '#5b21b6' }]}>Dados pessoais</Text>
@@ -423,12 +423,12 @@ function formatValue(value: any): string {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: brand.background },
+  container: { flex: 1, backgroundColor: '#f9fafb' },
   back: {
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: brand.blush,
+    backgroundColor: '#f3f4f6',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
   info: {
     flexDirection: 'row',
     gap: 10,
-    backgroundColor: brand.blush,
+    backgroundColor: '#f3f4f6',
     borderRadius: 12,
     padding: 12,
     alignItems: 'center',

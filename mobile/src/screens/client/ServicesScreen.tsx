@@ -14,7 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { CATEGORY_ILLUSTRATIONS } from '../../assets/brandAssets';
+import { getCategoryIllustrations } from '../../assets/brandAssets';
+import { useAuth } from '../../contexts/AuthContext';
 import { useCommercial } from '../../contexts/CommercialContext';
 import {
   CATEGORY_META,
@@ -78,6 +79,8 @@ function voucherBenefitLabel(voucher: Voucher) {
 export function ServicesScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const { user } = useAuth();
+  const categoryIllustrations = getCategoryIllustrations(user?.anamnesisForm?.personalData?.sex);
   const { services, subscription, vouchers, loading, refreshing, error, refresh } = useCommercial();
   const [selectedCategory, setSelectedCategory] = useState<ServiceCategory | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -250,6 +253,7 @@ export function ServicesScreen() {
                   includedInPlan={isServiceInPlan(service, subscription)}
                   discountActive={applies}
                   discountedPrice={discounted}
+                  categoryIllustration={categoryIllustrations[service.category]}
                   onBook={() => bookService(service)}
                 />
               );
@@ -318,12 +322,14 @@ function ServiceCard({
   includedInPlan,
   discountActive,
   discountedPrice,
+  categoryIllustration,
   onBook,
 }: {
   service: Service;
   includedInPlan: boolean;
   discountActive: boolean;
   discountedPrice: number | null;
+  categoryIllustration: any;
   onBook: () => void;
 }) {
   const meta = CATEGORY_META[service.category];
@@ -338,7 +344,7 @@ function ServiceCard({
       <View style={styles.serviceHeader}>
         <View style={[styles.serviceIconContainer, { backgroundColor: `${meta.color}18` }]}>
           <Image
-            source={CATEGORY_ILLUSTRATIONS[service.category]}
+            source={categoryIllustration}
             style={styles.serviceCategoryIcon}
             resizeMode="contain"
           />

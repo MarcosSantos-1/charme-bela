@@ -25,12 +25,32 @@ export const categoryFacialSource = require('../../assets/icons/faciais.png');
 export const categoryCorporalSource = require('../../assets/icons/corporais.png');
 export const categoryMassagemSource = require('../../assets/icons/massagens.png');
 
+/** Variantes masculinas (anamnese sex === 'male'). */
+export const categoryComboMaleSource = require('../../assets/icons/pacotesM.png');
+export const categoryFacialMaleSource = require('../../assets/icons/facialM.png');
+export const categoryCorporalMaleSource = require('../../assets/icons/corporalM.png');
+export const categoryMassagemMaleSource = require('../../assets/icons/massagensM.png');
+
 export const CATEGORY_ILLUSTRATIONS: Record<ServiceCategory, ImageSourcePropType> = {
   COMBO: categoryComboSource,
   FACIAL: categoryFacialSource,
   CORPORAL: categoryCorporalSource,
   MASSAGEM: categoryMassagemSource,
 };
+
+export const CATEGORY_ILLUSTRATIONS_MALE: Record<ServiceCategory, ImageSourcePropType> = {
+  COMBO: categoryComboMaleSource,
+  FACIAL: categoryFacialMaleSource,
+  CORPORAL: categoryCorporalMaleSource,
+  MASSAGEM: categoryMassagemMaleSource,
+};
+
+/** Só `male` (Masculino na anamnese) usa ícones masculinos; demais / indefinido → default. */
+export function getCategoryIllustrations(
+  sex?: string | null,
+): Record<ServiceCategory, ImageSourcePropType> {
+  return sex === 'male' ? CATEGORY_ILLUSTRATIONS_MALE : CATEGORY_ILLUSTRATIONS;
+}
 
 /** Prefetch das imagens pesadas do onboarding antes de mostrar a UI. */
 export async function preloadOnboardingAssets() {

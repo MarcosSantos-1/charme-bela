@@ -22,7 +22,9 @@ import {
   createAppointment,
   createPaymentSession,
   getAvailableSlots,
+  getDayMarkers,
   rescheduleAppointment,
+  type DayMarker,
 } from '../../lib/api';
 import {
   CATEGORY_META,
@@ -60,6 +62,7 @@ export function BookingScreen({ route, navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [bookingOrigin, setBookingOrigin] = useState<BookableOrigin>('SINGLE');
   const [originInitialized, setOriginInitialized] = useState(false);
+  const [dayMarkers, setDayMarkers] = useState<DayMarker[]>([]);
 
   const preferredVoucherId = route.params.applyVoucherId;
 
@@ -85,10 +88,14 @@ export function BookingScreen({ route, navigation }: Props) {
 
   const serviceInUserPlan = Boolean(
     subscription?.status === 'ACTIVE' &&
+    service?.allowOnSubscription !== false &&
+    !service?.machineKind &&
     subscription.plan.services.some((item) => item.id === service?.id),
   );
+  // machineKind services default to avulso unless allowOnSubscription
+  const machineBlocksPlan = Boolean(service?.machineKind && service.allowOnSubscription === false);
   const remainingSessions = subscription?.remaining.thisMonth ?? 0;
-  const canUsePlan = serviceInUserPlan && remainingSessions > 0;
+  const canUsePlan = serviceInUserPlan && remainingSessions > 0 && !machineBlocksPlan;
 
   const startingPlan = useMemo(() => {
     if (!service) return null;
@@ -166,6 +173,45 @@ export function BookingScreen({ route, navigation }: Props) {
     bookingOrigin === 'SINGLE' ||
     (bookingOrigin === 'VOUCHER' && Boolean(matchingVoucher)) ||
     (bookingOrigin === 'SUBSCRIPTION' && canUsePlan);
+
+  useEffect(() => {
+    void getDayMarkers(minDate, lastNextMonth)
+      .then((res) => setDayMarkers(res.days || []))
+      .catch(() => setDayMarkers([]));
+  }, [minDate, lastNextMonth]);
+
+  const calendarMarked = useMemo(() => {
+    const marks: Record<string, any> = {};
+    const machineKind = service?.machineKind || null;
+    for (const m of dayMarkers) {
+      let disabled = m.closed;
+      if (machineKind === 'LASER') {
+        disabled = !(m.markers.includes('LASER') && m.released.LASER);
+      } else if (machineKind === 'CRYO') {
+        disabled = !(m.markers.includes('CRYO') && m.released.CRYO);
+      } else if (m.laserExclusive) {
+        disabled = true;
+      }
+      const dots: Array<{ color: string }> = [];
+      if (m.markers.includes('LASER')) dots.push({ color: '#a855f7' });
+      if (m.markers.includes('CRYO')) dots.push({ color: '#0ea5e9' });
+      if (m.closed) dots.push({ color: '#9ca3af' });
+      marks[m.date] = {
+        disabled,
+        disableTouchEvent: disabled,
+        marked: dots.length > 0,
+        dots: dots.length ? dots : undefined,
+      };
+    }
+    if (date) {
+      marks[date] = {
+        ...(marks[date] || {}),
+        selected: true,
+        selectedColor: '#ec4899',
+      };
+    }
+    return marks;
+  }, [dayMarkers, service?.machineKind, date]);
 
   const summaryValue =
     bookingOrigin === 'SUBSCRIPTION'
@@ -363,6 +409,8 @@ export function BookingScreen({ route, navigation }: Props) {
                 minDate={minDate}
                 maxDate={lastNextMonth}
                 onDayPress={(day) => {
+                  const mark = calendarMarked[day.dateString];
+                  if (mark?.disabled) return;
                   if (date === day.dateString) {
                     setDate('');
                     setTime('');
@@ -371,7 +419,8 @@ export function BookingScreen({ route, navigation }: Props) {
                   setDate(day.dateString);
                   setTime('');
                 }}
-                markedDates={date ? { [date]: { selected: true, selectedColor: '#ec4899' } } : {}}
+                markedDates={calendarMarked}
+                markingType="multi-dot"
                 theme={{
                   arrowColor: '#ec4899',
                   todayTextColor: '#ec4899',
@@ -389,6 +438,16 @@ export function BookingScreen({ route, navigation }: Props) {
                 }}
               />
             </View>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
+              <Text style={{ fontSize: 11, color: '#6b7280' }}>● Cinza fechado</Text>
+              <Text style={{ fontSize: 11, color: '#a855f7' }}>● Laser</Text>
+              <Text style={{ fontSize: 11, color: '#0ea5e9' }}>● Crio</Text>
+            </View>
+            {service?.machineKind ? (
+              <Text style={{ fontSize: 12, color: '#be185d', marginTop: 6 }}>
+                Este tratamento só pode ser agendado no dia liberado da máquina.
+              </Text>
+            ) : null}
             {date ? (
               <View style={styles.dateConfirmBlock}>
                 <Text style={styles.dateConfirmLabel}>{formatConfirmDate(date)}</Text>

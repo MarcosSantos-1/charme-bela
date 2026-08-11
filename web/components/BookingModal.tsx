@@ -53,6 +53,7 @@ export function BookingModal({
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [bookingType, setBookingType] = useState<'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER'>('SUBSCRIPTION')
   const [showAnamneseModal, setShowAnamneseModal] = useState(false)
+  const [dayMarkers, setDayMarkers] = useState<api.DayMarker[]>([])
   
   // Calcular preço com voucher aplicado
   const calculateFinalPrice = () => {
@@ -95,16 +96,54 @@ export function BookingModal({
       } else {
         setBookingType('SINGLE')
       }
+
+      // Marcadores de calendário (fechado / laser / crio)
+      const today = new Date()
+      const from = today.toISOString().slice(0, 10)
+      const toDate = new Date(today.getFullYear(), today.getMonth() + 2, 0)
+      const to = toDate.toISOString().slice(0, 10)
+      void api.getDayMarkers(from, to).then((res) => {
+        setDayMarkers(res.days || [])
+      }).catch(() => setDayMarkers([]))
     }
   }, [isOpen, hasSubscription, isIncludedInPlan, availableVoucher, discountVoucher])
 
   if (!isOpen || !service) return null
+
+  const markerByDate = new Map(dayMarkers.map((d) => [d.date, d]))
+  const machineKind = (service as api.Service).machineKind || null
 
   // Calcular data máxima: último dia do próximo mês
   const getMaxDate = () => {
     const today = new Date()
     const nextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0) // Último dia do próximo mês
     return nextMonth
+  }
+
+  const isDateDisabled = (date: Date) => {
+    const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    const marker = markerByDate.get(ymd)
+    if (!marker) return false
+    if (marker.closed) return true
+    if (machineKind === 'LASER') {
+      return !(marker.markers.includes('LASER') && marker.released.LASER)
+    }
+    if (machineKind === 'CRYO') {
+      return !(marker.markers.includes('CRYO') && marker.released.CRYO)
+    }
+    // Serviço normal: dia exclusivo de laser fica bloqueado
+    if (marker.laserExclusive) return true
+    return false
+  }
+
+  const dayClassName = (date: Date): string => {
+    const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    const marker = markerByDate.get(ymd)
+    if (!marker) return ''
+    if (marker.markers.includes('LASER')) return 'cb-day-laser'
+    if (marker.markers.includes('CRYO')) return 'cb-day-cryo'
+    if (marker.closed) return 'cb-day-closed'
+    return ''
   }
 
   // Buscar horários disponíveis
@@ -401,6 +440,8 @@ export function BookingModal({
                     onChange={handleDateSelect}
                     minDate={new Date()}
                     maxDate={getMaxDate()}
+                    filterDate={(date) => !isDateDisabled(date)}
+                    dayClassName={dayClassName}
                     dateFormat="dd/MM/yyyy"
                     placeholderText="Selecione uma data"
                     className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 font-medium bg-white hover:border-pink-400 transition-colors cursor-pointer"
@@ -411,6 +452,22 @@ export function BookingModal({
                     locale="pt-BR"
                   />
                 </div>
+                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-gray-600">
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-gray-400" /> Fechado
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-purple-500" /> Laser
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-sky-500" /> Crio
+                  </span>
+                </div>
+                {machineKind && (
+                  <p className="mt-1 text-xs text-pink-700">
+                    Este tratamento só pode ser agendado no dia liberado da máquina.
+                  </p>
+                )}
                 <style jsx global>{`
                   .custom-datepicker-wrapper .react-datepicker-wrapper {
                     width: 100%;
@@ -480,6 +537,15 @@ export function BookingModal({
                   .react-datepicker__day--disabled {
                     color: #d1d5db !important;
                     cursor: not-allowed;
+                  }
+                  .react-datepicker__day.cb-day-laser:not(.react-datepicker__day--disabled) {
+                    box-shadow: inset 0 -3px 0 #a855f7;
+                  }
+                  .react-datepicker__day.cb-day-cryo:not(.react-datepicker__day--disabled) {
+                    box-shadow: inset 0 -3px 0 #0ea5e9;
+                  }
+                  .react-datepicker__day.cb-day-closed {
+                    color: #9ca3af !important;
                   }
                   .react-datepicker__navigation-icon::before {
                     border-color: white;

@@ -206,8 +206,19 @@ export interface Banner {
   location: BannerLocation;
   isActive: boolean;
   sortOrder: number;
+  linkPath?: string | null;
+  machineKind?: 'LASER' | 'CRYO' | null;
   updatedAt?: string;
 }
+
+export type DayMarker = {
+  date: string;
+  closed: boolean;
+  closedReason?: string;
+  markers: Array<'LASER' | 'CRYO'>;
+  laserExclusive: boolean;
+  released: { LASER: boolean; CRYO: boolean };
+};
 
 export async function getBanners(params?: {
   location?: BannerLocation;
@@ -225,6 +236,11 @@ export async function getBanners(params?: {
 export async function getAvailableSlots(date: string, serviceId?: string): Promise<AvailableSlots> {
   const response = await api.get('/schedule/available', { params: { date, serviceId } });
   return unwrap<AvailableSlots>(response.data);
+}
+
+export async function getDayMarkers(from: string, to: string): Promise<{ days: DayMarker[] }> {
+  const response = await api.get('/schedule/day-markers', { params: { from, to } });
+  return unwrap<{ days: DayMarker[] }>(response.data);
 }
 
 export async function getSubscription(userId: string): Promise<Subscription | null> {

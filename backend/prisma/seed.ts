@@ -1,9 +1,24 @@
-import { PrismaClient, ServiceCategory } from '@prisma/client'
+import {
+  PrismaClient,
+  ServiceCategory,
+  MachineKind,
+  MachineRentalDefaultRule,
+} from '@prisma/client'
 
 const prisma = new PrismaClient()
 
+type SeedService = {
+  name: string
+  description: string
+  category: ServiceCategory
+  duration: number
+  price: number
+  machineKind?: MachineKind
+  allowOnSubscription?: boolean
+}
+
 // Dados dos serviços baseados em tratamentos típicos de estética
-const services = [
+const services: SeedService[] = [
   // ============================================
   // TRATAMENTOS FACIAIS
   // ============================================
@@ -97,7 +112,9 @@ const services = [
     description: 'Eliminação de gordura localizada por congelamento. Reduz até 25% da gordura na área tratada em uma sessão.',
     category: ServiceCategory.CORPORAL,
     duration: 90,
-    price: 400.00
+    price: 400.00,
+    machineKind: MachineKind.CRYO,
+    allowOnSubscription: false,
   },
   {
     name: 'Radiofrequência Corporal',
@@ -136,35 +153,45 @@ const services = [
     description: 'Depilação definitiva facial com tecnologia de ponta. Resultados duradouros e pele lisinha.',
     category: ServiceCategory.CORPORAL,
     duration: 30,
-    price: 80.00
+    price: 80.00,
+    machineKind: MachineKind.LASER,
+    allowOnSubscription: false,
   },
   {
     name: 'Depilação a Laser - Axilas',
     description: 'Depilação definitiva das axilas. Elimina pelos e manchas escuras.',
     category: ServiceCategory.CORPORAL,
     duration: 15,
-    price: 60.00
+    price: 60.00,
+    machineKind: MachineKind.LASER,
+    allowOnSubscription: false,
   },
   {
     name: 'Depilação a Laser - Virilha',
     description: 'Depilação definitiva da região da virilha. Conforto e praticidade no dia a dia.',
     category: ServiceCategory.CORPORAL,
     duration: 30,
-    price: 120.00
+    price: 120.00,
+    machineKind: MachineKind.LASER,
+    allowOnSubscription: false,
   },
   {
     name: 'Depilação a Laser - Pernas Completas',
     description: 'Depilação definitiva de pernas inteiras. Liberdade para usar o que quiser.',
     category: ServiceCategory.CORPORAL,
     duration: 60,
-    price: 250.00
+    price: 250.00,
+    machineKind: MachineKind.LASER,
+    allowOnSubscription: false,
   },
   {
     name: 'Depilação a Laser - Corpo Completo',
     description: 'Depilação definitiva corpo completo. Inclui todas as regiões desejadas.',
     category: ServiceCategory.CORPORAL,
     duration: 120,
-    price: 450.00
+    price: 450.00,
+    machineKind: MachineKind.LASER,
+    allowOnSubscription: false,
   },
   
   // ============================================
@@ -265,6 +292,17 @@ async function main() {
     // Busca serviços existentes para vincular aos planos
     console.log(`📝 ${existingServices} serviços já existem, mantendo...`)
     createdServices = await prisma.service.findMany()
+
+    // Garante flags de máquina em bases já existentes
+    await prisma.service.updateMany({
+      where: { name: { startsWith: 'Depilação a Laser' } },
+      data: { machineKind: MachineKind.LASER, allowOnSubscription: false },
+    })
+    await prisma.service.updateMany({
+      where: { name: { contains: 'Criolipólise' } },
+      data: { machineKind: MachineKind.CRYO, allowOnSubscription: false },
+    })
+    createdServices = await prisma.service.findMany()
   }
 
   // ============================================
@@ -355,10 +393,10 @@ async function main() {
       s.name.includes('Skinbooster')
     ),
     ...massagemServices, // Todas as massagens
-    ...corporalServices.filter(s => 
-      s.name.includes('Criolipólise') ||
-      s.name.includes('Ultrassom Pós-operatório') ||
-      s.name.includes('Drenagem Pós-operatória')
+    ...corporalServices.filter(s =>
+      (s.name.includes('Ultrassom Pós-operatório') ||
+        s.name.includes('Drenagem Pós-operatória')) &&
+      !s.machineKind
     )
   ]
 
@@ -402,6 +440,36 @@ async function main() {
   console.log(`  ✅ Configurações criadas com sucesso!`)
   console.log(`     └─ Cancelamento mínimo: ${config.minCancellationHours}h`)
   console.log(`     └─ Cancelamento de plano: livre (sem fidelidade)`)
+
+  // ============================================
+  // SETTINGS DE MÁQUINAS ALUGADAS
+  // ============================================
+  console.log(`\n🖨️  Configurando máquinas alugadas...`)
+  await prisma.machineRentalSettings.upsert({
+    where: { kind: MachineKind.LASER },
+    update: {},
+    create: {
+      kind: MachineKind.LASER,
+      defaultRule: MachineRentalDefaultRule.LAST_THURSDAY,
+      exclusiveDay: true,
+      suggestedReleaseDaysBefore: 14,
+      lateCancelHours: 24,
+      lateCancelFeePercent: 25,
+    },
+  })
+  await prisma.machineRentalSettings.upsert({
+    where: { kind: MachineKind.CRYO },
+    update: {},
+    create: {
+      kind: MachineKind.CRYO,
+      defaultRule: MachineRentalDefaultRule.SECOND_SATURDAY,
+      exclusiveDay: false,
+      suggestedReleaseDaysBefore: 14,
+      lateCancelHours: 24,
+      lateCancelFeePercent: 25,
+    },
+  })
+  console.log(`  ✅ Laser (última quinta, dia exclusivo) + Crio (2º sábado)`)
 
   // ============================================
   // 9. DEPOIMENTOS

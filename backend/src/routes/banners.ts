@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { isValidHomeBannerSize } from '../constants/homeBanner'
+import { finalizePastReleasedOccurrences } from '../utils/machineRental'
 
 type BannerLocation = 'LANDING' | 'CLIENT'
 
@@ -26,6 +27,8 @@ export async function bannerRoutes(app: FastifyInstance) {
         location?: string
         activeOnly?: string
       }
+
+      await finalizePastReleasedOccurrences()
 
       const parsedLocation = location ? parseLocation(location) : null
       if (location && !parsedLocation) {

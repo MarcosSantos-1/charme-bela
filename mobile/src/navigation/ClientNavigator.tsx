@@ -22,7 +22,7 @@ import { looksLikePhoneName } from '../lib/userDisplay';
 export type ClientTabParamList = {
   Home: undefined;
   Agenda: { appointmentId?: string } | undefined;
-  Services: { category?: string | 'ALL' } | undefined;
+  Services: { category?: string | 'ALL'; machine?: 'LASER' | 'CRYO' } | undefined;
   Profile: { openScreen?: 'history' | 'anamnesis' | 'plan' } | undefined;
 };
 

@@ -16,6 +16,8 @@ type BannerSliderProps = {
   planSlide?: ReactNode
   /** Permanência por slide no autoplay (ms). Ignorado se houver configSlide. */
   autoplayMs?: number
+  /** Clique em banner com linkPath / machineKind */
+  onBannerClick?: (banner: Banner) => void
 }
 
 /**
@@ -30,6 +32,7 @@ export function BannerSlider({
   configSlide,
   planSlide,
   autoplayMs = 6000,
+  onBannerClick,
 }: BannerSliderProps) {
   const activeBanners = banners.filter((b) => b.isActive !== false)
   const hasConfig = Boolean(configSlide)
@@ -142,7 +145,15 @@ export function BannerSlider({
           <div className="relative min-w-full h-full snap-center shrink-0">{configSlide}</div>
         ) : null}
         {activeBanners.map((banner) => (
-          <div key={banner.id} className="relative min-w-full h-full snap-center shrink-0">
+          <div
+            key={banner.id}
+            className="relative min-w-full h-full snap-center shrink-0"
+            role={banner.linkPath || banner.machineKind ? 'button' : undefined}
+            onClick={() => {
+              if (suppressClickRef.current) return
+              if (banner.linkPath || banner.machineKind) onBannerClick?.(banner)
+            }}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={banner.imageUrl}

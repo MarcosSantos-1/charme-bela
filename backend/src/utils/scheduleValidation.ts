@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma'
+import { assertMachineBookingAllowed } from './machineRental'
 
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(':').map(Number)
@@ -37,12 +38,18 @@ function generateSlotStarts(
 export async function assertStartTimeOnSchedule(
   startTime: Date,
   serviceDurationMinutes: number,
-  options: { adminExtended?: boolean } = {}
+  options: { adminExtended?: boolean; machineKind?: string | null } = {}
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const date = startTime.toISOString().slice(0, 10) // YYYY-MM-DD
   const time = startTime.toISOString().slice(11, 16) // HH:MM
   const dayOfWeek = startTime.getUTCDay()
   const targetDate = new Date(`${date}T00:00:00.000Z`)
+
+  const machineCheck = await assertMachineBookingAllowed(
+    (options.machineKind as 'LASER' | 'CRYO' | null | undefined) ?? null,
+    date
+  )
+  if (!machineCheck.ok) return machineCheck
 
   const config = await prisma.systemConfig.findFirst()
   const slotDuration = config?.slotDuration || 30

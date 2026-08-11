@@ -12,6 +12,8 @@ export interface Service {
   duration: number;
   price: number;
   isActive: boolean;
+  machineKind?: 'LASER' | 'CRYO' | null;
+  allowOnSubscription?: boolean;
 }
 
 export interface Voucher {

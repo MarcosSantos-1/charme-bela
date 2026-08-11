@@ -196,15 +196,27 @@ export default function ServicosPage() {
                             <h4 className="text-base font-bold text-gray-900 flex-1 leading-tight">
                               {service.name}
                             </h4>
-                            <span
-                              className={`px-2 py-0.5 text-xs font-medium rounded-full flex-shrink-0 ml-2 ${
-                                service.isActive
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-red-100 text-red-700'
-                              }`}
-                            >
-                              {service.isActive ? 'Ativo' : 'Inativo'}
-                            </span>
+                            <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
+                              <span
+                                className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                                  service.isActive
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-red-100 text-red-700'
+                                }`}
+                              >
+                                {service.isActive ? 'Ativo' : 'Inativo'}
+                              </span>
+                              {service.machineKind === 'LASER' && (
+                                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-700">
+                                  Laser
+                                </span>
+                              )}
+                              {service.machineKind === 'CRYO' && (
+                                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-sky-100 text-sky-700">
+                                  Crio
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           <p className="text-sm text-gray-600 mb-3 line-clamp-2">

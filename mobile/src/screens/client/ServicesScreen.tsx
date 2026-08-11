@@ -17,6 +17,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { getCategoryIllustrations } from '../../assets/brandAssets';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCommercial } from '../../contexts/CommercialContext';
+import { HomePromoCarousel } from '../../components/HomePromoCarousel';
 import {
   CATEGORY_META,
   type Service,
@@ -81,8 +82,9 @@ export function ServicesScreen() {
   const route = useRoute<any>();
   const { user } = useAuth();
   const categoryIllustrations = getCategoryIllustrations(user?.anamnesisForm?.personalData?.sex);
-  const { services, subscription, vouchers, loading, refreshing, error, refresh } = useCommercial();
+  const { services, subscription, vouchers, clientBanners, loading, refreshing, error, refresh } = useCommercial();
   const [selectedCategory, setSelectedCategory] = useState<ServiceCategory | null>(null);
+  const [machineFilter, setMachineFilter] = useState<'LASER' | 'CRYO' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [voucherApplied, setVoucherApplied] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
@@ -99,15 +101,22 @@ export function ServicesScreen() {
   useFocusEffect(
     useCallback(() => {
       const category = route.params?.category;
-      if (category && category in CATEGORY_META) {
-        setSelectedCategory(category as ServiceCategory);
-      } else if (category === 'ALL') {
+      const machine = route.params?.machine;
+      if (machine === 'LASER' || machine === 'CRYO') {
+        setMachineFilter(machine);
         setSelectedCategory(null);
+      } else {
+        setMachineFilter(null);
+        if (category && category in CATEGORY_META) {
+          setSelectedCategory(category as ServiceCategory);
+        } else if (category === 'ALL') {
+          setSelectedCategory(null);
+        }
       }
       scrollToTop();
       const unsubscribe = navigation.addListener('tabPress', scrollToTop);
       return unsubscribe;
-    }, [navigation, route.params?.category, scrollToTop]),
+    }, [navigation, route.params?.category, route.params?.machine, scrollToTop]),
   );
 
   const categories = (Object.keys(CATEGORY_META) as ServiceCategory[])
@@ -118,6 +127,7 @@ export function ServicesScreen() {
     setSearchQuery(text);
     if (text.trim().length > 0) {
       setSelectedCategory(null);
+      setMachineFilter(null);
     }
   }, []);
 
@@ -129,6 +139,7 @@ export function ServicesScreen() {
         .toLowerCase()
         .includes(query);
     if (query) return matchesSearch;
+    if (machineFilter) return service.machineKind === machineFilter;
     const matchesCategory = !selectedCategory || service.category === selectedCategory;
     return matchesCategory;
   });
@@ -146,7 +157,13 @@ export function ServicesScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Serviços</Text>
-        <Text style={styles.headerSubtitle}>Escolha seu tratamento</Text>
+        <Text style={styles.headerSubtitle}>
+          {machineFilter === 'LASER'
+            ? 'Depilação a Laser disponível'
+            : machineFilter === 'CRYO'
+              ? 'Criolipólise disponível'
+              : 'Escolha seu tratamento'}
+        </Text>
 
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={20} color="#9ca3af" />
@@ -173,13 +190,41 @@ export function ServicesScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}
       >
+        {clientBanners.length > 0 ? (
+          <View style={styles.promoCarouselWrap}>
+            <HomePromoCarousel
+              banners={clientBanners}
+              onBannerPress={(banner) => {
+                if (banner.machineKind === 'LASER' || banner.machineKind === 'CRYO') {
+                  setMachineFilter(banner.machineKind);
+                  setSelectedCategory(null);
+                  setSearchQuery('');
+                  return;
+                }
+                if (banner.linkPath?.includes('machine=LASER')) {
+                  setMachineFilter('LASER');
+                  setSelectedCategory(null);
+                  setSearchQuery('');
+                } else if (banner.linkPath?.includes('machine=CRYO')) {
+                  setMachineFilter('CRYO');
+                  setSelectedCategory(null);
+                  setSearchQuery('');
+                }
+              }}
+            />
+          </View>
+        ) : null}
+
         {/* Filtros — todos visíveis, sem scroll horizontal */}
         <View style={styles.categoriesWrap}>
           <TouchableOpacity
-            style={[styles.categoryChip, !selectedCategory && styles.categoryChipActive]}
-            onPress={() => setSelectedCategory(null)}
+            style={[styles.categoryChip, !selectedCategory && !machineFilter && styles.categoryChipActive]}
+            onPress={() => {
+              setSelectedCategory(null);
+              setMachineFilter(null);
+            }}
           >
-            <Text style={[styles.categoryChipText, !selectedCategory && styles.categoryChipTextActive]}>
+            <Text style={[styles.categoryChipText, !selectedCategory && !machineFilter && styles.categoryChipTextActive]}>
               Todos
             </Text>
           </TouchableOpacity>
@@ -189,9 +234,12 @@ export function ServicesScreen() {
               key={category.id}
               style={[
                 styles.categoryChip,
-                selectedCategory === category.id && styles.categoryChipActive,
+                selectedCategory === category.id && !machineFilter && styles.categoryChipActive,
               ]}
-              onPress={() => setSelectedCategory(category.id)}
+              onPress={() => {
+                setMachineFilter(null);
+                setSelectedCategory(category.id);
+              }}
             >
               <MaterialCommunityIcons
                 name={category.icon as any}
@@ -445,6 +493,10 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 8,
     gap: 8,
+  },
+  promoCarouselWrap: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
   },
   categoryChip: {
     flexDirection: 'row',

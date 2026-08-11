@@ -138,6 +138,15 @@ export default function ClientePage() {
           ) : (
             <BannerSlider
               banners={promoBanners}
+              onBannerClick={(banner) => {
+                if (banner.machineKind) {
+                  router.push(`/cliente/servicos?machine=${banner.machineKind}`)
+                  return
+                }
+                if (banner.linkPath) {
+                  router.push(banner.linkPath.startsWith('/') ? banner.linkPath : `/${banner.linkPath}`)
+                }
+              }}
               planSlide={
                 hasSubscription && subscription ? (
                   <Link href="/cliente/plano" className="block h-full">

@@ -21,7 +21,10 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
     preco: '',
     duracao: '60',
     descricao: '',
-    planosIds: [] as string[]
+    planosIds: [] as string[],
+    isSpecial: false,
+    machineKind: '' as '' | 'LASER' | 'CRYO',
+    allowOnSubscription: true,
   })
 
   const [planos, setPlanos] = useState<api.Plan[]>([])
@@ -47,7 +50,10 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
           preco: editingService.price.toString(),
           duracao: editingService.duration.toString(),
           descricao: editingService.description,
-          planosIds: [] // Vai carregar dos planos
+          planosIds: [], // Vai carregar dos planos
+          isSpecial: Boolean(editingService.machineKind),
+          machineKind: editingService.machineKind || '',
+          allowOnSubscription: editingService.allowOnSubscription !== false,
         })
       } else {
         resetForm()
@@ -97,8 +103,18 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
         category: formData.categoria,
         price: parseFloat(formData.preco),
         duration: parseInt(formData.duracao),
-        description: formData.descricao
+        description: formData.descricao,
+        machineKind: formData.isSpecial && formData.machineKind ? formData.machineKind : null,
+        allowOnSubscription: formData.isSpecial ? formData.allowOnSubscription : true,
       }
+
+      if (formData.isSpecial && !formData.machineKind) {
+        toast.error('Selecione Laser ou Crio para serviço especial')
+        setLoading(false)
+        return
+      }
+
+      const planIdsToLink = formData.isSpecial && !formData.allowOnSubscription ? [] : formData.planosIds
 
       let createdService: api.Service
 
@@ -114,7 +130,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
         // Remover de todos os planos primeiro
         for (const plano of todosPlanos) {
           const temServico = plano.services.some(s => s.id === editingService.id)
-          if (temServico && !formData.planosIds.includes(plano.id)) {
+          if (temServico && !planIdsToLink.includes(plano.id)) {
             try {
               await api.removeServicesFromPlan(plano.id, [editingService.id])
               console.log(`🔗 Serviço removido do plano ${plano.name}`)
@@ -125,7 +141,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
         }
 
         // Adicionar aos planos selecionados
-        for (const planoId of formData.planosIds) {
+        for (const planoId of planIdsToLink) {
           const plano = todosPlanos.find(p => p.id === planoId)
           const temServico = plano?.services.some(s => s.id === editingService.id)
           
@@ -145,10 +161,10 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
         console.log('✅ Serviço criado:', createdService)
 
         // Adicionar serviço aos planos selecionados
-        if (formData.planosIds.length > 0) {
-          console.log('🔗 Adicionando serviço aos planos:', formData.planosIds)
+        if (planIdsToLink.length > 0) {
+          console.log('🔗 Adicionando serviço aos planos:', planIdsToLink)
           
-          for (const planoId of formData.planosIds) {
+          for (const planoId of planIdsToLink) {
             try {
               await api.addServicesToPlan(planoId, [createdService.id])
               console.log(`✅ Serviço adicionado ao plano ${planoId}`)
@@ -179,7 +195,10 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
       preco: '',
       duracao: '60',
       descricao: '',
-      planosIds: []
+      planosIds: [],
+      isSpecial: false,
+      machineKind: '',
+      allowOnSubscription: true,
     })
   }
 
@@ -231,6 +250,67 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="rounded-xl border-2 border-dashed border-gray-200 p-4 space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.isSpecial}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  isSpecial: e.target.checked,
+                  machineKind: e.target.checked ? formData.machineKind || 'LASER' : '',
+                  allowOnSubscription: e.target.checked ? false : true,
+                  categoria: e.target.checked ? 'CORPORAL' : formData.categoria,
+                })
+              }
+              className="w-4 h-4 text-pink-600 rounded"
+            />
+            <span className="text-sm font-medium text-gray-900">
+              Serviço especial (máquina alugada)
+            </span>
+          </label>
+          {formData.isSpecial && (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'LASER' as const, label: 'Laser', hint: 'Dia exclusivo' },
+                  { value: 'CRYO' as const, label: 'Crio', hint: 'Dia compartilhado' },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, machineKind: opt.value })}
+                    className={`p-3 rounded-xl border-2 text-left ${
+                      formData.machineKind === opt.value
+                        ? opt.value === 'LASER'
+                          ? 'border-purple-500 bg-purple-50'
+                          : 'border-sky-500 bg-sky-50'
+                        : 'border-gray-200'
+                    }`}
+                  >
+                    <div className="font-medium text-gray-900">{opt.label}</div>
+                    <div className="text-xs text-gray-500">{opt.hint}</div>
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.allowOnSubscription}
+                  onChange={(e) =>
+                    setFormData({ ...formData, allowOnSubscription: e.target.checked })
+                  }
+                  className="w-4 h-4 text-pink-600 rounded"
+                />
+                <span className="text-sm text-gray-700">
+                  Permitir inclusão em planos de assinatura
+                </span>
+              </label>
+            </>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -293,6 +373,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
         </div>
 
         {/* Incluir em Planos */}
+        {(!formData.isSpecial || formData.allowOnSubscription) && (
         <div className="border-t border-gray-200 pt-4">
           <div className="flex items-center gap-2 mb-3">
             <Sparkles className="w-4 h-4 text-purple-600" />
@@ -337,6 +418,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
             <p className="text-sm text-gray-500 italic">Nenhum plano disponível</p>
           )}
         </div>
+        )}
 
         <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
           <Button 

@@ -23,6 +23,8 @@ export interface Service {
   duration: number
   price: number
   isActive: boolean
+  machineKind?: 'LASER' | 'CRYO' | null
+  allowOnSubscription?: boolean
   createdAt?: string
   updatedAt?: string
 }

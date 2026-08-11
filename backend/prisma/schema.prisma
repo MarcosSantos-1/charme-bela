@@ -62,6 +62,11 @@ model Service {
   duration     Int               // Duração em minutos
   price        Float             // Preço avulso
   isActive     Boolean           @default(true)
+
+  /** Máquina alugada (Laser/Crio). null = serviço normal. */
+  machineKind           MachineKind?
+  /** Se false, não entra em planos mesmo que gestora tente vincular. */
+  allowOnSubscription   Boolean      @default(true)
   
   // Relacionamentos
   plans        SubscriptionPlan[] @relation("ServicesOnPlans")
@@ -72,6 +77,7 @@ model Service {
 
   @@index([category])
   @@index([isActive])
+  @@index([machineKind])
 }
 
 // ============================================
@@ -348,10 +354,67 @@ model Banner {
   location    BannerLocation
   isActive    Boolean        @default(true)
   sortOrder   Int            @default(0)
+  /** Deep link / path relativo (ex. /servicos?machine=CRYO). */
+  linkPath    String?
+  machineKind MachineKind?
+  rentalOccurrenceId String? @unique
+  rentalOccurrence   MachineRentalOccurrence? @relation(fields: [rentalOccurrenceId], references: [id], onDelete: SetNull)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
   @@index([location, isActive, sortOrder])
+  @@index([machineKind])
+}
+
+// ============================================
+// MÁQUINAS ALUGADAS (Laser / Crio)
+// ============================================
+
+enum MachineKind {
+  LASER
+  CRYO
+}
+
+enum MachineRentalStatus {
+  HELD      // Data segurada no calendário (ainda sem agendamento liberado)
+  RELEASED  // Banner ativo — clientes podem agendar
+  CANCELED  // Gestora cancelou o mês
+  DONE      // Dia já passou
+}
+
+enum MachineRentalDefaultRule {
+  LAST_THURSDAY
+  SECOND_SATURDAY
+}
+
+model MachineRentalSettings {
+  id                         String                   @id @default(cuid())
+  kind                       MachineKind              @unique
+  defaultRule                MachineRentalDefaultRule
+  exclusiveDay               Boolean                  @default(false)
+  suggestedReleaseDaysBefore Int                      @default(14)
+  lateCancelHours            Int                      @default(24)
+  lateCancelFeePercent       Float                    @default(25)
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
+}
+
+model MachineRentalOccurrence {
+  id         String               @id @default(cuid())
+  kind       MachineKind
+  year       Int
+  month      Int                  // 1-12
+  date       DateTime             @db.Date
+  status     MachineRentalStatus  @default(HELD)
+  releasedAt DateTime?
+  banner     Banner?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  @@unique([kind, year, month])
+  @@index([date])
+  @@index([status])
+  @@index([kind, status])
 }
 
 // ============================================

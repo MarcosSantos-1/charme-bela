@@ -92,9 +92,12 @@ export default function AgendaPage() {
     return hoursUntilAppointment(startTime)
   }
   
-  // Verificar se pode cancelar (mínimo 4h de antecedência)
-  const canCancel = (startTime: string) => {
-    return getHoursUntilAppointment(startTime) >= 4
+  // Verificar se pode cancelar (mínimo 4h — ou política de máquina)
+  const cancelHoursFor = (appointment: Appointment) =>
+    appointment.service?.machineKind ? 24 : 4
+
+  const canCancel = (appointment: Appointment) => {
+    return getHoursUntilAppointment(appointment.startTime) >= cancelHoursFor(appointment)
   }
   
   // Verificar se pode reagendar (mínimo 4h de antecedência)
@@ -105,11 +108,15 @@ export default function AgendaPage() {
   // Cancelar agendamento
   const handleCancelAppointment = async (appointment: Appointment) => {
     const hoursUntil = getHoursUntilAppointment(appointment.startTime)
+    const minH = cancelHoursFor(appointment)
+    const isMachine = Boolean(appointment.service?.machineKind)
     
-    if (hoursUntil < 4) {
+    if (hoursUntil < minH) {
       const confirmed = await confirm({
         title: 'Atenção!',
-        message: `Faltam menos de 4 horas para o agendamento. Se cancelar agora, você perderá ${appointment.origin === 'SUBSCRIPTION' ? 'a sessão do seu plano' : 'o pagamento'}.`,
+        message: isMachine
+          ? `Faltam menos de ${minH}h. Cancelar agora implica multa de ~25% no estorno (política de máquina alugada).`
+          : `Faltam menos de 4 horas para o agendamento. Se cancelar agora, você perderá ${appointment.origin === 'SUBSCRIPTION' ? 'a sessão do seu plano' : 'o pagamento'}.`,
         confirmText: 'Sim, cancelar mesmo assim',
         cancelText: 'Não cancelar',
         type: 'danger'
@@ -434,7 +441,7 @@ export default function AgendaPage() {
                         <div className="bg-orange-50 border-l-4 border-orange-500 p-3 rounded mb-3">
                           <p className="text-xs text-orange-800">
                             <AlertCircle className="w-3 h-3 inline mr-1" />
-                            Menos de 4h - Cancelar agora resulta em perda de sessão
+                            Menos de {apt.service?.machineKind ? '24h' : '4h'} — cancelar agora pode gerar multa ou perda de sessão
                           </p>
                         </div>
                       )}

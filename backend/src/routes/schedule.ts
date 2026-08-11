@@ -1,8 +1,16 @@
 import { FastifyInstance } from 'fastify'
+import { MachineKind, MachineRentalStatus } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { releaseExpiredPaymentHolds } from '../utils/paymentHolds'
 import { wallClockNowAsStoredUtc } from '../utils/wallClock'
+import {
+  assertMachineBookingAllowed,
+  dateToYmd,
+  ensureCurrentAndNextOccurrences,
+  finalizePastReleasedOccurrences,
+  ymdToDate,
+} from '../utils/machineRental'
 
 // ============================================================================
 // Helpers de horário (slots dinâmicos)
@@ -145,6 +153,32 @@ export async function scheduleRoutes(app: FastifyInstance) {
       }
       
       logger.debug(`✅ Data ${date} permitida (hoje ou futuro)`)
+
+      await finalizePastReleasedOccurrences()
+
+      // Regras de máquinas alugadas (Laser exclusivo / Crio só no dia liberado)
+      let serviceMachineKind: MachineKind | null = null
+      if (serviceId) {
+        const svc = await prisma.service.findUnique({
+          where: { id: serviceId },
+          select: { machineKind: true, duration: true },
+        })
+        serviceMachineKind = svc?.machineKind ?? null
+      }
+
+      const machineCheck = await assertMachineBookingAllowed(serviceMachineKind, date)
+      if (!machineCheck.ok) {
+        return reply.status(200).send({
+          success: true,
+          data: {
+            date,
+            available: false,
+            reason: machineCheck.error,
+            slots: [],
+            machineBlocked: true,
+          },
+        })
+      }
       
       // 1. Busca configurações
       const config = await prisma.systemConfig.findFirst()
@@ -683,6 +717,116 @@ export async function scheduleRoutes(app: FastifyInstance) {
       return reply.status(500).send({
         success: false,
         error: 'Erro ao remover exceção'
+      })
+    }
+  })
+
+  // GET - Marcadores de calendário (fechado / laser / crio)
+  app.get('/schedule/day-markers', async (request, reply) => {
+    logger.route('GET', '/schedule/day-markers')
+
+    try {
+      const { from, to } = request.query as { from?: string; to?: string }
+      if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+        return reply.status(400).send({
+          success: false,
+          error: 'from e to são obrigatórios (YYYY-MM-DD)',
+        })
+      }
+
+      await ensureCurrentAndNextOccurrences()
+
+      const fromDate = ymdToDate(from)
+      const toDate = ymdToDate(to)
+
+      const [schedules, overrides, occurrences] = await Promise.all([
+        prisma.managerSchedule.findMany(),
+        prisma.scheduleOverride.findMany({
+          where: { date: { gte: fromDate, lte: toDate } },
+        }),
+        prisma.machineRentalOccurrence.findMany({
+          where: {
+            date: { gte: fromDate, lte: toDate },
+            status: {
+              in: [
+                MachineRentalStatus.HELD,
+                MachineRentalStatus.RELEASED,
+                MachineRentalStatus.DONE,
+              ],
+            },
+          },
+        }),
+      ])
+
+      const scheduleByDow = new Map(schedules.map((s) => [s.dayOfWeek, s]))
+      const overrideByYmd = new Map(overrides.map((o) => [dateToYmd(o.date), o]))
+      const markersByYmd = new Map<string, Array<'LASER' | 'CRYO'>>()
+
+      for (const occ of occurrences) {
+        const ymd = dateToYmd(occ.date)
+        const list = markersByYmd.get(ymd) || []
+        list.push(occ.kind)
+        markersByYmd.set(ymd, list)
+      }
+
+      const days: Array<{
+        date: string
+        closed: boolean
+        closedReason?: string
+        markers: Array<'LASER' | 'CRYO'>
+        laserExclusive: boolean
+        released: { LASER: boolean; CRYO: boolean }
+      }> = []
+
+      const cursor = new Date(fromDate)
+      const end = new Date(toDate)
+      while (cursor.getTime() <= end.getTime()) {
+        const ymd = dateToYmd(cursor)
+        const dow = cursor.getUTCDay()
+        const override = overrideByYmd.get(ymd)
+        let closed = false
+        let closedReason: string | undefined
+
+        if (override) {
+          closed = !override.isAvailable
+          closedReason = override.reason || (closed ? 'Dia indisponível' : undefined)
+        } else {
+          const schedule = scheduleByDow.get(dow)
+          if (!schedule || !schedule.isAvailable) {
+            closed = true
+            closedReason = 'Dia não atende'
+          }
+        }
+
+        const markers = markersByYmd.get(ymd) || []
+        const laserExclusive = markers.includes('LASER')
+        const released = {
+          LASER: occurrences.some(
+            (o) => dateToYmd(o.date) === ymd && o.kind === 'LASER' && o.status === 'RELEASED'
+          ),
+          CRYO: occurrences.some(
+            (o) => dateToYmd(o.date) === ymd && o.kind === 'CRYO' && o.status === 'RELEASED'
+          ),
+        }
+
+        days.push({
+          date: ymd,
+          closed,
+          closedReason,
+          markers,
+          laserExclusive,
+          released,
+        })
+
+        cursor.setUTCDate(cursor.getUTCDate() + 1)
+      }
+
+      return reply.status(200).send({ success: true, data: { days } })
+    } catch (error) {
+      logger.error('Erro ao buscar day-markers:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao buscar marcadores do calendário',
       })
     }
   })

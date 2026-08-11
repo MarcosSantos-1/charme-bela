@@ -4,6 +4,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { ClientLayout } from '@/components/ClientLayout'
 import { BookingModal } from '@/components/BookingModal'
 import { VoucherBanner } from '@/components/VoucherBanner'
+import { BannerSlider } from '@/components/BannerSlider'
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Clock, Gift, Tag } from 'lucide-react'
@@ -25,6 +26,7 @@ function ServicosContent() {
   
   const [services, setServices] = useState<Service[]>([])
   const [vouchers, setVouchers] = useState<api.Voucher[]>([])
+  const [promoBanners, setPromoBanners] = useState<api.Banner[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos')
@@ -36,12 +38,14 @@ function ServicosContent() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [servicesData, vouchersData] = await Promise.all([
+        const [servicesData, vouchersData, bannersData] = await Promise.all([
           api.getServices(),
-          user?.id ? api.getVouchersByUserId(user.id) : Promise.resolve([])
+          user?.id ? api.getVouchersByUserId(user.id) : Promise.resolve([]),
+          api.getBanners({ location: 'CLIENT', activeOnly: true }).catch(() => []),
         ])
         
         setServices(servicesData)
+        setPromoBanners(Array.isArray(bannersData) ? bannersData : [])
         // Filtrar apenas vouchers ativos (não usados e não expirados)
         const activeVouchers = vouchersData.filter(v => 
           !v.isUsed && (!v.expiresAt || new Date(v.expiresAt) > new Date())
@@ -60,7 +64,10 @@ function ServicosContent() {
   // Aplicar filtro da URL quando a página carregar
   useEffect(() => {
     const categoryParam = searchParams.get('category')
-    if (categoryParam && ['COMBO', 'FACIAL', 'CORPORAL', 'MASSAGEM'].includes(categoryParam)) {
+    const machineParam = searchParams.get('machine')
+    if (machineParam === 'LASER' || machineParam === 'CRYO') {
+      setSelectedCategory(machineParam === 'LASER' ? 'Laser' : 'Crio')
+    } else if (categoryParam && ['COMBO', 'FACIAL', 'CORPORAL', 'MASSAGEM'].includes(categoryParam)) {
       setSelectedCategory(categoryParam)
     }
   }, [searchParams])
@@ -102,19 +109,23 @@ function ServicosContent() {
   }
   
   // Categorias
-  const categories = ['Todos', 'COMBO', 'FACIAL', 'CORPORAL', 'MASSAGEM']
+  const categories = ['Todos', 'COMBO', 'FACIAL', 'CORPORAL', 'MASSAGEM', 'Laser', 'Crio']
   const categoryNames: Record<string, string> = {
     Todos: 'Todos',
     COMBO: '🎁 Combos',
     FACIAL: '💆 Faciais',
     CORPORAL: '🧘 Corporais',
-    MASSAGEM: '💆‍♀️ Massagens'
+    MASSAGEM: '💆‍♀️ Massagens',
+    Laser: 'Laser',
+    Crio: 'Crio',
   }
   
   // Filtrar e ordenar serviços (inclusos no plano primeiro)
   const filteredServices = services
     .filter(service => {
-      const matchesCategory = selectedCategory === 'Todos' || service.category === selectedCategory
+      let matchesCategory = selectedCategory === 'Todos' || service.category === selectedCategory
+      if (selectedCategory === 'Laser') matchesCategory = service.machineKind === 'LASER'
+      if (selectedCategory === 'Crio') matchesCategory = service.machineKind === 'CRYO'
       const matchesSearch = service.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            service.description.toLowerCase().includes(searchTerm.toLowerCase())
       return matchesCategory && matchesSearch
@@ -185,6 +196,23 @@ function ServicosContent() {
     <ProtectedRoute requiredRole="CLIENT">
       <ClientLayout title="Serviços">
         <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+          {promoBanners.length > 0 && (
+            <BannerSlider
+              banners={promoBanners}
+              onBannerClick={(banner) => {
+                if (banner.machineKind) {
+                  setSelectedCategory(banner.machineKind === 'LASER' ? 'Laser' : 'Crio')
+                  return
+                }
+                if (banner.linkPath?.includes('machine=LASER')) {
+                  setSelectedCategory('Laser')
+                } else if (banner.linkPath?.includes('machine=CRYO')) {
+                  setSelectedCategory('Crio')
+                }
+              }}
+            />
+          )}
+
           {/* Vouchers Banner */}
           {vouchers.length > 0 && (
             <VoucherBanner 

@@ -16,6 +16,7 @@ import { testimonialRoutes } from './routes/testimonials'
 import { bannerRoutes } from './routes/banners'
 import { stripeRoutes } from './routes/stripe'
 import { notificationRoutes } from './routes/notifications'
+import { machineRentalsRoutes } from './routes/machineRentals'
 import { setupCronJobs } from './utils/cron'
 import {
   isAuthEnforced,
@@ -152,6 +153,7 @@ async function start() {
     await app.register(bannerRoutes)
     await app.register(stripeRoutes)
     await app.register(notificationRoutes)
+    await app.register(machineRentalsRoutes)
     logger.success('Rotas registradas com sucesso')
 
     await app.listen({ port: PORT, host: HOST })

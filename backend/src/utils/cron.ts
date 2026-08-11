@@ -39,9 +39,20 @@ async function runWakeMaintenance() {
     await cancelExpiredAppointments()
     await expireFreeMonthSubscriptions()
     await autoCompletePreviousDayAppointments()
+    await finalizeMachineRentals()
     logger.success('✅ Manutenção pós-wake concluída')
   } catch (error) {
     logger.error('Erro na manutenção pós-wake:', error)
+  }
+}
+
+async function finalizeMachineRentals() {
+  try {
+    const { finalizePastReleasedOccurrences } = await import('./machineRental')
+    const n = await finalizePastReleasedOccurrences()
+    if (n > 0) logger.info(`🖨️ ${n} ocorrência(s) de máquina finalizada(s)`)
+  } catch (error) {
+    logger.error('Erro ao finalizar machine rentals:', error)
   }
 }
 

@@ -369,9 +369,33 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       }
       
       logger.success(`Agendamento encontrado: ${appointment.id}`)
+
+      let cancelPolicy:
+        | { kind: 'machine'; lateCancelHours: number; lateCancelFeePercent: number; text: string }
+        | { kind: 'standard'; minCancellationHours: number; text: string }
+
+      if (appointment.service.machineKind) {
+        const { getLateCancelPolicyForKind } = await import('../utils/machineRental')
+        const policy = await getLateCancelPolicyForKind(appointment.service.machineKind)
+        cancelPolicy = {
+          kind: 'machine',
+          lateCancelHours: policy.lateCancelHours,
+          lateCancelFeePercent: policy.lateCancelFeePercent,
+          text: `Cancelamento com menos de ${policy.lateCancelHours}h de antecedência: estorno com multa de ${policy.lateCancelFeePercent}%. Com antecedência igual ou maior, estorno integral.`,
+        }
+      } else {
+        const config = await prisma.systemConfig.findFirst()
+        const minH = config?.minCancellationHours || 4
+        cancelPolicy = {
+          kind: 'standard',
+          minCancellationHours: minH,
+          text: `Cancelamento com menos de ${minH}h pode gerar perda do tratamento ou conversão em crédito, conforme a origem do agendamento.`,
+        }
+      }
+
       return reply.status(200).send({
         success: true,
-        data: appointment
+        data: { ...appointment, cancelPolicy },
       })
     } catch (error) {
       logger.error('Erro ao buscar agendamento:', error)
@@ -469,12 +493,19 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       const scheduleCheck = await assertStartTimeOnSchedule(
         appointmentStart,
         service.duration,
-        { adminExtended: origin === 'ADMIN_CREATED' }
+        { adminExtended: origin === 'ADMIN_CREATED', machineKind: service.machineKind }
       )
       if (!scheduleCheck.ok) {
         return reply.status(400).send({
           success: false,
           error: scheduleCheck.error
+        })
+      }
+
+      if (service.machineKind && !service.allowOnSubscription && origin === 'SUBSCRIPTION') {
+        return reply.status(400).send({
+          success: false,
+          error: 'Este tratamento de máquina alugada é apenas avulso no momento',
         })
       }
       
@@ -986,7 +1017,16 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       
       // Busca configurações
       const config = await prisma.systemConfig.findFirst()
-      const minHours = config?.minCancellationHours || 4
+      let minHours = config?.minCancellationHours || 4
+      let lateFeePercent = 0
+      let isMachineSpecial = Boolean(appointment.service.machineKind)
+
+      if (appointment.service.machineKind) {
+        const { getLateCancelPolicyForKind } = await import('../utils/machineRental')
+        const policy = await getLateCancelPolicyForKind(appointment.service.machineKind)
+        minHours = policy.lateCancelHours
+        lateFeePercent = policy.lateCancelFeePercent
+      }
       
       // Calcula diferença de horas (hora de parede, mesma convenção dos slots)
       const hoursDiff = hoursUntilStoredStart(appointment.startTime)
@@ -994,6 +1034,8 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       // Se cliente cancelar com menos de X horas, perde o tratamento (só se for de assinatura)
       let lostTreatment = false
       let creditVoucher = null
+      let refundAmount: number | null = null
+      let feeAmount: number | null = null
       
       if (canceledBy === 'client' && hoursDiff < minHours && appointment.origin === 'SUBSCRIPTION') {
         lostTreatment = true
@@ -1021,61 +1063,77 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       
       // SISTEMA DE REEMBOLSO/CRÉDITO para tratamentos AVULSOS pagos
       if (canceledBy === 'client' && appointment.origin === 'SINGLE' && appointment.paymentStatus === 'PAID' && appointment.paymentAmount) {
+        const paidAmount = appointment.paymentAmount
+        const isLate = hoursDiff < minHours
+        const netRefund =
+          isMachineSpecial && isLate
+            ? Math.round(paidAmount * (1 - lateFeePercent / 100) * 100) / 100
+            : isLate && !isMachineSpecial
+              ? null // política antiga: crédito integral sem estorno Stripe
+              : paidAmount
+
+        if (isMachineSpecial && isLate) {
+          feeAmount = Math.round(paidAmount * (lateFeePercent / 100) * 100) / 100
+          refundAmount = netRefund
+        } else if (!isLate) {
+          refundAmount = paidAmount
+        }
         
-        // CASO 1: Cancelamento COM ANTECEDÊNCIA (>= minHours) → REEMBOLSO via Stripe
-        if (hoursDiff >= minHours) {
+        // CASO 1: Antecedência OK, OU máquina especial tardia (estorno parcial) → Stripe refund
+        if (netRefund != null && netRefund > 0 && (!isLate || isMachineSpecial)) {
           try {
-            logger.info(`💰 Processando reembolso de R$ ${appointment.paymentAmount} para ${appointment.user.name}`)
+            logger.info(
+              `💰 Processando reembolso de R$ ${netRefund} para ${appointment.user.name}` +
+                (feeAmount ? ` (multa R$ ${feeAmount})` : '')
+            )
             
-            // Buscar Payment Intent do Stripe via metadata
             const { stripe } = await import('../lib/stripe')
             
-            // Buscar customer
             const customer = await prisma.user.findUnique({
               where: { id: appointment.userId },
               select: { stripeCustomerId: true }
             })
             
             if (customer?.stripeCustomerId) {
-              // Buscar payment intents deste customer
               const paymentIntents = await stripe.paymentIntents.list({
                 customer: customer.stripeCustomerId,
                 limit: 100
               })
               
-              // Encontrar o payment intent deste agendamento
               const paymentIntent = paymentIntents.data.find(pi => 
                 pi.metadata.appointmentId === appointment.id
               )
               
               if (paymentIntent && paymentIntent.status === 'succeeded') {
-                // Criar reembolso
                 const refund = await stripe.refunds.create({
                   payment_intent: paymentIntent.id,
-                  amount: Math.round(appointment.paymentAmount * 100), // Converter para centavos
+                  amount: Math.round(netRefund * 100),
                   reason: 'requested_by_customer',
                   metadata: {
                     appointmentId: appointment.id,
                     userId: appointment.userId,
-                    serviceName: appointment.service.name
+                    serviceName: appointment.service.name,
+                    feePercent: String(isLate && isMachineSpecial ? lateFeePercent : 0),
                   }
                 })
                 
-                // Atualizar status de pagamento
                 await prisma.appointment.update({
                   where: { id: appointment.id },
                   data: { paymentStatus: 'REFUNDED' }
                 })
                 
-                logger.success(`✅ Reembolso processado: ${refund.id} - R$ ${appointment.paymentAmount}`)
+                logger.success(`✅ Reembolso processado: ${refund.id} - R$ ${netRefund}`)
                 
-                // Notificar cliente
                 const { createNotification } = await import('../utils/notifications')
+                const feeMsg =
+                  feeAmount && feeAmount > 0
+                    ? ` Foi aplicada multa de ${lateFeePercent}% (R$ ${feeAmount.toFixed(2).replace('.', ',')}).`
+                    : ''
                 await createNotification({
                   userId: appointment.userId,
                   type: 'PAYMENT_REFUNDED',
                   title: 'Reembolso Processado',
-                  message: `Seu pagamento de R$ ${appointment.paymentAmount.toFixed(2).replace('.', ',')} foi reembolsado. O valor será estornado em até 10 dias úteis.`,
+                  message: `Seu pagamento de R$ ${netRefund.toFixed(2).replace('.', ',')} foi reembolsado.${feeMsg} O valor será estornado em até 10 dias úteis.`,
                   icon: 'CARD',
                   priority: 'HIGH',
                   actionUrl: '/cliente/pagamentos',
@@ -1089,23 +1147,24 @@ export async function appointmentsRoutes(app: FastifyInstance) {
             }
           } catch (refundError: any) {
             logger.error('❌ Erro ao processar reembolso:', refundError.message)
-            logger.warning('⚠️ Criando voucher de crédito como fallback...')
+            logger.warning('⚠️ Criando crédito como fallback...')
             
-            // FALLBACK: Se reembolso falhar, cria voucher de crédito
             try {
               const expiresAt = new Date()
-              expiresAt.setMonth(expiresAt.getMonth() + 6) // 6 meses para reembolso como crédito
+              expiresAt.setMonth(expiresAt.getMonth() + 6)
               
               creditVoucher = await prisma.voucher.create({
                 data: {
                   userId: appointment.userId,
                   type: 'DISCOUNT',
                   description: `Crédito de reembolso - ${appointment.service.name}`,
-                  discountAmount: appointment.paymentAmount,
+                  discountAmount: netRefund,
                   anyService: true,
                   expiresAt,
                   grantedBy: 'system',
-                  grantedReason: `Reembolso de cancelamento com antecedência. Falha no processamento Stripe.`
+                  grantedReason: isLate && isMachineSpecial
+                    ? `Cancelamento com multa de ${lateFeePercent}%. Falha no Stripe — crédito do valor líquido.`
+                    : `Reembolso de cancelamento com antecedência. Falha no processamento Stripe.`
                 }
               })
               
@@ -1116,27 +1175,27 @@ export async function appointmentsRoutes(app: FastifyInstance) {
                 expiresAt: creditVoucher.expiresAt || undefined
               })
               
-              logger.success(`💳 Voucher de crédito criado (fallback): R$ ${appointment.paymentAmount}`)
+              logger.success(`💳 Crédito criado (fallback): R$ ${netRefund}`)
             } catch (voucherError) {
               logger.error('Erro ao criar voucher de fallback:', voucherError)
             }
           }
         }
         
-        // CASO 2: Cancelamento TARDIO (< minHours) → CRÉDITO (política de penalidade)
-        else {
+        // CASO 2: Cancelamento TARDIO serviço normal (< minHours) → CRÉDITO (política antiga)
+        else if (isLate && !isMachineSpecial) {
           try {
             logger.info(`⚠️ Cancelamento tardio - criando voucher de crédito...`)
             
             const expiresAt = new Date()
-            expiresAt.setMonth(expiresAt.getMonth() + 3) // Válido por 3 meses
+            expiresAt.setMonth(expiresAt.getMonth() + 3)
             
             creditVoucher = await prisma.voucher.create({
               data: {
                 userId: appointment.userId,
                 type: 'DISCOUNT',
                 description: `Crédito de cancelamento tardio - ${appointment.service.name}`,
-                discountAmount: appointment.paymentAmount,
+                discountAmount: paidAmount,
                 anyService: true,
                 expiresAt,
                 grantedBy: 'system',
@@ -1151,7 +1210,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
               expiresAt: creditVoucher.expiresAt || undefined
             })
             
-            logger.success(`💳 Voucher de crédito criado (tardio): R$ ${appointment.paymentAmount}`)
+            logger.success(`💳 Voucher de crédito criado (tardio): R$ ${paidAmount}`)
           } catch (voucherError) {
             logger.error('Erro ao criar voucher de crédito:', voucherError)
           }
@@ -1205,7 +1264,11 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       let refunded = false
       
       if (updatedAppointment.paymentStatus === 'REFUNDED') {
-        message = `Agendamento cancelado. Seu reembolso de R$ ${appointment.paymentAmount?.toFixed(2).replace('.', ',')} foi processado e será estornado em até 10 dias úteis.`
+        if (feeAmount && feeAmount > 0) {
+          message = `Agendamento cancelado. Estorno de R$ ${refundAmount?.toFixed(2).replace('.', ',')} processado (multa de ${lateFeePercent}% = R$ ${feeAmount.toFixed(2).replace('.', ',')}).`
+        } else {
+          message = `Agendamento cancelado. Seu reembolso de R$ ${appointment.paymentAmount?.toFixed(2).replace('.', ',')} foi processado e será estornado em até 10 dias úteis.`
+        }
         refunded = true
       } else if (lostTreatment) {
         message = `Agendamento cancelado. Como foi cancelado com menos de ${minHours}h de antecedência, o tratamento foi contabilizado.`
@@ -1220,6 +1283,11 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         lostTreatment,
         creditVoucher,
         refunded,
+        feeAmount,
+        refundAmount,
+        cancelPolicy: isMachineSpecial
+          ? { lateCancelHours: minHours, lateCancelFeePercent: lateFeePercent }
+          : { minCancellationHours: minHours },
         message
       })
     } catch (error) {
@@ -1289,7 +1357,10 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       const scheduleCheck = await assertStartTimeOnSchedule(
         newStart,
         appointment.service.duration,
-        { adminExtended: appointment.origin === 'ADMIN_CREATED' }
+        {
+          adminExtended: appointment.origin === 'ADMIN_CREATED',
+          machineKind: appointment.service.machineKind,
+        }
       )
       if (!scheduleCheck.ok) {
         return reply.status(400).send({

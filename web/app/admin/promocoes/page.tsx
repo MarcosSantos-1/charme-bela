@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
 import type { Banner, BannerLocation } from '@/lib/api'
 import { HOME_BANNER, fileToHomeBannerDataUrl } from '@/lib/homeBanner'
+import { MachineRentalsSection } from '@/components/admin/MachineRentalsSection'
 
 type Draft = {
   title: string
@@ -151,6 +152,8 @@ export default function PromocoesPage() {
           Gerencie o slider da landing e da área do cliente (app + web)
         </p>
       </div>
+
+      <MachineRentalsSection />
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <p className="text-sm text-blue-800 font-medium mb-2">Dimensões e ordem</p>

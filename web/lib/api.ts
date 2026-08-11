@@ -14,6 +14,42 @@ export interface Service {
   duration: number
   price: number
   isActive: boolean
+  machineKind?: 'LASER' | 'CRYO' | null
+  allowOnSubscription?: boolean
+}
+
+export type MachineKind = 'LASER' | 'CRYO'
+export type MachineRentalStatus = 'HELD' | 'RELEASED' | 'CANCELED' | 'DONE'
+
+export interface MachineRentalSettings {
+  id: string
+  kind: MachineKind
+  defaultRule: 'LAST_THURSDAY' | 'SECOND_SATURDAY'
+  exclusiveDay: boolean
+  suggestedReleaseDaysBefore: number
+  lateCancelHours: number
+  lateCancelFeePercent: number
+}
+
+export interface MachineRentalOccurrence {
+  id: string
+  kind: MachineKind
+  year: number
+  month: number
+  date: string
+  dateYmd: string
+  status: MachineRentalStatus
+  releasedAt?: string | null
+  banner?: Banner | null
+}
+
+export interface DayMarker {
+  date: string
+  closed: boolean
+  closedReason?: string
+  markers: MachineKind[]
+  laserExclusive: boolean
+  released: { LASER: boolean; CRYO: boolean }
 }
 
 export interface Plan {
@@ -304,6 +340,9 @@ export interface Banner {
   location: BannerLocation
   isActive: boolean
   sortOrder: number
+  linkPath?: string | null
+  machineKind?: MachineKind | null
+  rentalOccurrenceId?: string | null
   createdAt?: string
   updatedAt?: string
 }
@@ -372,9 +411,15 @@ export async function reorderBanners(
 // SERVICES
 // ============================================
 
-export async function getServices(showAll?: boolean): Promise<Service[]> {
-  const params = showAll ? '?showAll=true' : ''
-  return apiRequest(`/services${params}`, { method: 'GET' })
+export async function getServices(
+  showAll?: boolean,
+  opts?: { machine?: MachineKind }
+): Promise<Service[]> {
+  const search = new URLSearchParams()
+  if (showAll) search.set('showAll', 'true')
+  if (opts?.machine) search.set('machine', opts.machine)
+  const qs = search.toString()
+  return apiRequest(`/services${qs ? `?${qs}` : ''}`, { method: 'GET' })
 }
 
 export async function getService(id: string): Promise<Service> {
@@ -387,6 +432,8 @@ export async function createService(data: {
   category: 'FACIAL' | 'CORPORAL' | 'MASSAGEM' | 'COMBO'
   duration: number
   price: number
+  machineKind?: MachineKind | null
+  allowOnSubscription?: boolean
 }): Promise<Service> {
   return apiRequest('/services', {
     method: 'POST',
@@ -401,6 +448,8 @@ export async function updateService(id: string, data: {
   duration?: number
   price?: number
   isActive?: boolean
+  machineKind?: MachineKind | null
+  allowOnSubscription?: boolean
 }): Promise<Service> {
   return apiRequest(`/services/${id}`, {
     method: 'PUT',
@@ -708,6 +757,96 @@ export async function getAvailableSlots(date: string, serviceId?: string): Promi
   
   return apiRequest(`/schedule/available?${params.toString()}`, {
     method: 'GET',
+  })
+}
+
+export async function getDayMarkers(from: string, to: string): Promise<{ days: DayMarker[] }> {
+  const params = new URLSearchParams({ from, to })
+  return apiRequest(`/schedule/day-markers?${params.toString()}`, { method: 'GET' })
+}
+
+// ============================================
+// MACHINE RENTALS (Laser / Crio)
+// ============================================
+
+export async function getMachineRentals(): Promise<{
+  settings: MachineRentalSettings[]
+  occurrences: MachineRentalOccurrence[]
+}> {
+  return apiRequest('/machine-rentals', { method: 'GET' })
+}
+
+export async function updateMachineRentalSettings(
+  kind: MachineKind,
+  data: Partial<Pick<MachineRentalSettings, 'lateCancelHours' | 'lateCancelFeePercent' | 'suggestedReleaseDaysBefore' | 'exclusiveDay' | 'defaultRule'>>
+): Promise<MachineRentalSettings> {
+  return apiRequest(`/machine-rentals/settings/${kind}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function previewMachineDateChange(
+  id: string,
+  newDate: string
+): Promise<{
+  affectedCount: number
+  affected: Array<{
+    appointmentId: string
+    clientName: string
+    clientEmail: string
+    clientPhone: string | null
+    serviceName: string
+    machineKind: MachineKind | null
+    startTime: string
+    status: string
+    reason: string
+  }>
+}> {
+  return apiRequest(`/machine-rentals/${id}/change-preview?newDate=${encodeURIComponent(newDate)}`, {
+    method: 'GET',
+  })
+}
+
+export async function changeMachineRentalDate(
+  id: string,
+  data: {
+    newDate: string
+    confirm: boolean
+    compensation?: 'credit' | 'none'
+    adminUserId?: string
+  }
+) {
+  return apiRequest(`/machine-rentals/${id}/date`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function cancelMachineRentalMonth(
+  id: string,
+  data?: { compensation?: 'credit' | 'none'; adminUserId?: string }
+) {
+  return apiRequest(`/machine-rentals/${id}/cancel-month`, {
+    method: 'POST',
+    body: JSON.stringify(data || {}),
+  })
+}
+
+export async function releaseMachineRental(
+  id: string,
+  data: { title?: string; imageUrl?: string; imageWidth?: number; imageHeight?: number }
+) {
+  return apiRequest(`/machine-rentals/${id}/release`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function unreleaseMachineRental(id: string) {
+  return apiRequest(`/machine-rentals/${id}/unrelease`, {
+    method: 'POST',
+    body: JSON.stringify({}),
   })
 }
 

@@ -216,6 +216,19 @@ export function ClientHomeScreen() {
           ) : (
             <HomePromoCarousel
               banners={clientBanners}
+              onBannerPress={(banner) => {
+                if (banner.machineKind === 'LASER' || banner.machineKind === 'CRYO') {
+                  navigation.navigate('Services', { machine: banner.machineKind });
+                  return;
+                }
+                if (banner.linkPath?.includes('machine=LASER')) {
+                  navigation.navigate('Services', { machine: 'LASER' });
+                } else if (banner.linkPath?.includes('machine=CRYO')) {
+                  navigation.navigate('Services', { machine: 'CRYO' });
+                } else {
+                  navigation.navigate('Services');
+                }
+              }}
               planSlide={
                 activePlan ? (
                   <TouchableOpacity

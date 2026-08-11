@@ -4,6 +4,7 @@ import {
   Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -30,6 +31,7 @@ type HomePromoCarouselProps = {
   /** Slide do plano / sem plano — depois dos banners de promoção */
   planSlide?: ReactNode;
   autoplayMs?: number;
+  onBannerPress?: (banner: Banner) => void;
 };
 
 type Slide =
@@ -46,6 +48,7 @@ export function HomePromoCarousel({
   configSlide,
   planSlide,
   autoplayMs = AUTOPLAY_MS,
+  onBannerPress,
 }: HomePromoCarouselProps) {
   const scrollRef = useRef<ScrollView>(null);
   const [index, setIndex] = useState(0);
@@ -118,11 +121,20 @@ export function HomePromoCarousel({
                 : slide.kind === 'plan'
                   ? planSlide
                   : (
-                    <Image
-                      source={{ uri: slide.banner.imageUrl }}
-                      style={styles.bannerImage}
-                      resizeMode="cover"
-                    />
+                    <Pressable
+                      style={{ flex: 1 }}
+                      onPress={() => {
+                        if (slide.banner.machineKind || slide.banner.linkPath) {
+                          onBannerPress?.(slide.banner);
+                        }
+                      }}
+                    >
+                      <Image
+                        source={{ uri: slide.banner.imageUrl }}
+                        style={styles.bannerImage}
+                        resizeMode="cover"
+                      />
+                    </Pressable>
                   )}
             </View>
           ))}

@@ -57,7 +57,7 @@ export default function ServicosPage() {
     { id: 'FACIAL', name: 'Tratamentos Faciais', icon: '✨', color: 'pink' },
     { id: 'CORPORAL', name: 'Tratamentos Corporais', icon: '💪', color: 'blue' },
     { id: 'MASSAGEM', name: 'Massagens', icon: '💆', color: 'purple' },
-    { id: 'COMBO', name: 'Combos e Pacotes', icon: '🎁', color: 'orange' }
+    { id: 'COMBO', name: 'Pacotes', icon: '🎁', color: 'orange' }
   ]
 
   const handleEdit = (service: api.Service) => {

@@ -372,12 +372,16 @@ export default function HistoricoPage() {
                           ? 'bg-purple-100 text-purple-700'
                           : appointment.origin === 'VOUCHER'
                           ? 'bg-green-100 text-green-700'
+                          : appointment.origin === 'PACKAGE'
+                          ? 'bg-orange-100 text-orange-700'
                           : 'bg-gray-100 text-gray-700'
                       }`}>
                         {appointment.origin === 'ADMIN_CREATED'
                           ? (appointment.paymentStatus === 'PAID' ? '💰 Pago na Clínica' : '💰 Clínica')
                           : appointment.origin === 'SUBSCRIPTION' ? 'Plano'
                           : appointment.origin === 'VOUCHER' ? 'Voucher'
+                          : appointment.origin === 'PACKAGE'
+                            ? `Pacote${appointment.packageSessionIndex && appointment.packagePurchase?.sessionCount ? ` ${appointment.packageSessionIndex}/${appointment.packagePurchase.sessionCount}` : ''}`
                           : appointment.status === 'CANCELED' && appointment.cancelReason && /pagamento/i.test(appointment.cancelReason)
                             ? 'Cancelado — sem pagamento'
                             : appointment.paymentAmount ? `R$ ${appointment.paymentAmount.toFixed(2)}` : 'Avulso'}

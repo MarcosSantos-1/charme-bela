@@ -19,17 +19,22 @@ import { useCommercial } from '../../contexts/CommercialContext';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   createAppointment,
+  createPackagePurchase,
   createPaymentSession,
   getAvailableDays,
   getAvailableSlots,
   getDayMarkers,
   rescheduleAppointment,
+  schedulePackageSessions,
   type DayMarker,
 } from '../../lib/api';
 import {
   CATEGORY_META,
   getApiErrorMessage,
+  isPackageService,
+  packageItemsOf,
   type AppointmentOrigin,
+  type PackagePurchase,
   type Plan,
   type Subscription,
 } from '../../types/commercial';
@@ -49,10 +54,21 @@ const SHIFT_META = [
 export function BookingScreen({ route, navigation }: Props) {
   const { user } = useAuth();
   const categoryIllustrations = getCategoryIllustrations(user?.anamnesisForm?.personalData?.sex);
-  const { services, plans, subscription, vouchers, refresh } = useCommercial();
+  const { services, plans, subscription, vouchers, packagePurchases, refresh } = useCommercial();
   const service = services.find((item) => item.id === route.params.serviceId);
   const isRescheduling = Boolean(route.params.appointmentId);
-  const [step, setStep] = useState<Step>(isRescheduling ? 'date' : 'details');
+  const isPackage = Boolean(service && isPackageService(service));
+  const activePurchase = packagePurchases.find(
+    (item) =>
+      item.packageServiceId === service?.id &&
+      item.paymentStatus === 'PAID' &&
+      (item.status === 'ACTIVE' || item.remainingSessions > 0) &&
+      item.status !== 'CANCELED' &&
+      item.status !== 'REFUNDED',
+  ) as PackagePurchase | undefined;
+  const schedulingPurchaseId = route.params.packagePurchaseId || activePurchase?.id;
+  const [step, setStep] = useState<Step>(isRescheduling || route.params.packagePurchaseId ? 'date' : 'details');
+  const [draftSlots, setDraftSlots] = useState<Array<{ date: string; time: string }>>([]);
   const [date, setDate] = useState('');
   const [slots, setSlots] = useState<string[]>([]);
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
@@ -130,9 +146,9 @@ export function BookingScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (originInitialized || !service) return;
     // Veio da lista de serviços com "Usar voucher" → força origem VOUCHER
-    if (preferredVoucherId && matchingVoucher) setBookingOrigin('VOUCHER');
-    else if (matchingVoucher) setBookingOrigin('VOUCHER');
-    else if (canUsePlan) setBookingOrigin('SUBSCRIPTION');
+    if (preferredVoucherId && matchingVoucher && !isPackage) setBookingOrigin('VOUCHER');
+    else if (matchingVoucher && !isPackage) setBookingOrigin('VOUCHER');
+    else if (canUsePlan && !isPackage) setBookingOrigin('SUBSCRIPTION');
     else setBookingOrigin('SINGLE');
     setOriginInitialized(true);
   }, [canUsePlan, matchingVoucher, originInitialized, preferredVoucherId, service]);
@@ -256,6 +272,49 @@ export function BookingScreen({ route, navigation }: Props) {
         return;
       }
 
+      if (isPackage) {
+        const purchaseId = schedulingPurchaseId;
+        const selected = [...draftSlots];
+        if (!selected.some((slot) => slot.date === date && slot.time === time)) {
+          selected.push({ date, time });
+        }
+        const isoSlots = selected.map((slot) => `${slot.date}T${slot.time}:00.000Z`);
+
+        if (purchaseId && (activePurchase?.remainingSessions || route.params.packagePurchaseId)) {
+          const updated = await schedulePackageSessions(purchaseId, isoSlots);
+          await refresh();
+          Alert.alert('Sessão agendada', 'A clínica confirmará seu horário em breve.', [
+            {
+              text: 'Ver pacote',
+              onPress: () => navigation.navigate('PackageTimeline', { purchaseId: updated.id }),
+            },
+          ]);
+          return;
+        }
+
+        const purchase = await createPackagePurchase({
+          userId: user.id,
+          serviceId: service.id,
+          slots: isoSlots,
+        });
+        const checkout = await createPaymentSession(
+          user.id,
+          service.id,
+          purchase.appointments?.[0]?.id,
+          service.price,
+          undefined,
+          purchase.id,
+        );
+        await Linking.openURL(checkout.url);
+        await refresh();
+        Alert.alert(
+          'Pagamento do pacote',
+          'Ao concluir no Stripe, suas sessões ficam confirmadas. Você pode agendar o restante depois.',
+          [{ text: 'Ver agenda', onPress: () => navigation.navigate('ClientTabs', { screen: 'Agenda' }) }],
+        );
+        return;
+      }
+
       const appointment = await createAppointment({
         userId: user.id,
         serviceId: service.id,
@@ -341,6 +400,21 @@ export function BookingScreen({ route, navigation }: Props) {
             </Text>
             <Text style={styles.description}>{service.description}</Text>
 
+            {isPackage ? (
+              <View style={styles.packageItems}>
+                {(packageItemsOf(service).length ? packageItemsOf(service) : []).map((item) => (
+                  <View key={item.name} style={styles.packageItemRow}>
+                    <Ionicons name="sparkles-outline" size={16} color="#ec4899" />
+                    <Text style={styles.packageItemName}>{item.name}</Text>
+                    <Text style={styles.packageItemDuration}>{item.durationMinutes} min</Text>
+                  </View>
+                ))}
+                <Text style={styles.packageMeta}>
+                  {String(service.packageSessionCount || 1).padStart(2, '0')} sessões · {service.duration} min por visita
+                </Text>
+              </View>
+            ) : null}
+
             <View style={styles.summaryRow}>
               <Summary icon="time-outline" label="Duração" value={`${service.duration} min`} accent="#0ea5e9" />
               <Summary
@@ -351,7 +425,14 @@ export function BookingScreen({ route, navigation }: Props) {
               />
             </View>
 
-            {(serviceInUserPlan || startingPlan) ? (
+            {isPackage && activePurchase && activePurchase.remainingSessions > 0 ? (
+              <PrimaryButton
+                title={`Continuar pacote · ${activePurchase.sessionCount - activePurchase.remainingSessions}/${activePurchase.sessionCount}`}
+                onPress={() => navigation.navigate('PackageTimeline', { purchaseId: activePurchase.id })}
+              />
+            ) : (
+              <>
+            {(serviceInUserPlan || startingPlan) && !isPackage ? (
               <View style={styles.planInfoCard}>
                 {serviceInUserPlan ? (
                   <View style={styles.planBadgeRow}>
@@ -378,6 +459,17 @@ export function BookingScreen({ route, navigation }: Props) {
               </View>
             ) : null}
 
+            {isPackage ? (
+              <PaymentOption
+                selected
+                icon="gift-outline"
+                title="Pacote à vista"
+                subtitle={`${currency(service.price)} · ${service.packageSessionCount || 1} sessões`}
+                accent="#ec4899"
+                onPress={() => setBookingOrigin('SINGLE')}
+              />
+            ) : (
+              <>
             <Text style={styles.paymentSectionTitle}>Forma de pagamento</Text>
 
             {serviceInUserPlan ? (
@@ -423,12 +515,16 @@ export function BookingScreen({ route, navigation }: Props) {
               accent="#ec4899"
               onPress={() => setBookingOrigin('SINGLE')}
             />
+              </>
+            )}
 
             <PrimaryButton
-              title="Escolher data"
+              title={isPackage ? 'Escolher datas' : 'Escolher data'}
               onPress={() => setStep('date')}
               disabled={!canProceedFromDetails}
             />
+              </>
+            )}
           </>
         )}
 
@@ -605,7 +701,33 @@ export function BookingScreen({ route, navigation }: Props) {
                 ))}
               </>
             )}
-            {time ? <PrimaryButton title="Revisar agendamento" onPress={() => setStep('review')} /> : null}
+            {time ? (
+              <>
+                {isPackage && (draftSlots.length + 1) < (activePurchase?.remainingSessions || service.packageSessionCount || 1) ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setDraftSlots((current) =>
+                        current.some((slot) => slot.date === date && slot.time === time)
+                          ? current
+                          : [...current, { date, time }],
+                      );
+                      setDate('');
+                      setTime('');
+                      setStep('date');
+                    }}
+                    style={{ alignItems: 'center', marginBottom: 10 }}
+                  >
+                    <Text style={{ color: '#ec4899', fontWeight: '800' }}>Adicionar outra data</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {draftSlots.length > 0 ? (
+                  <Text style={{ textAlign: 'center', color: '#6b7280', marginBottom: 8 }}>
+                    {draftSlots.length + 1} {(draftSlots.length + 1) === 1 ? 'sessão escolhida' : 'sessões escolhidas'}
+                  </Text>
+                ) : null}
+                <PrimaryButton title="Revisar agendamento" onPress={() => setStep('review')} />
+              </>
+            ) : null}
           </>
         )}
 
@@ -958,6 +1080,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginVertical: 22,
   },
+  packageItems: {
+    backgroundColor: '#fff1f2',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 8,
+    gap: 8,
+  },
+  packageItemRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  packageItemName: { flex: 1, color: '#111827', fontWeight: '600' },
+  packageItemDuration: { color: '#9f1239', fontSize: 12, fontWeight: '700' },
+  packageMeta: { marginTop: 6, color: '#be185d', fontWeight: '800', fontSize: 13 },
   summaryRow: { flexDirection: 'row', gap: 12 },
   summary: {
     flex: 1,

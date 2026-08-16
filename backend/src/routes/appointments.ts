@@ -21,6 +21,7 @@ import {
   createNotification
 } from '../utils/notifications'
 import { markVoucherUsed, releaseVoucherOnCancel, voucherHasActiveHold } from '../utils/vouchers'
+import { cancelUnpaidPackagePurchase, releaseSessionOnCancel } from '../utils/packages'
 
 // Lançado dentro da transação quando o slot foi ocupado por outra requisição
 class SlotTakenError extends Error {
@@ -97,17 +98,23 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       }
       
       const cancelReason = 'Pagamento cancelado no checkout'
-      await prisma.appointment.update({
-        where: { id },
-        data: {
-          status: 'CANCELED',
-          canceledBy: 'client',
-          canceledAt: new Date(),
-          cancelReason
-        }
-      })
 
-      await releaseVoucherOnCancel(appointment.voucherId)
+      if (appointment.packagePurchaseId) {
+        await prisma.$transaction(async (tx) => {
+          await cancelUnpaidPackagePurchase(tx, appointment.packagePurchaseId!, cancelReason)
+        })
+      } else {
+        await prisma.appointment.update({
+          where: { id },
+          data: {
+            status: 'CANCELED',
+            canceledBy: 'client',
+            canceledAt: new Date(),
+            cancelReason
+          }
+        })
+        await releaseVoucherOnCancel(appointment.voucherId)
+      }
 
       await notifyAppointmentCanceled(appointment.userId, {
         serviceName: appointment.service.name,
@@ -295,7 +302,18 @@ export async function appointmentsRoutes(app: FastifyInstance) {
             }
           },
           service: true,
-          voucher: true
+          voucher: true,
+          packagePurchase: {
+            select: {
+              id: true,
+              sessionCount: true,
+              sessionsScheduled: true,
+              status: true,
+              paymentStatus: true,
+              itemsSnapshot: true,
+              packageServiceId: true,
+            }
+          }
         },
         orderBy: { startTime: 'asc' }
       })
@@ -334,7 +352,18 @@ export async function appointmentsRoutes(app: FastifyInstance) {
             }
           },
           service: true,
-          voucher: true
+          voucher: true,
+          packagePurchase: {
+            select: {
+              id: true,
+              sessionCount: true,
+              sessionsScheduled: true,
+              status: true,
+              paymentStatus: true,
+              itemsSnapshot: true,
+              packageServiceId: true,
+            }
+          }
         }
       })
       
@@ -453,6 +482,13 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         return reply.status(404).send({
           success: false,
           error: 'Serviço não encontrado'
+        })
+      }
+
+      if (service.category === 'COMBO' || origin === 'PACKAGE') {
+        return reply.status(400).send({
+          success: false,
+          error: 'Pacotes são agendados pela tela de pacotes, não como tratamento avulso'
         })
       }
       
@@ -1143,18 +1179,34 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         }
       }
       
-      const updatedAppointment = await prisma.appointment.update({
-        where: { id },
-        data: {
-          status: 'CANCELED',
-          canceledBy,
-          canceledAt: new Date(),
-          cancelReason
-        },
-        include: {
-          user: true,
-          service: true
+      const updatedAppointment = await prisma.$transaction(async (tx) => {
+        if (appointment.packagePurchaseId) {
+          const isUnpaidPackageHold =
+            appointment.paymentStatus === 'PENDING' && appointment.paymentExpiresAt !== null
+          if (isUnpaidPackageHold) {
+            await cancelUnpaidPackagePurchase(
+              tx,
+              appointment.packagePurchaseId,
+              cancelReason || 'Pagamento cancelado',
+            )
+          } else {
+            await releaseSessionOnCancel(tx, appointment)
+          }
         }
+
+        return tx.appointment.update({
+          where: { id },
+          data: {
+            status: 'CANCELED',
+            canceledBy,
+            canceledAt: new Date(),
+            cancelReason
+          },
+          include: {
+            user: true,
+            service: true
+          }
+        })
       })
 
       // Cancelado sem conclusão → voucher volta a ficar disponível

@@ -12,6 +12,7 @@ import type {
   Service,
   Subscription,
   Voucher,
+  PackagePurchase,
 } from '../types/commercial';
 import { looksLikePhoneName } from './userDisplay';
 
@@ -275,9 +276,10 @@ export async function createCheckoutSession(userId: string, planId: string) {
 export async function createPaymentSession(
   userId: string,
   serviceId: string,
-  appointmentId: string,
+  appointmentId?: string,
   customAmount?: number,
   customDescription?: string,
+  packagePurchaseId?: string,
 ) {
   const response = await api.post('/stripe/create-payment-session', {
     userId,
@@ -285,8 +287,47 @@ export async function createPaymentSession(
     appointmentId,
     customAmount,
     customDescription,
+    packagePurchaseId,
   });
   return unwrap<{ sessionId: string; url: string }>(response.data);
+}
+
+export async function getPackagePurchases(userId?: string, status?: string) {
+  try {
+    const response = await api.get('/packages/purchases', { params: { userId, status } });
+    return unwrap<PackagePurchase[]>(response.data);
+  } catch (error) {
+    // Backend antigo ainda sem /packages — não derruba a home inteira.
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+export async function getPackagePurchase(id: string) {
+  const response = await api.get(`/packages/purchases/${id}`);
+  return unwrap<PackagePurchase>(response.data);
+}
+
+export async function createPackagePurchase(data: {
+  userId: string;
+  serviceId: string;
+  slots?: Array<{ startTime: string } | string>;
+  paidAtClinic?: boolean;
+  notes?: string;
+}) {
+  const response = await api.post('/packages/purchases', data);
+  return unwrap<PackagePurchase>(response.data);
+}
+
+export async function schedulePackageSessions(
+  purchaseId: string,
+  slots: Array<{ startTime: string } | string>,
+  opts?: { notes?: string; adminExtended?: boolean },
+) {
+  const response = await api.post(`/packages/purchases/${purchaseId}/sessions`, { slots, ...opts });
+  return unwrap<PackagePurchase>(response.data);
 }
 
 export async function changePlan(userId: string, newPlanId: string): Promise<Subscription> {

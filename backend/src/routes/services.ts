@@ -8,6 +8,7 @@ import {
   finalizePastReleasedOccurrences,
   getReleasedMachineKinds,
 } from '../utils/machineRental'
+import { PACKAGE_SERVICE_INCLUDE, PackageError, syncPackageItems } from '../utils/packages'
 
 export async function servicesRoutes(app: FastifyInstance) {
   // GET - Listar serviços (por padrão só ativos, mas admin pode ver todos)
@@ -26,6 +27,7 @@ export async function servicesRoutes(app: FastifyInstance) {
 
       const services = await prisma.service.findMany({
         where: showAll === 'true' ? {} : { isActive: true },
+        include: PACKAGE_SERVICE_INCLUDE,
         orderBy: { name: 'asc' }
       })
 
@@ -64,7 +66,8 @@ export async function servicesRoutes(app: FastifyInstance) {
     
     try {
       const service = await prisma.service.findUnique({
-        where: { id }
+        where: { id },
+        include: PACKAGE_SERVICE_INCLUDE,
       })
       
       if (!service) {
@@ -102,6 +105,9 @@ export async function servicesRoutes(app: FastifyInstance) {
         price,
         machineKind,
         allowOnSubscription,
+        packageSessionCount,
+        installmentsAllowed,
+        packageItems,
       } = request.body as {
         name: string
         description: string
@@ -110,6 +116,9 @@ export async function servicesRoutes(app: FastifyInstance) {
         price: number
         machineKind?: MachineKind | null
         allowOnSubscription?: boolean
+        packageSessionCount?: number
+        installmentsAllowed?: boolean
+        packageItems?: Array<{ includedServiceId: string; durationMinutes?: number; sortOrder?: number }>
       }
       
       if (!category) {
@@ -121,6 +130,28 @@ export async function servicesRoutes(app: FastifyInstance) {
 
       const kind =
         machineKind === 'LASER' || machineKind === 'CRYO' ? machineKind : null
+      const isPackage = category === 'COMBO'
+
+      if (isPackage && kind) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Pacotes não podem ser tratamentos de Laser ou Crio',
+        })
+      }
+
+      if (isPackage && (!packageSessionCount || packageSessionCount < 1)) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Informe quantas sessões o pacote inclui',
+        })
+      }
+
+      if (isPackage && (!packageItems || packageItems.length === 0)) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Inclua pelo menos um procedimento no pacote',
+        })
+      }
       
       logger.debug('Criando novo serviço:', { name, category, duration, price, machineKind: kind })
       
@@ -129,14 +160,28 @@ export async function servicesRoutes(app: FastifyInstance) {
           name,
           description,
           category,
-          duration,
+          duration: isPackage ? 30 : duration,
           price,
           isActive: true,
-          machineKind: kind,
-          allowOnSubscription:
-            allowOnSubscription != null ? allowOnSubscription : kind == null,
-        }
+          machineKind: isPackage ? null : kind,
+          allowOnSubscription: isPackage
+            ? false
+            : allowOnSubscription != null ? allowOnSubscription : kind == null,
+          packageSessionCount: isPackage ? packageSessionCount : null,
+          installmentsAllowed: isPackage ? Boolean(installmentsAllowed) : false,
+        },
+        include: PACKAGE_SERVICE_INCLUDE,
       })
+
+      let created = service
+      if (isPackage && packageItems) {
+        try {
+          created = await syncPackageItems(service.id, packageItems)
+        } catch (itemError) {
+          await prisma.service.delete({ where: { id: service.id } }).catch(() => undefined)
+          throw itemError
+        }
+      }
       
       // Notificar todos os clientes sobre o novo serviço (não notifica especiais sem release)
       if (!kind) {
@@ -153,13 +198,13 @@ export async function servicesRoutes(app: FastifyInstance) {
             createNotification({
               userId: client.id,
               type: 'PROMOTION',
-              title: 'Novo Tratamento Disponível! ✨',
-              message: `Agora oferecemos ${service.name}! ${service.description}`,
+              title: isPackage ? 'Novo Pacote Disponível! ✨' : 'Novo Tratamento Disponível! ✨',
+              message: `Agora oferecemos ${created.name}! ${created.description}`,
               icon: 'SPARKLES',
               priority: 'NORMAL',
               actionUrl: '/servicos',
-              actionLabel: 'Ver Tratamentos',
-              metadata: { serviceId: service.id, serviceName: service.name }
+              actionLabel: isPackage ? 'Ver Pacotes' : 'Ver Tratamentos',
+              metadata: { serviceId: created.id, serviceName: created.name }
             })
           )
           
@@ -170,12 +215,15 @@ export async function servicesRoutes(app: FastifyInstance) {
         }
       }
       
-      logger.success(`Serviço criado com sucesso: ${service.name} (ID: ${service.id})`)
+      logger.success(`Serviço criado com sucesso: ${created.name} (ID: ${created.id})`)
       return reply.status(201).send({
         success: true,
-        data: service
+        data: created
       })
     } catch (error) {
+      if (error instanceof PackageError) {
+        return reply.status(error.statusCode).send({ success: false, error: error.message })
+      }
       logger.error('Erro ao criar serviço:', error)
       return reply.status(500).send({
         success: false,
@@ -199,6 +247,9 @@ export async function servicesRoutes(app: FastifyInstance) {
         isActive,
         machineKind,
         allowOnSubscription,
+        packageSessionCount,
+        installmentsAllowed,
+        packageItems,
       } = request.body as {
         name?: string
         description?: string
@@ -208,6 +259,24 @@ export async function servicesRoutes(app: FastifyInstance) {
         isActive?: boolean
         machineKind?: MachineKind | null
         allowOnSubscription?: boolean
+        packageSessionCount?: number
+        installmentsAllowed?: boolean
+        packageItems?: Array<{ includedServiceId: string; durationMinutes?: number; sortOrder?: number }>
+      }
+
+      const existing = await prisma.service.findUnique({ where: { id } })
+      if (!existing) {
+        return reply.status(404).send({ success: false, error: 'Serviço não encontrado' })
+      }
+
+      const nextCategory = category || existing.category
+      const isPackage = nextCategory === 'COMBO'
+
+      if (isPackage && (machineKind === 'LASER' || machineKind === 'CRYO')) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Pacotes não podem ser tratamentos de Laser ou Crio',
+        })
       }
 
       const kindUpdate =
@@ -218,19 +287,27 @@ export async function servicesRoutes(app: FastifyInstance) {
                 machineKind === 'LASER' || machineKind === 'CRYO' ? machineKind : null,
             }
       
-      const service = await prisma.service.update({
+      let service = await prisma.service.update({
         where: { id },
         data: {
           ...(name && { name }),
           ...(description && { description }),
           ...(category && { category }),
-          ...(duration && { duration }),
+          ...(duration && !isPackage && { duration }),
           ...(price && { price }),
           ...(isActive !== undefined && { isActive }),
           ...kindUpdate,
-          ...(allowOnSubscription !== undefined && { allowOnSubscription }),
-        }
+          allowOnSubscription: isPackage ? false : allowOnSubscription,
+          ...(packageSessionCount !== undefined && { packageSessionCount: isPackage ? packageSessionCount : null }),
+          ...(installmentsAllowed !== undefined && { installmentsAllowed: isPackage ? installmentsAllowed : false }),
+          ...(isPackage ? { machineKind: null } : {}),
+        },
+        include: PACKAGE_SERVICE_INCLUDE,
       })
+
+      if (isPackage && packageItems) {
+        service = await syncPackageItems(id, packageItems)
+      }
       
       logger.success(`Serviço atualizado: ${service.name}`)
       return reply.status(200).send({
@@ -238,6 +315,9 @@ export async function servicesRoutes(app: FastifyInstance) {
         data: service
       })
     } catch (error) {
+      if (error instanceof PackageError) {
+        return reply.status(error.statusCode).send({ success: false, error: error.message })
+      }
       logger.error('Erro ao atualizar serviço:', error)
       return reply.status(500).send({
         success: false,

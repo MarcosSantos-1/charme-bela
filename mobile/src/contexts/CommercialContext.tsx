@@ -7,9 +7,10 @@ import {
   getServices,
   getSubscription,
   getVouchers,
+  getPackagePurchases,
   type Banner,
 } from '../lib/api';
-import type { Appointment, Plan, Service, Subscription, Voucher } from '../types/commercial';
+import type { Appointment, Plan, Service, Subscription, Voucher, PackagePurchase } from '../types/commercial';
 import { getApiErrorMessage } from '../types/commercial';
 import {
   bannersSignature,
@@ -24,6 +25,7 @@ interface CommercialContextValue {
   plans: Plan[];
   subscription: Subscription | null;
   vouchers: Voucher[];
+  packagePurchases: PackagePurchase[];
   /** Banners da home (CLIENT) — prontos após o loading do gate. */
   clientBanners: Banner[];
   loading: boolean;
@@ -55,6 +57,7 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
+  const [packagePurchases, setPackagePurchases] = useState<PackagePurchase[]>([]);
   const [clientBanners, setClientBanners] = useState<Banner[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -83,18 +86,20 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
     setRefreshing(true);
     setError(null);
     try {
-      const [nextServices, nextAppointments, nextPlans, nextSubscription, nextVouchers] = await Promise.all([
+      const [nextServices, nextAppointments, nextPlans, nextSubscription, nextVouchers, nextPurchases] = await Promise.all([
         getServices(),
         getAppointments({ userId: user.id, excludeHidden: true }),
         getPlans(),
         getSubscription(user.id),
         getVouchers(user.id),
+        getPackagePurchases(user.id),
       ]);
       setServices(nextServices);
       setAppointments(nextAppointments);
       setPlans(nextPlans);
       setSubscription(nextSubscription);
       setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments));
+      setPackagePurchases(nextPurchases);
 
       // Pull-to-refresh: força rede nos banners (sem limpar UI antes)
       await refreshBanners(true);
@@ -126,12 +131,13 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
         getPlans(),
         getSubscription(user.id),
         getVouchers(user.id),
+        getPackagePurchases(user.id),
       ]);
       const bannersPromise = refreshBanners(forceBanners).catch((err) => {
         console.warn('[Commercial] banners no bootstrap', err);
       });
 
-      const [[nextServices, nextAppointments, nextPlans, nextSubscription, nextVouchers]] = await Promise.all([
+      const [[nextServices, nextAppointments, nextPlans, nextSubscription, nextVouchers, nextPurchases]] = await Promise.all([
         commercialPromise,
         bannersPromise,
       ]);
@@ -141,6 +147,7 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
       setPlans(nextPlans);
       setSubscription(nextSubscription);
       setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments));
+      setPackagePurchases(nextPurchases);
     } catch (requestError) {
       setError(getApiErrorMessage(requestError, 'Não foi possível carregar seus dados'));
     } finally {
@@ -158,6 +165,7 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
     setPlans([]);
     setSubscription(null);
     setVouchers([]);
+    setPackagePurchases([]);
     setClientBanners([]);
     bannersSigRef.current = '';
     bannersFetchedAtRef.current = 0;
@@ -171,18 +179,20 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
       if (state !== 'active' || !user?.id) return;
       void (async () => {
         try {
-          const [nextServices, nextAppointments, nextPlans, nextSubscription, nextVouchers] = await Promise.all([
+          const [nextServices, nextAppointments, nextPlans, nextSubscription, nextVouchers, nextPurchases] = await Promise.all([
             getServices(),
             getAppointments({ userId: user.id, excludeHidden: true }),
             getPlans(),
             getSubscription(user.id),
             getVouchers(user.id),
+            getPackagePurchases(user.id),
           ]);
           setServices(nextServices);
           setAppointments(nextAppointments);
           setPlans(nextPlans);
           setSubscription(nextSubscription);
           setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments));
+          setPackagePurchases(nextPurchases);
 
           if (!isBannerCacheFresh(bannersFetchedAtRef.current)) {
             await refreshBanners(true);
@@ -202,13 +212,14 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
       plans,
       subscription,
       vouchers,
+      packagePurchases,
       clientBanners,
       loading,
       refreshing,
       error,
       refresh,
     }),
-    [services, appointments, plans, subscription, vouchers, clientBanners, loading, refreshing, error, refresh],
+    [services, appointments, plans, subscription, vouchers, packagePurchases, clientBanners, loading, refreshing, error, refresh],
   );
 
   return <CommercialContext.Provider value={value}>{children}</CommercialContext.Provider>;

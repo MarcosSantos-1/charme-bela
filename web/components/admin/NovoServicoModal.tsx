@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
-import { Scissors, DollarSign, Clock, Sparkles, Check } from 'lucide-react'
+import { Scissors, DollarSign, Clock, Sparkles, Check, Gift } from 'lucide-react'
 import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
 
@@ -25,22 +25,28 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
     isSpecial: false,
     machineKind: '' as '' | 'LASER' | 'CRYO',
     allowOnSubscription: true,
+    sessoes: '5',
+    packageItemIds: [] as string[],
+    installmentsAllowed: false,
   })
 
   const [planos, setPlanos] = useState<api.Plan[]>([])
+  const [procedimentos, setProcedimentos] = useState<api.Service[]>([])
   const [loading, setLoading] = useState(false)
+  const isPackage = formData.categoria === 'COMBO'
 
   // Categorias do banco de dados
   const categorias = [
     { value: 'FACIAL', label: '✨ Facial', color: 'bg-pink-100 text-pink-700' },
     { value: 'CORPORAL', label: '💪 Corporal', color: 'bg-blue-100 text-blue-700' },
     { value: 'MASSAGEM', label: '💆 Massagem', color: 'bg-purple-100 text-purple-700' },
-    { value: 'COMBO', label: '🎁 Combo', color: 'bg-orange-100 text-orange-700' }
+    { value: 'COMBO', label: '🎁 Pacote', color: 'bg-orange-100 text-orange-700' }
   ]
 
   useEffect(() => {
     if (isOpen) {
       loadPlanos()
+      loadProcedimentos()
       
       // Se está editando, preenche o form
       if (editingService) {
@@ -54,6 +60,11 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
           isSpecial: Boolean(editingService.machineKind),
           machineKind: editingService.machineKind || '',
           allowOnSubscription: editingService.allowOnSubscription !== false,
+          sessoes: String(editingService.packageSessionCount || 5),
+          packageItemIds: (editingService.packageItems || [])
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map((item) => item.includedServiceId),
+          installmentsAllowed: Boolean(editingService.installmentsAllowed),
         })
       } else {
         resetForm()
@@ -79,6 +90,15 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
     }
   }
 
+  const loadProcedimentos = async () => {
+    try {
+      const all = await api.getServices(true)
+      setProcedimentos(all.filter((item) => item.category !== 'COMBO' && !item.machineKind && item.isActive))
+    } catch (error) {
+      console.error('Erro ao carregar procedimentos:', error)
+    }
+  }
+
   const togglePlano = (planoId: string) => {
     const planos = formData.planosIds
     if (planos.includes(planoId)) {
@@ -91,21 +111,39 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!formData.nome || !formData.categoria || !formData.preco || !formData.duracao) {
+    if (!formData.nome || !formData.categoria || !formData.preco || (!isPackage && !formData.duracao)) {
       toast.error('Preencha os campos obrigatórios')
+      return
+    }
+
+    if (isPackage && formData.packageItemIds.length === 0) {
+      toast.error('Inclua pelo menos um procedimento no pacote')
       return
     }
 
     setLoading(true)
     try {
+      const selectedItems = formData.packageItemIds.map((id, index) => {
+        const proc = procedimentos.find((item) => item.id === id)
+        return {
+          includedServiceId: id,
+          durationMinutes: proc?.duration || 30,
+          sortOrder: index,
+        }
+      })
+      const packageDuration = selectedItems.reduce((sum, item) => sum + item.durationMinutes, 0)
+
       const serviceData = {
         name: formData.nome,
         category: formData.categoria,
         price: parseFloat(formData.preco),
-        duration: parseInt(formData.duracao),
+        duration: isPackage ? packageDuration || 30 : parseInt(formData.duracao),
         description: formData.descricao,
-        machineKind: formData.isSpecial && formData.machineKind ? formData.machineKind : null,
-        allowOnSubscription: formData.isSpecial ? formData.allowOnSubscription : true,
+        machineKind: isPackage ? null : formData.isSpecial && formData.machineKind ? formData.machineKind : null,
+        allowOnSubscription: isPackage ? false : formData.isSpecial ? formData.allowOnSubscription : true,
+        packageSessionCount: isPackage ? parseInt(formData.sessoes, 10) : undefined,
+        installmentsAllowed: isPackage ? formData.installmentsAllowed : false,
+        packageItems: isPackage ? selectedItems : undefined,
       }
 
       if (formData.isSpecial && !formData.machineKind) {
@@ -114,7 +152,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
         return
       }
 
-      const planIdsToLink = formData.isSpecial && !formData.allowOnSubscription ? [] : formData.planosIds
+      const planIdsToLink = isPackage || (formData.isSpecial && !formData.allowOnSubscription) ? [] : formData.planosIds
 
       let createdService: api.Service
 
@@ -175,7 +213,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
         }
       }
 
-      toast.success(editingService ? 'Serviço atualizado com sucesso!' : 'Serviço criado com sucesso!')
+      toast.success(editingService ? 'Atualizado com sucesso!' : isPackage ? 'Pacote criado com sucesso!' : 'Serviço criado com sucesso!')
       
       if (onSuccess) onSuccess()
       resetForm()
@@ -199,6 +237,9 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
       isSpecial: false,
       machineKind: '',
       allowOnSubscription: true,
+      sessoes: '5',
+      packageItemIds: [],
+      installmentsAllowed: false,
     })
   }
 
@@ -206,14 +247,14 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
     <Modal 
       isOpen={isOpen} 
       onClose={() => { resetForm(); onClose(); }} 
-      title={editingService ? 'Editar Serviço' : 'Adicionar Novo Serviço'} 
+      title={editingService ? (isPackage ? 'Editar Pacote' : 'Editar Serviço') : (isPackage ? 'Novo Pacote' : 'Adicionar Novo Serviço')} 
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             <Scissors className="w-4 h-4 inline mr-1" />
-            Nome do Serviço *
+            Nome do {isPackage ? 'Pacote' : 'Serviço'} *
           </label>
           <input
             type="text"
@@ -234,7 +275,12 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
               <button
                 key={cat.value}
                 type="button"
-                onClick={() => setFormData({ ...formData, categoria: cat.value as any })}
+                onClick={() => setFormData({
+                  ...formData,
+                  categoria: cat.value as any,
+                  isSpecial: cat.value === 'COMBO' ? false : formData.isSpecial,
+                  machineKind: cat.value === 'COMBO' ? '' : formData.machineKind,
+                })}
                 className={`p-3 rounded-xl border-2 text-left transition-all ${
                   formData.categoria === cat.value
                     ? 'border-pink-500 bg-pink-50'
@@ -252,6 +298,91 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
           </div>
         </div>
 
+        </div>
+
+        {isPackage ? (
+          <div className="rounded-xl border-2 border-orange-200 bg-orange-50/60 p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <Gift className="w-4 h-4 text-orange-600" />
+              <span className="font-semibold text-gray-900">Composição do pacote</span>
+            </div>
+            <p className="text-xs text-gray-600">
+              Cada sessão inclui todos os procedimentos abaixo, no mesmo agendamento. A duração é a soma.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Sessões *</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={formData.sessoes}
+                  onChange={(e) => setFormData({ ...formData, sessoes: e.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-900"
+                />
+              </div>
+              <div className="flex items-end pb-1">
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={formData.installmentsAllowed}
+                    onChange={(e) => setFormData({ ...formData, installmentsAllowed: e.target.checked })}
+                    className="w-4 h-4 text-orange-600 rounded"
+                  />
+                  Parcelado (checkout futuro)
+                </label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {procedimentos.map((proc) => {
+                const selected = formData.packageItemIds.includes(proc.id)
+                return (
+                  <label
+                    key={proc.id}
+                    className={`flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer ${
+                      selected ? 'border-orange-500 bg-white' : 'border-gray-200 bg-white/70'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => {
+                        setFormData({
+                          ...formData,
+                          packageItemIds: selected
+                            ? formData.packageItemIds.filter((id) => id !== proc.id)
+                            : [...formData.packageItemIds, proc.id],
+                        })
+                      }}
+                      className="w-4 h-4 text-orange-600 rounded"
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium text-sm text-gray-900">{proc.name}</div>
+                      <div className="text-xs text-gray-500">{proc.duration} min · {proc.category}</div>
+                    </div>
+                    {selected && <Check className="w-4 h-4 text-orange-600" />}
+                  </label>
+                )
+              })}
+            </div>
+            {formData.packageItemIds.length > 0 && (
+              <div className="text-sm text-orange-800 bg-white rounded-lg p-3">
+                {String(formData.sessoes).padStart(2, '0')} sessões ·{' '}
+                {formData.packageItemIds
+                  .map((id) => procedimentos.find((item) => item.id === id))
+                  .filter(Boolean)
+                  .map((item) => item!.name)
+                  .join(' + ')}
+                {' · '}
+                {formData.packageItemIds.reduce((sum, id) => {
+                  const proc = procedimentos.find((item) => item.id === id)
+                  return sum + (proc?.duration || 0)
+                }, 0)}{' '}
+                min por visita
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="rounded-xl border-2 border-dashed border-gray-200 p-4 space-y-3">
           <label className="flex items-center gap-3 cursor-pointer">
             <input
@@ -312,6 +443,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
             </>
           )}
         </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -336,6 +468,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
             </div>
           </div>
 
+          {!isPackage && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <Clock className="w-4 h-4 inline mr-1" />
@@ -356,6 +489,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
               <option value="180">180 minutos (3h)</option>
             </select>
           </div>
+          )}
         </div>
 
         <div>
@@ -373,7 +507,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
         </div>
 
         {/* Incluir em Planos */}
-        {(!formData.isSpecial || formData.allowOnSubscription) && (
+        {!isPackage && (!formData.isSpecial || formData.allowOnSubscription) && (
         <div className="border-t border-gray-200 pt-4">
           <div className="flex items-center gap-2 mb-3">
             <Sparkles className="w-4 h-4 text-purple-600" />
@@ -436,7 +570,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
             className="flex-1"
             disabled={loading}
           >
-            {loading ? 'Salvando...' : editingService ? 'Salvar Alterações' : 'Criar Serviço'}
+            {loading ? 'Salvando...' : editingService ? 'Salvar Alterações' : isPackage ? 'Criar Pacote' : 'Criar Serviço'}
           </Button>
         </div>
       </form>

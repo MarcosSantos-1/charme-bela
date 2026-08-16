@@ -2,6 +2,7 @@ import { prisma } from '../lib/prisma'
 import { logger } from './logger'
 import { notifyAppointmentCanceled } from './notifications'
 import { releaseVoucherOnCancel } from './vouchers'
+import { cancelUnpaidPackagePurchase } from './packages'
 
 /**
  * Reserva de horário com pagamento online pendente ("hold").
@@ -59,8 +60,29 @@ export async function releaseExpiredPaymentHolds(): Promise<number> {
 
     const cancelReason = `Pagamento não concluído em ${PAYMENT_HOLD_MINUTES} minutos`
     const canceledAt = new Date()
+    const handledPurchases = new Set<string>()
+    let released = 0
 
     for (const appointment of expired) {
+      if (appointment.packagePurchaseId) {
+        if (handledPurchases.has(appointment.packagePurchaseId)) continue
+        handledPurchases.add(appointment.packagePurchaseId)
+        await prisma.$transaction(async (tx) => {
+          await cancelUnpaidPackagePurchase(tx, appointment.packagePurchaseId!, cancelReason)
+        })
+        try {
+          await notifyAppointmentCanceled(appointment.userId, {
+            serviceName: appointment.service.name,
+            startTime: appointment.startTime,
+            cancelReason
+          })
+        } catch (notifyError) {
+          logger.error(`Erro ao notificar cancelamento do hold ${appointment.id}:`, notifyError)
+        }
+        released += 1
+        continue
+      }
+
       await prisma.appointment.update({
         where: { id: appointment.id },
         data: {
@@ -70,6 +92,7 @@ export async function releaseExpiredPaymentHolds(): Promise<number> {
           cancelReason
         }
       })
+      released += 1
 
       try {
         await releaseVoucherOnCancel(appointment.voucherId)
@@ -88,22 +111,26 @@ export async function releaseExpiredPaymentHolds(): Promise<number> {
       }
     }
 
-    logger.warning(`⏰ ${expired.length} reserva(s) com pagamento expirado liberada(s)`)
-    return expired.length
+    logger.warning(`⏰ ${released} reserva(s) com pagamento expirado liberada(s)`)
+    return released
   } catch (error) {
     logger.error('Erro ao liberar holds de pagamento expirados:', error)
     return 0
   }
 }
 
-/** Quantos holds ativos (ainda não pagos / não expirados) o usuário tem. */
+/** Quantos holds ativos (ainda não pagos / não expirados) o usuário tem.
+ *  Um pacote com várias sessões no mesmo checkout conta como 1 hold. */
 export async function countActivePaymentHolds(userId: string): Promise<number> {
-  return prisma.appointment.count({
+  const holds = await prisma.appointment.findMany({
     where: {
       userId,
       status: 'PENDING',
       paymentStatus: 'PENDING',
       paymentExpiresAt: { gt: new Date() }
-    }
+    },
+    select: { id: true, packagePurchaseId: true }
   })
+  const unique = new Set(holds.map((hold) => hold.packagePurchaseId || hold.id))
+  return unique.size
 }

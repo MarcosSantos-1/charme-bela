@@ -29,7 +29,7 @@ interface TodayAppointment {
   service: string
   status: 'pending' | 'confirmed' | 'completed'
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
-  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED'
+  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
 }
 
 interface RecentActivity {
@@ -299,6 +299,7 @@ export default function AdminDashboard() {
                     const isAdminPending = appointment.origin === 'ADMIN_CREATED' && appointment.paymentStatus === 'PENDING' // Admin criou, pagar na clínica
                     const isClientSingle = appointment.origin === 'SINGLE' // Cliente avulso (vai pagar no checkout)
                     const isSubscription = appointment.origin === 'SUBSCRIPTION' // Do plano
+                    const isPackage = appointment.origin === 'PACKAGE'
                     
                     // Definir cores baseado no tipo
                     let bgGradient = 'bg-gradient-to-r from-white to-gray-50'
@@ -316,6 +317,11 @@ export default function AdminDashboard() {
                       borderColor = 'border-purple-300'
                       timeBg = 'bg-purple-100'
                       timeColor = 'text-purple-700'
+                    } else if (isPackage) {
+                      bgGradient = 'bg-gradient-to-r from-orange-50 to-amber-50'
+                      borderColor = 'border-orange-300'
+                      timeBg = 'bg-orange-100'
+                      timeColor = 'text-orange-700'
                     } else if (isClientSingle) {
                       bgGradient = 'bg-gradient-to-r from-blue-50 to-blue-100'
                       borderColor = 'border-blue-300'
@@ -345,6 +351,11 @@ export default function AdminDashboard() {
                               {isSubscription && (
                                   <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-purple-200 text-purple-800 whitespace-nowrap">
                                   ✨ Plano
+                                </span>
+                              )}
+                              {isPackage && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-orange-200 text-orange-800 whitespace-nowrap">
+                                  🎁 Pacote
                                 </span>
                               )}
                               {isClientSingle && (

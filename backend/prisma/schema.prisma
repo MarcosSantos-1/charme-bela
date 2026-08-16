@@ -31,6 +31,7 @@ model User {
   vouchers           Voucher[]
   monthlyUsage       MonthlyUsage[]
   notifications      Notification[]
+  packagePurchases   PackagePurchase[]
   
   // Controle
   isActive           Boolean            @default(true) // Admin pode desativar um cliente
@@ -67,10 +68,18 @@ model Service {
   machineKind           MachineKind?
   /** Se false, não entra em planos mesmo que gestora tente vincular. */
   allowOnSubscription   Boolean      @default(true)
+
+  /** Pacote (category COMBO): quantas sessões o curso tem. null = serviço avulso. */
+  packageSessionCount   Int?
+  /** Marcação para checkout parcelado (Asaas/AbacatePay). Stripe v1 cobra à vista. */
+  installmentsAllowed   Boolean      @default(false)
   
   // Relacionamentos
   plans        SubscriptionPlan[] @relation("ServicesOnPlans")
   appointments Appointment[]
+  packageItems          PackageItem[]      @relation("PackageItems")
+  includedInPackages    PackageItem[]      @relation("IncludedInPackages")
+  packagePurchases      PackagePurchase[]
   
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @default(now()) @updatedAt
@@ -202,6 +211,11 @@ model Appointment {
   // Observações
   notes            String?          @db.Text
   adminNotes       String?          @db.Text // Observações privadas do admin
+
+  /** Sessão de um pacote comprado (null = tratamento avulso/plano). */
+  packagePurchaseId   String?
+  packagePurchase     PackagePurchase? @relation(fields: [packagePurchaseId], references: [id], onDelete: SetNull)
+  packageSessionIndex Int?
   
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -211,6 +225,50 @@ model Appointment {
   @@index([startTime])
   @@index([status])
   @@index([paymentExpiresAt]) // Para encontrar agendamentos expirados
+  @@index([packagePurchaseId])
+}
+
+// ============================================
+// PACOTES (categoria COMBO no catálogo)
+// ============================================
+
+model PackageItem {
+  id                String   @id @default(cuid())
+  packageServiceId  String
+  packageService    Service  @relation("PackageItems", fields: [packageServiceId], references: [id], onDelete: Cascade)
+  includedServiceId String
+  includedService   Service  @relation("IncludedInPackages", fields: [includedServiceId], references: [id], onDelete: Restrict)
+  sortOrder         Int      @default(0)
+  durationMinutes   Int
+
+  @@unique([packageServiceId, includedServiceId])
+  @@index([packageServiceId])
+}
+
+model PackagePurchase {
+  id                  String                 @id @default(cuid())
+  userId              String
+  user                User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  packageServiceId    String
+  packageService      Service                @relation(fields: [packageServiceId], references: [id])
+
+  sessionCount        Int
+  sessionsScheduled   Int                    @default(0)
+  pricePaid           Float
+  paymentStatus       PaymentStatus          @default(PENDING)
+  status              PackagePurchaseStatus  @default(PENDING)
+  itemsSnapshot       Json
+  installmentsAllowed Boolean                @default(false)
+  paymentExpiresAt    DateTime?
+
+  appointments        Appointment[]
+
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  @@index([userId, status])
+  @@index([packageServiceId])
+  @@index([paymentExpiresAt])
 }
 
 // ============================================
@@ -514,6 +572,15 @@ enum AppointmentOrigin {
   SINGLE        // Tratamento avulso
   VOUCHER       // Voucher/presente
   ADMIN_CREATED // Criado pelo admin
+  PACKAGE       // Sessão de pacote pré-pago
+}
+
+enum PackagePurchaseStatus {
+  PENDING    // Checkout Stripe em andamento
+  ACTIVE     // Pago, ainda há sessões a usar ou futuras
+  COMPLETED  // Todas as sessões usadas
+  CANCELED   // Hold expirado / compra abortada
+  REFUNDED   // Estorno do pacote inteiro (gestora)
 }
 
 enum PaymentStatus {

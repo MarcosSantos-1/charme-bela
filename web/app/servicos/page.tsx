@@ -26,9 +26,10 @@ export default function ServicosPage() {
   }, [])
 
   // Categorias agora vêm do backend: FACIAL, CORPORAL, MASSAGEM
-  const categories = ['all', 'FACIAL', 'CORPORAL', 'MASSAGEM']
+  const categories = ['all', 'COMBO', 'FACIAL', 'CORPORAL', 'MASSAGEM']
   const categoryNames: Record<string, string> = {
     all: 'Todos os Tratamentos',
+    COMBO: '🎁 Pacotes',
     FACIAL: '💆 Faciais',
     CORPORAL: '🧘 Corporais',
     MASSAGEM: '💆‍♀️ Massagens'

@@ -16,6 +16,7 @@ import ReactDatePicker, { registerLocale } from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { ptBR } from 'date-fns/locale'
 import { AnamneseRequiredModal } from './AnamneseRequiredModal'
+import { useRouter } from 'next/navigation'
 
 // Registrar locale português
 registerLocale('pt-BR', ptBR)
@@ -47,6 +48,7 @@ export function BookingModal({
   availableVoucher,
   discountVoucher
 }: BookingModalProps) {
+  const router = useRouter()
   const [step, setStep] = useState<'details' | 'booking' | 'confirming' | 'success'>('details')
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
@@ -56,6 +58,8 @@ export function BookingModal({
   const [bookingType, setBookingType] = useState<'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER'>('SUBSCRIPTION')
   const [showAnamneseModal, setShowAnamneseModal] = useState(false)
   const [dayMarkers, setDayMarkers] = useState<api.DayMarker[]>([])
+  const [activePurchase, setActivePurchase] = useState<api.PackagePurchase | null>(null)
+  const isPackage = service?.category === 'COMBO'
   
   // Calcular preço com voucher aplicado
   const calculateFinalPrice = () => {
@@ -90,13 +94,28 @@ export function BookingModal({
       setAvailableSlots([])
       setBookedSlots([])
       
-      // Definir tipo de agendamento baseado em voucher ou plano
-      if (availableVoucher || (discountVoucher && finalPrice !== service?.price)) {
-        setBookingType('VOUCHER')
-      } else if (hasSubscription && isIncludedInPlan) {
-        setBookingType('SUBSCRIPTION')
-      } else {
+      if (service?.category === 'COMBO') {
         setBookingType('SINGLE')
+        void api.getPackagePurchases(userId).then((purchases) => {
+          const active = purchases.find(
+            (item) =>
+              item.packageServiceId === service.id &&
+              item.paymentStatus === 'PAID' &&
+              item.remainingSessions > 0 &&
+              item.status !== 'CANCELED' &&
+              item.status !== 'REFUNDED',
+          )
+          setActivePurchase(active || null)
+        }).catch(() => setActivePurchase(null))
+      } else {
+        setActivePurchase(null)
+        if (availableVoucher || (discountVoucher && finalPrice !== service?.price)) {
+          setBookingType('VOUCHER')
+        } else if (hasSubscription && isIncludedInPlan) {
+          setBookingType('SUBSCRIPTION')
+        } else {
+          setBookingType('SINGLE')
+        }
       }
 
       // Marcadores de calendário (fechado / laser / crio)
@@ -270,8 +289,38 @@ export function BookingModal({
         bookingType
       })
 
-      // Determinar qual voucher usar
       const voucherToUse = availableVoucher || discountVoucher
+
+      if (isPackage) {
+        if (activePurchase) {
+          const updated = await api.schedulePackageSessions(activePurchase.id, [startTime.toISOString()])
+          setStep('success')
+          setTimeout(() => {
+            router.push(`/cliente/pacotes/${updated.id}`)
+            onClose()
+          }, 1200)
+          return
+        }
+
+        const purchase = await api.createPackagePurchase({
+          userId,
+          serviceId: service.id,
+          slots: [startTime.toISOString()],
+        })
+        const cardData = await api.createPaymentSession(
+          userId,
+          service.id,
+          purchase.appointments?.[0]?.id,
+          service.price,
+          undefined,
+          purchase.id,
+        )
+        if (cardData?.url) {
+          window.location.href = cardData.url
+          return
+        }
+        throw new Error('Erro ao criar sessão de pagamento')
+      }
       
       // Cria o agendamento
       const appointment = await api.createAppointment({
@@ -384,7 +433,7 @@ export function BookingModal({
                     service.category === 'MASSAGEM' ? 'bg-purple-100 text-purple-700' :
                     'bg-blue-100 text-blue-700'
                   }`}>
-                    {service.category}
+                    {service.category === 'COMBO' ? 'Pacote' : service.category}
                   </span>
                   {isIncludedInPlan && (
                     <span className="px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full font-medium">
@@ -394,6 +443,23 @@ export function BookingModal({
                 </div>
 
                 <p className="text-gray-700 leading-relaxed mb-4">{service.description}</p>
+
+                {isPackage && (service.packageItems?.length || 0) > 0 && (
+                  <div className="rounded-2xl bg-orange-50 border border-orange-200 p-4 mb-4 space-y-2">
+                    {(service.packageItems || [])
+                      .slice()
+                      .sort((a, b) => a.sortOrder - b.sortOrder)
+                      .map((item) => (
+                        <div key={item.includedServiceId} className="flex items-center justify-between text-sm">
+                          <span className="font-medium text-gray-900">{item.includedService?.name}</span>
+                          <span className="text-orange-700 font-semibold">{item.durationMinutes} min</span>
+                        </div>
+                      ))}
+                    <div className="pt-2 text-sm font-bold text-orange-800">
+                      {String(service.packageSessionCount || 1).padStart(2, '0')} sessões · {service.duration} min por visita
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4 bg-gray-50 rounded-xl p-4 mb-4">
                   <div>
@@ -428,7 +494,7 @@ export function BookingModal({
                   </div>
                 </div>
 
-                {hasSubscription && (
+                {hasSubscription && !isPackage && (
                   <div className="bg-purple-50 border-l-4 border-purple-500 p-4 rounded">
                     <div className="text-sm font-medium text-purple-900">Sessões Disponíveis</div>
                     <div className="text-2xl font-bold text-purple-700 mt-1">{remainingTreatments}</div>
@@ -442,10 +508,21 @@ export function BookingModal({
               <Button
                 variant="primary"
                 className="w-full"
-                onClick={() => setStep('booking')}
+                onClick={() => {
+                  if (activePurchase) {
+                    router.push(`/cliente/pacotes/${activePurchase.id}`)
+                    onClose()
+                    return
+                  }
+                  setStep('booking')
+                }}
               >
                 <CalendarIcon className="w-5 h-5 mr-2" />
-                Agendar Agora
+                {activePurchase
+                  ? `Continuar pacote · ${activePurchase.sessionCount - activePurchase.remainingSessions}/${activePurchase.sessionCount}`
+                  : isPackage
+                    ? 'Escolher datas'
+                    : 'Agendar Agora'}
               </Button>
             </div>
           )}
@@ -680,7 +757,14 @@ export function BookingModal({
               )}
 
               {/* Tipo de Agendamento - PONTO 2: Validação obrigatória */}
-              {selectedSlot && (
+              {selectedSlot && isPackage && (
+                <div className="rounded-xl border-2 border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+                  {activePurchase
+                    ? `Sessão do pacote — sem nova cobrança. Restam ${activePurchase.remainingSessions} após este agendamento.`
+                    : `Pagamento à vista do pacote: R$ ${service.price.toFixed(2).replace('.', ',')} no Stripe. As sessões seguintes não cobram de novo.`}
+                </div>
+              )}
+              {selectedSlot && !isPackage && (
                 <div className="space-y-4">
                   <label className="block text-sm font-medium text-gray-900 mb-2">
                     💳 Forma de Pagamento *

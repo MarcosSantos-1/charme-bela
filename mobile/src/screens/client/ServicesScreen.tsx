@@ -82,7 +82,7 @@ export function ServicesScreen() {
   const route = useRoute<any>();
   const { user } = useAuth();
   const categoryIllustrations = getCategoryIllustrations(user?.anamnesisForm?.personalData?.sex);
-  const { services, subscription, vouchers, clientBanners, loading, refreshing, error, refresh } = useCommercial();
+  const { services, subscription, vouchers, packagePurchases, clientBanners, loading, refreshing, error, refresh } = useCommercial();
   const [selectedCategory, setSelectedCategory] = useState<ServiceCategory | null>(null);
   const [machineFilter, setMachineFilter] = useState<'LASER' | 'CRYO' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -145,6 +145,18 @@ export function ServicesScreen() {
   });
 
   const bookService = (service: Service) => {
+    const active = packagePurchases.find(
+      (item) =>
+        item.packageServiceId === service.id &&
+        item.paymentStatus === 'PAID' &&
+        item.remainingSessions > 0 &&
+        item.status !== 'CANCELED' &&
+        item.status !== 'REFUNDED',
+    );
+    if (active) {
+      navigation.navigate('PackageTimeline', { purchaseId: active.id });
+      return;
+    }
     navigation.navigate('Booking', {
       serviceId: service.id,
       ...(voucherApplied && activeVoucher
@@ -152,6 +164,10 @@ export function ServicesScreen() {
         : {}),
     });
   };
+
+  const activePackages = packagePurchases.filter(
+    (item) => item.paymentStatus === 'PAID' && item.remainingSessions > 0 && item.status !== 'CANCELED' && item.status !== 'REFUNDED',
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -212,6 +228,32 @@ export function ServicesScreen() {
                 }
               }}
             />
+          </View>
+        ) : null}
+
+        {activePackages.length > 0 ? (
+          <View style={{ paddingHorizontal: 4, marginBottom: 16, gap: 10 }}>
+            {activePackages.map((purchase) => (
+              <TouchableOpacity
+                key={purchase.id}
+                onPress={() => navigation.navigate('PackageTimeline', { purchaseId: purchase.id })}
+                style={{
+                  backgroundColor: '#fff1f2',
+                  borderRadius: 18,
+                  padding: 16,
+                  borderWidth: 1,
+                  borderColor: '#fecdd3',
+                }}
+              >
+                <Text style={{ color: '#9f1239', fontSize: 12, fontWeight: '700' }}>Seu pacote</Text>
+                <Text style={{ color: '#111827', fontSize: 18, fontWeight: '800', marginTop: 2 }}>
+                  {purchase.packageService?.name || 'Pacote'}
+                </Text>
+                <Text style={{ color: '#be185d', marginTop: 4, fontWeight: '700' }}>
+                  {purchase.sessionCount - purchase.remainingSessions}/{purchase.sessionCount} · agendar próxima
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         ) : null}
 

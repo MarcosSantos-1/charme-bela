@@ -26,6 +26,7 @@ function ServicosContent() {
   
   const [services, setServices] = useState<Service[]>([])
   const [vouchers, setVouchers] = useState<api.Voucher[]>([])
+  const [packagePurchases, setPackagePurchases] = useState<api.PackagePurchase[]>([])
   const [promoBanners, setPromoBanners] = useState<api.Banner[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -38,14 +39,16 @@ function ServicosContent() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [servicesData, vouchersData, bannersData] = await Promise.all([
+        const [servicesData, vouchersData, bannersData, purchasesData] = await Promise.all([
           api.getServices(),
           user?.id ? api.getVouchersByUserId(user.id) : Promise.resolve([]),
           api.getBanners({ location: 'CLIENT', activeOnly: true }).catch(() => []),
+          user?.id ? api.getPackagePurchases(user.id).catch(() => []) : Promise.resolve([]),
         ])
         
         setServices(servicesData)
         setPromoBanners(Array.isArray(bannersData) ? bannersData : [])
+        setPackagePurchases(purchasesData)
         // Filtrar apenas vouchers ativos (não usados e não expirados)
         const activeVouchers = vouchersData.filter(v => 
           !v.isUsed && (!v.expiresAt || new Date(v.expiresAt) > new Date())
@@ -112,7 +115,7 @@ function ServicosContent() {
   const categories = ['Todos', 'COMBO', 'FACIAL', 'CORPORAL', 'MASSAGEM', 'Laser', 'Crio']
   const categoryNames: Record<string, string> = {
     Todos: 'Todos',
-    COMBO: '🎁 Combos',
+    COMBO: '🎁 Pacotes',
     FACIAL: '💆 Faciais',
     CORPORAL: '🧘 Corporais',
     MASSAGEM: '💆‍♀️ Massagens',
@@ -223,6 +226,26 @@ function ServicosContent() {
                 window.location.reload()
               }}
             />
+          )}
+
+          {packagePurchases.filter((item) => item.paymentStatus === 'PAID' && item.remainingSessions > 0).length > 0 && (
+            <div className="space-y-3">
+              {packagePurchases
+                .filter((item) => item.paymentStatus === 'PAID' && item.remainingSessions > 0)
+                .map((purchase) => (
+                  <button
+                    key={purchase.id}
+                    onClick={() => router.push(`/cliente/pacotes/${purchase.id}`)}
+                    className="w-full text-left rounded-2xl bg-orange-50 border border-orange-200 p-4"
+                  >
+                    <p className="text-xs font-bold text-orange-700">Seu pacote</p>
+                    <p className="text-lg font-bold text-gray-900">{purchase.packageService?.name}</p>
+                    <p className="text-sm text-orange-800 mt-1">
+                      {purchase.sessionCount - purchase.remainingSessions}/{purchase.sessionCount} · agendar próxima
+                    </p>
+                  </button>
+                ))}
+            </div>
           )}
           
           {/* Search and Filter */}

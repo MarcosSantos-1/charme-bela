@@ -2,6 +2,17 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 
+async function rejectPackageServices(serviceIds: string[]) {
+  const packages = await prisma.service.findMany({
+    where: { id: { in: serviceIds }, category: 'COMBO' },
+    select: { name: true },
+  })
+  if (packages.length > 0) {
+    return `Pacotes não entram em planos de assinatura: ${packages.map((item) => item.name).join(', ')}`
+  }
+  return null
+}
+
 export async function plansRoutes(app: FastifyInstance) {
   // GET - Listar todos os planos de assinatura
   app.get('/plans', async (request, reply) => {
@@ -270,6 +281,11 @@ export async function plansRoutes(app: FastifyInstance) {
           error: 'serviceIds é obrigatório'
         })
       }
+
+      const packageError = await rejectPackageServices(serviceIds)
+      if (packageError) {
+        return reply.status(400).send({ success: false, error: packageError })
+      }
       
       const plan = await prisma.subscriptionPlan.update({
         where: { id },
@@ -353,6 +369,11 @@ export async function plansRoutes(app: FastifyInstance) {
           success: false,
           error: 'serviceIds é obrigatório'
         })
+      }
+
+      const packageError = await rejectPackageServices(serviceIds)
+      if (packageError) {
+        return reply.status(400).send({ success: false, error: packageError })
       }
       
       const plan = await prisma.subscriptionPlan.update({

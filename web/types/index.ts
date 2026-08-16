@@ -25,6 +25,15 @@ export interface Service {
   isActive: boolean
   machineKind?: 'LASER' | 'CRYO' | null
   allowOnSubscription?: boolean
+  packageSessionCount?: number | null
+  installmentsAllowed?: boolean
+  packageItems?: Array<{
+    id?: string
+    includedServiceId: string
+    durationMinutes: number
+    sortOrder: number
+    includedService?: { id: string; name: string; category: string; duration: number }
+  }>
   createdAt?: string
   updatedAt?: string
 }
@@ -73,7 +82,7 @@ export interface Appointment {
   startTime: string
   endTime: string
   status: 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELED' | 'NO_SHOW'
-  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED'
+  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
   paymentMethod?: string
   paymentAmount?: number
@@ -84,10 +93,30 @@ export interface Appointment {
   cancelReason?: string
   notes?: string
   adminNotes?: string
+  packagePurchaseId?: string | null
+  packageSessionIndex?: number | null
+  packagePurchase?: PackagePurchase | null
   service?: Service
   user?: User
   voucher?: Voucher
   createdAt?: string
+}
+
+export interface PackagePurchase {
+  id: string
+  userId: string
+  packageServiceId: string
+  packageService?: Service
+  sessionCount: number
+  sessionsScheduled: number
+  remainingSessions: number
+  pricePaid: number
+  paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
+  status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELED' | 'REFUNDED'
+  itemsSnapshot?: Array<{ serviceId: string; name: string; durationMinutes: number; category: string; sortOrder: number }>
+  items?: Array<{ serviceId: string; name: string; durationMinutes: number; category: string; sortOrder: number }>
+  appointments?: Appointment[]
+  paymentExpiresAt?: string | null
 }
 
 export interface Voucher {

@@ -4,6 +4,7 @@ import cors from '@fastify/cors'
 import { logger } from './utils/logger'
 import { healthRoutes } from './routes/health'
 import { servicesRoutes } from './routes/services'
+import { packagesRoutes } from './routes/packages'
 import { anamnesisRoutes } from './routes/anamnesis'
 import { plansRoutes } from './routes/plans'
 import { configRoutes } from './routes/config'
@@ -141,6 +142,7 @@ async function start() {
     logger.info('📝 Registrando rotas...')
     await app.register(healthRoutes)
     await app.register(servicesRoutes)
+    await app.register(packagesRoutes)
     await app.register(anamnesisRoutes)
     await app.register(plansRoutes)
     await app.register(configRoutes)

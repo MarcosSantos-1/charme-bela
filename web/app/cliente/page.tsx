@@ -81,7 +81,7 @@ export default function ClientePage() {
   // Categorias dinâmicas baseadas no plano OU todos os serviços
   const procedureCategories = [
     {
-      title: 'Combos',
+      title: 'Pacotes',
       icon: '🎁',
       category: 'COMBO',
       count: hasSubscription 

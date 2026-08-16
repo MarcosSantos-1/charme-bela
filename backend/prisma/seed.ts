@@ -144,6 +144,62 @@ const services: SeedService[] = [
     duration: 50,
     price: 140.00
   },
+  {
+    name: 'Manta Redutora',
+    description: 'Termoterapia corporal para potencializar a redução de medidas.',
+    category: ServiceCategory.CORPORAL,
+    duration: 30,
+    price: 80.00
+  },
+  {
+    name: 'Plataforma Vibratória',
+    description: 'Exercício passivo que estimula circulação e tonificação muscular.',
+    category: ServiceCategory.CORPORAL,
+    duration: 30,
+    price: 60.00
+  },
+  {
+    name: 'Vacuoterapia',
+    description: 'Sucção terapêutica para gordura localizada e celulite.',
+    category: ServiceCategory.CORPORAL,
+    duration: 30,
+    price: 90.00
+  },
+  {
+    name: 'Hidrolipo',
+    description: 'Protocolo corporal para redução de medidas na região abdominal.',
+    category: ServiceCategory.CORPORAL,
+    duration: 30,
+    price: 110.00
+  },
+  {
+    name: 'Lipocavitação',
+    description: 'Ultrassom para quebra de gordura localizada.',
+    category: ServiceCategory.CORPORAL,
+    duration: 30,
+    price: 120.00
+  },
+  {
+    name: 'Corrente Russa',
+    description: 'Eletroestimulação para tonificação muscular.',
+    category: ServiceCategory.CORPORAL,
+    duration: 30,
+    price: 90.00
+  },
+  {
+    name: 'Vibrocel',
+    description: 'Tratamento vibratório focado em celulite e oxigenação dos tecidos.',
+    category: ServiceCategory.CORPORAL,
+    duration: 30,
+    price: 80.00
+  },
+  {
+    name: 'Pump Up',
+    description: 'Protocolo para volume e firmeza dos glúteos.',
+    category: ServiceCategory.CORPORAL,
+    duration: 30,
+    price: 100.00
+  },
   
   // ============================================
   // DEPILAÇÃO (CORPORAL)
@@ -252,6 +308,157 @@ const services: SeedService[] = [
   }
 ]
 
+const PACKAGE_PROCEDURE_ALIASES: Record<string, string[]> = {
+  'Manta Redutora': ['Manta Redutora'],
+  'Drenagem Linfática': ['Drenagem Linfática Corporal', 'Drenagem Linfática'],
+  'Plataforma Vibratória': ['Plataforma Vibratória'],
+  'Vacuoterapia': ['Vacuoterapia'],
+  'Hidrolipo': ['Hidrolipo'],
+  'Lipocavitação': ['Lipocavitação'],
+  'Radiofrequência Corporal': ['Radiofrequência', 'Radiofrequência Corporal'],
+  'Corrente Russa': ['Corrente Russa'],
+  'Vibrocel': ['Vibrocel'],
+  'Carboxiterapia': ['Carboxiterapia'],
+  'Massagem Modeladora': ['Massagem Modeladora'],
+  'Massagem Relaxante': ['Massagem Relaxante'],
+  'Pump Up': ['Pump Up'],
+}
+
+const PACKAGE_CATALOG: Array<{
+  name: string
+  description: string
+  price: number
+  sessionCount: number
+  items: string[]
+}> = [
+  {
+    name: 'Dreno Detox',
+    description: 'Protocolo de 5 sessões com manta redutora, drenagem linfática corporal e plataforma vibratória.',
+    price: 469.99,
+    sessionCount: 5,
+    items: ['Manta Redutora', 'Drenagem Linfática', 'Plataforma Vibratória'],
+  },
+  {
+    name: 'Seca Barriga',
+    description: 'Protocolo de 5 sessões para a região abdominal com vacuoterapia, hidrolipo, lipocavitação e plataforma vibratória.',
+    price: 619.99,
+    sessionCount: 5,
+    items: ['Vacuoterapia', 'Hidrolipo', 'Lipocavitação', 'Plataforma Vibratória'],
+  },
+  {
+    name: 'SOS Flacidez',
+    description: 'Protocolo de 5 sessões com radiofrequência e corrente russa.',
+    price: 449.99,
+    sessionCount: 5,
+    items: ['Radiofrequência Corporal', 'Corrente Russa'],
+  },
+  {
+    name: 'SOS Celulite',
+    description: 'Protocolo de 5 sessões com vibrocel e carboxiterapia.',
+    price: 349.99,
+    sessionCount: 5,
+    items: ['Vibrocel', 'Carboxiterapia'],
+  },
+  {
+    name: 'Mix de Massagens',
+    description: 'Protocolo de 5 sessões com massagem modeladora, drenagem linfática, massagem relaxante e vibrocel.',
+    price: 479.99,
+    sessionCount: 5,
+    items: ['Massagem Modeladora', 'Drenagem Linfática', 'Massagem Relaxante', 'Vibrocel'],
+  },
+  {
+    name: 'Bumbum UP',
+    description: 'Protocolo de 5 sessões com pump up e corrente russa.',
+    price: 349.99,
+    sessionCount: 5,
+    items: ['Pump Up', 'Corrente Russa'],
+  },
+]
+
+function findServiceByAliases(list: Array<{ id: string; name: string }>, aliases: string[]) {
+  return list.find((service) => aliases.some((alias) => service.name.toLowerCase() === alias.toLowerCase()))
+}
+
+async function ensurePackageCatalog(existing: Array<{ id: string; name: string; duration: number; category: string }>) {
+  console.log('\n🎁 Garantindo catálogo de pacotes...')
+  let services = [...existing]
+  const extraNames = [
+    'Manta Redutora',
+    'Plataforma Vibratória',
+    'Vacuoterapia',
+    'Hidrolipo',
+    'Lipocavitação',
+    'Corrente Russa',
+    'Vibrocel',
+    'Pump Up',
+  ]
+  for (const name of extraNames) {
+    if (services.some((service) => service.name === name)) continue
+    const template = [
+      { name: 'Manta Redutora', description: 'Termoterapia corporal para potencializar a redução de medidas.', duration: 30, price: 80 },
+      { name: 'Plataforma Vibratória', description: 'Exercício passivo que estimula circulação e tonificação muscular.', duration: 30, price: 60 },
+      { name: 'Vacuoterapia', description: 'Sucção terapêutica para gordura localizada e celulite.', duration: 30, price: 90 },
+      { name: 'Hidrolipo', description: 'Protocolo corporal para redução de medidas na região abdominal.', duration: 30, price: 110 },
+      { name: 'Lipocavitação', description: 'Ultrassom para quebra de gordura localizada.', duration: 30, price: 120 },
+      { name: 'Corrente Russa', description: 'Eletroestimulação para tonificação muscular.', duration: 30, price: 90 },
+      { name: 'Vibrocel', description: 'Tratamento vibratório focado em celulite e oxigenação dos tecidos.', duration: 30, price: 80 },
+      { name: 'Pump Up', description: 'Protocolo para volume e firmeza dos glúteos.', duration: 30, price: 100 },
+    ].find((item) => item.name === name)
+    if (!template) continue
+    const created = await prisma.service.create({
+      data: {
+        name: template.name,
+        description: template.description,
+        category: ServiceCategory.CORPORAL,
+        duration: template.duration,
+        price: template.price,
+        allowOnSubscription: true,
+      },
+    })
+    services.push(created)
+    console.log(`  ➕ Procedimento base: ${created.name}`)
+  }
+
+  for (const pack of PACKAGE_CATALOG) {
+    const already = await prisma.service.findFirst({ where: { name: pack.name, category: 'COMBO' } })
+    if (already) {
+      console.log(`  ↷ Pacote já existe: ${pack.name}`)
+      continue
+    }
+
+    const items = pack.items.map((key) => {
+      const aliases = PACKAGE_PROCEDURE_ALIASES[key] || [key]
+      const found = findServiceByAliases(services, aliases)
+      if (!found) {
+        throw new Error(`Procedimento "${key}" não encontrado para o pacote ${pack.name}`)
+      }
+      return found
+    })
+
+    const duration = items.reduce((sum) => sum + 30, 0)
+    const created = await prisma.service.create({
+      data: {
+        name: pack.name,
+        description: pack.description,
+        category: ServiceCategory.COMBO,
+        duration,
+        price: pack.price,
+        allowOnSubscription: false,
+        packageSessionCount: pack.sessionCount,
+        installmentsAllowed: false,
+        packageItems: {
+          create: items.map((item, index) => ({
+            includedServiceId: item.id,
+            durationMinutes: 30,
+            sortOrder: index,
+          })),
+        },
+      },
+    })
+    console.log(`  🎁 ${created.name} — ${pack.sessionCount} sessões · ${duration} min · R$ ${pack.price}`)
+  }
+}
+
 async function main() {
   console.log('🌱 Iniciando seed do banco de dados...\n')
 
@@ -304,6 +511,9 @@ async function main() {
     })
     createdServices = await prisma.service.findMany()
   }
+
+  await ensurePackageCatalog(createdServices)
+  createdServices = await prisma.service.findMany()
 
   // ============================================
   // CRIA OS PLANOS DE ASSINATURA

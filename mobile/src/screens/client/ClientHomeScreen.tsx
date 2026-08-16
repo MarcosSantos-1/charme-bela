@@ -62,6 +62,7 @@ export function ClientHomeScreen() {
     services,
     appointments,
     subscription,
+    packagePurchases,
     clientBanners,
     loading,
     refreshing,
@@ -259,6 +260,35 @@ export function ClientHomeScreen() {
           </View>
         ) : (
           <>
+            {packagePurchases.filter((item) => item.paymentStatus === 'PAID' && item.remainingSessions > 0).length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Seus pacotes</Text>
+                {packagePurchases
+                  .filter((item) => item.paymentStatus === 'PAID' && item.remainingSessions > 0)
+                  .map((purchase) => (
+                    <TouchableOpacity
+                      key={purchase.id}
+                      onPress={() => navigation.navigate('PackageTimeline', { purchaseId: purchase.id })}
+                      style={{
+                        backgroundColor: '#fff1f2',
+                        borderRadius: 18,
+                        padding: 16,
+                        marginTop: 10,
+                        borderWidth: 1,
+                        borderColor: '#fecdd3',
+                      }}
+                    >
+                      <Text style={{ color: '#111827', fontSize: 16, fontWeight: '800' }}>
+                        {purchase.packageService?.name || 'Pacote'}
+                      </Text>
+                      <Text style={{ color: '#be185d', marginTop: 4, fontWeight: '700' }}>
+                        {purchase.sessionCount - purchase.remainingSessions}/{purchase.sessionCount} · agendar próxima
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+              </View>
+            ) : null}
+
             {/* Próximos Agendamentos */}
             <View style={styles.section}>
               <View style={styles.sectionHeader}>

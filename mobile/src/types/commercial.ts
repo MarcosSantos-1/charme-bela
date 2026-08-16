@@ -1,8 +1,29 @@
 export type ServiceCategory = 'COMBO' | 'FACIAL' | 'CORPORAL' | 'MASSAGEM';
 export type AppointmentStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELED' | 'NO_SHOW';
-export type AppointmentOrigin = 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED';
+export type AppointmentOrigin = 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE';
 export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | null;
 export type SubscriptionStatus = 'ACTIVE' | 'CANCELED' | 'PAST_DUE' | 'PAUSED';
+
+export interface PackageItemSnapshot {
+  serviceId: string;
+  name: string;
+  durationMinutes: number;
+  category: string;
+  sortOrder: number;
+}
+
+export interface PackageItem {
+  id?: string;
+  includedServiceId: string;
+  durationMinutes: number;
+  sortOrder: number;
+  includedService?: {
+    id: string;
+    name: string;
+    category: ServiceCategory;
+    duration: number;
+  };
+}
 
 export interface Service {
   id: string;
@@ -14,6 +35,43 @@ export interface Service {
   isActive: boolean;
   machineKind?: 'LASER' | 'CRYO' | null;
   allowOnSubscription?: boolean;
+  packageSessionCount?: number | null;
+  installmentsAllowed?: boolean;
+  packageItems?: PackageItem[];
+}
+
+export interface PackagePurchase {
+  id: string;
+  userId: string;
+  packageServiceId: string;
+  packageService?: Service;
+  sessionCount: number;
+  sessionsScheduled: number;
+  remainingSessions: number;
+  pricePaid: number;
+  paymentStatus: Exclude<PaymentStatus, null>;
+  status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELED' | 'REFUNDED';
+  itemsSnapshot?: PackageItemSnapshot[];
+  items?: PackageItemSnapshot[];
+  appointments?: Appointment[];
+  paymentExpiresAt?: string | null;
+  createdAt?: string;
+}
+
+export function isPackageService(service: Pick<Service, 'category'>) {
+  return service.category === 'COMBO';
+}
+
+export function packageItemsOf(service: Service): Array<{ name: string; durationMinutes: number }> {
+  if (service.packageItems?.length) {
+    return [...service.packageItems]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((item) => ({
+        name: item.includedService?.name || 'Procedimento',
+        durationMinutes: item.durationMinutes,
+      }));
+  }
+  return [];
 }
 
 export interface Voucher {
@@ -44,6 +102,15 @@ export interface Appointment {
   voucherId?: string | null;
   voucher?: Voucher | null;
   cancelReason?: string | null;
+  packagePurchaseId?: string | null;
+  packageSessionIndex?: number | null;
+  packagePurchase?: {
+    id: string;
+    sessionCount: number;
+    sessionsScheduled: number;
+    status: string;
+    itemsSnapshot?: PackageItemSnapshot[];
+  } | null;
 }
 
 export interface Plan {
@@ -108,7 +175,7 @@ export interface PaymentHistoryItem {
 }
 
 export const CATEGORY_META: Record<ServiceCategory, { label: string; color: string; icon: string }> = {
-  COMBO: { label: 'Combos', color: '#ec4899', icon: 'gift-outline' },
+  COMBO: { label: 'Pacotes', color: '#ec4899', icon: 'gift-outline' },
   FACIAL: { label: 'Faciais', color: '#8b5cf6', icon: 'face-woman-outline' },
   CORPORAL: { label: 'Corporais', color: '#3b82f6', icon: 'human' },
   MASSAGEM: { label: 'Massagens', color: '#10b981', icon: 'hand-heart-outline' },

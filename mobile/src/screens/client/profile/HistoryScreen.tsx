@@ -107,6 +107,8 @@ function paymentBadge(origin: AppointmentOrigin) {
       return { text: 'Avulso', color: '#b45309', bg: '#fef3c7' };
     case 'VOUCHER':
       return { text: 'Voucher', color: '#7c3aed', bg: '#ede9fe' };
+    case 'PACKAGE':
+      return { text: 'Pacote', color: '#c2410c', bg: '#ffedd5' };
     case 'ADMIN_CREATED':
       return { text: 'Clínica', color: '#4338ca', bg: '#e0e7ff' };
     default:
@@ -120,11 +122,14 @@ function originDetailLabel(origin: AppointmentOrigin, paymentStatus: string | nu
   if (origin === 'SINGLE') {
     return paymentStatus === 'PAID' ? 'Pagamento confirmado' : 'Pagamento avulso';
   }
+  if (origin === 'PACKAGE') {
+    return paymentStatus === 'PAID' ? 'Sessão do pacote' : 'Pacote aguardando pagamento';
+  }
   return 'Agendado pela clínica';
 }
 
 function displayPrice(item: Appointment): number | null {
-  if (item.origin === 'SUBSCRIPTION' || item.origin === 'VOUCHER') {
+  if (item.origin === 'SUBSCRIPTION' || item.origin === 'VOUCHER' || item.origin === 'PACKAGE') {
     return item.paymentAmount && item.paymentAmount > 0 ? item.paymentAmount : null;
   }
   const amount = item.paymentAmount ?? item.service.price;
@@ -322,6 +327,9 @@ export function HistoryScreen({ onBack }: { onBack: () => void }) {
                     <View style={styles.cardHeaderInfo}>
                       <Text style={styles.cardService} numberOfLines={2}>
                         {item.service.name}
+                        {item.packageSessionIndex && item.packagePurchase?.sessionCount
+                          ? ` · ${item.packageSessionIndex}/${item.packagePurchase.sessionCount}`
+                          : ''}
                       </Text>
                       <Text style={styles.cardDate}>
                         {shortDate(datePart(item.startTime))} · {timePart(item.startTime)} ·{' '}

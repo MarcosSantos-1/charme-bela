@@ -16,6 +16,15 @@ export interface Service {
   isActive: boolean
   machineKind?: 'LASER' | 'CRYO' | null
   allowOnSubscription?: boolean
+  packageSessionCount?: number | null
+  installmentsAllowed?: boolean
+  packageItems?: Array<{
+    id?: string
+    includedServiceId: string
+    durationMinutes: number
+    sortOrder: number
+    includedService?: { id: string; name: string; category: string; duration: number }
+  }>
 }
 
 export type MachineKind = 'LASER' | 'CRYO'
@@ -72,7 +81,7 @@ export interface Appointment {
   startTime: string
   endTime: string
   status: 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELED' | 'NO_SHOW'
-  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED'
+  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
   paymentMethod?: string
   paymentAmount?: number
@@ -83,10 +92,30 @@ export interface Appointment {
   cancelReason?: string
   notes?: string
   adminNotes?: string
+  packagePurchaseId?: string | null
+  packageSessionIndex?: number | null
+  packagePurchase?: PackagePurchase | null
   service?: Service
   user?: any
   voucher?: Voucher
   createdAt?: string
+}
+
+export interface PackagePurchase {
+  id: string
+  userId: string
+  packageServiceId: string
+  packageService?: Service
+  sessionCount: number
+  sessionsScheduled: number
+  remainingSessions: number
+  pricePaid: number
+  paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
+  status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELED' | 'REFUNDED'
+  itemsSnapshot?: Array<{ serviceId: string; name: string; durationMinutes: number; category: string; sortOrder: number }>
+  items?: Array<{ serviceId: string; name: string; durationMinutes: number; category: string; sortOrder: number }>
+  appointments?: Appointment[]
+  paymentExpiresAt?: string | null
 }
 
 export interface User {
@@ -435,6 +464,9 @@ export async function createService(data: {
   price: number
   machineKind?: MachineKind | null
   allowOnSubscription?: boolean
+  packageSessionCount?: number
+  installmentsAllowed?: boolean
+  packageItems?: Array<{ includedServiceId: string; durationMinutes?: number; sortOrder?: number }>
 }): Promise<Service> {
   return apiRequest('/services', {
     method: 'POST',
@@ -451,6 +483,9 @@ export async function updateService(id: string, data: {
   isActive?: boolean
   machineKind?: MachineKind | null
   allowOnSubscription?: boolean
+  packageSessionCount?: number
+  installmentsAllowed?: boolean
+  packageItems?: Array<{ includedServiceId: string; durationMinutes?: number; sortOrder?: number }>
 }): Promise<Service> {
   return apiRequest(`/services/${id}`, {
     method: 'PUT',
@@ -634,7 +669,7 @@ export async function createAppointment(data: {
   userId: string
   serviceId: string
   startTime: string
-  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED'
+  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
   paymentMethod?: string
   paymentAmount?: number
   voucherId?: string
@@ -1052,7 +1087,7 @@ export interface TodayAppointment {
     duration: number
   }
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
-  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED'
+  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
   confirmedByAdmin: boolean
 }
 
@@ -1204,7 +1239,8 @@ export async function createPaymentSession(
   serviceId: string,
   appointmentId?: string,
   customAmount?: number,
-  customDescription?: string
+  customDescription?: string,
+  packagePurchaseId?: string
 ): Promise<CheckoutSessionResponse> {
   return apiRequest('/stripe/create-payment-session', {
     method: 'POST',
@@ -1212,10 +1248,59 @@ export async function createPaymentSession(
       userId, 
       serviceId, 
       appointmentId,
+      packagePurchaseId,
       customAmount,
       customDescription
     })
   })
+}
+
+export async function getPackagePurchases(userId?: string, status?: string): Promise<PackagePurchase[]> {
+  const search = new URLSearchParams()
+  if (userId) search.set('userId', userId)
+  if (status) search.set('status', status)
+  const qs = search.toString()
+  try {
+    return await apiRequest(`/packages/purchases${qs ? `?${qs}` : ''}`, { method: 'GET' })
+  } catch (error) {
+    // Backend antigo ainda sem /packages — lista vazia até o deploy.
+    if (error instanceof Error && /not found/i.test(error.message)) {
+      return []
+    }
+    throw error
+  }
+}
+
+export async function getPackagePurchase(id: string): Promise<PackagePurchase> {
+  return apiRequest(`/packages/purchases/${id}`, { method: 'GET' })
+}
+
+export async function createPackagePurchase(data: {
+  userId: string
+  serviceId: string
+  slots?: Array<{ startTime: string } | string>
+  paidAtClinic?: boolean
+  notes?: string
+}): Promise<PackagePurchase> {
+  return apiRequest('/packages/purchases', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function schedulePackageSessions(
+  purchaseId: string,
+  slots: Array<{ startTime: string } | string>,
+  opts?: { notes?: string; adminExtended?: boolean }
+): Promise<PackagePurchase> {
+  return apiRequest(`/packages/purchases/${purchaseId}/sessions`, {
+    method: 'POST',
+    body: JSON.stringify({ slots, ...opts }),
+  })
+}
+
+export async function refundPackagePurchase(id: string): Promise<PackagePurchase> {
+  return apiRequest(`/packages/purchases/${id}/refund`, { method: 'PUT' })
 }
 
 // Criar sessão do Customer Portal

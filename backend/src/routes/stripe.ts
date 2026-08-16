@@ -5,6 +5,7 @@ import { stripe, STRIPE_CONFIG, PLAN_TIERS, reaisToCents } from '../lib/stripe'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { stripeCheckoutExpiresAtUnix } from '../utils/paymentHolds'
+import { cancelUnpaidPackagePurchase, markPackagePurchasePaid } from '../utils/packages'
 import {
   notifyPaymentSucceeded,
   notifyPaymentFailed,
@@ -256,15 +257,16 @@ export async function stripeRoutes(app: FastifyInstance) {
     logger.route('POST', '/stripe/create-payment-session')
     
     try {
-      const { userId, serviceId, appointmentId, customAmount, customDescription } = request.body as {
+      const { userId, serviceId, appointmentId, packagePurchaseId, customAmount, customDescription } = request.body as {
         userId: string
         serviceId: string
         appointmentId?: string
+        packagePurchaseId?: string
         customAmount?: number  // Valor customizado (com desconto aplicado)
         customDescription?: string  // Descrição customizada (ex: "com 50% de desconto")
       }
       
-      logger.debug('Criando payment session:', { userId, serviceId, appointmentId, customAmount, customDescription })
+      logger.debug('Criando payment session:', { userId, serviceId, appointmentId, packagePurchaseId, customAmount, customDescription })
       
       // Busca usuário
       const user = await prisma.user.findUnique({
@@ -292,10 +294,31 @@ export async function stripeRoutes(app: FastifyInstance) {
       
       // Se há agendamento vinculado, ele precisa ser um hold ativo (reserva ainda
       // aguardando pagamento). Evita criar checkout para reserva expirada/cancelada.
-      if (appointmentId) {
+      let resolvedPackagePurchaseId = packagePurchaseId || ''
+      let appointmentIdsMeta = appointmentId || ''
+
+      if (packagePurchaseId) {
+        const purchase = await prisma.packagePurchase.findUnique({
+          where: { id: packagePurchaseId },
+          include: { appointments: { select: { id: true, status: true, paymentStatus: true } } },
+        })
+        if (!purchase) {
+          return reply.status(404).send({ success: false, error: 'Compra de pacote não encontrada' })
+        }
+        if (purchase.status !== 'PENDING' || purchase.paymentStatus !== 'PENDING') {
+          return reply.status(409).send({
+            success: false,
+            error: 'Esta compra de pacote não está mais aguardando pagamento.',
+          })
+        }
+        const holdAppointments = purchase.appointments.filter(
+          (item) => item.status === 'PENDING' && item.paymentStatus === 'PENDING',
+        )
+        appointmentIdsMeta = holdAppointments.map((item) => item.id).join(',')
+      } else if (appointmentId) {
         const appointment = await prisma.appointment.findUnique({
           where: { id: appointmentId },
-          select: { status: true, paymentStatus: true }
+          select: { status: true, paymentStatus: true, packagePurchaseId: true }
         })
         
         if (!appointment) {
@@ -310,6 +333,10 @@ export async function stripeRoutes(app: FastifyInstance) {
             success: false,
             error: 'Esta reserva não está mais aguardando pagamento. Faça um novo agendamento.'
           })
+        }
+
+        if (appointment.packagePurchaseId) {
+          resolvedPackagePurchaseId = appointment.packagePurchaseId
         }
       }
       
@@ -349,6 +376,13 @@ export async function stripeRoutes(app: FastifyInstance) {
         productDescription += ` - ${customDescription}`
       }
       
+      const isPackageCheckout = Boolean(resolvedPackagePurchaseId) || service.category === 'COMBO'
+      const productName = isPackageCheckout
+        ? `Pacote ${service.name} - Charme & Bela`
+        : customAmount !== undefined && customAmount < service.price
+          ? `${service.name} - Charme & Bela (com desconto)`
+          : `${service.name} - Charme & Bela`
+
       logger.info(`💰 Criando sessão: Preço original R$ ${service.price} → Preço final R$ ${finalAmount}`)
       
       // Cria Checkout Session para pagamento único
@@ -361,10 +395,10 @@ export async function stripeRoutes(app: FastifyInstance) {
               currency: STRIPE_CONFIG.currency,
               unit_amount: reaisToCents(finalAmount), // Usa o valor final com desconto
               product_data: {
-                name: customAmount !== undefined && customAmount < service.price 
-                  ? `${service.name} - Charme & Bela (com desconto)` 
-                  : `${service.name} - Charme & Bela`,
-                description: productDescription,
+                name: productName,
+                description: isPackageCheckout
+                  ? `${service.packageSessionCount || ''} sessões — ${productDescription}`
+                  : productDescription,
                 metadata: {
                   serviceId: service.id,
                   category: service.category,
@@ -378,10 +412,10 @@ export async function stripeRoutes(app: FastifyInstance) {
           },
         ],
         mode: 'payment', // Pagamento ÚNICO (não recorrente)
-        success_url: `${STRIPE_CONFIG.successUrl}&appointmentId=${appointmentId || ''}`,
+        success_url: `${STRIPE_CONFIG.successUrl}&appointmentId=${appointmentId || ''}&packagePurchaseId=${resolvedPackagePurchaseId}`,
         // appointmentId no cancel_url: o frontend libera a reserva imediatamente
         // quando o cliente desiste do checkout
-        cancel_url: `${STRIPE_CONFIG.cancelUrl}&appointmentId=${appointmentId || ''}`,
+        cancel_url: `${STRIPE_CONFIG.cancelUrl}&appointmentId=${appointmentId || ''}&packagePurchaseId=${resolvedPackagePurchaseId}`,
         
         // Stripe Checkout exige expires_at ≥ 30 min. O hold interno é mais curto
         // (5 min); se pagar depois do hold, o webhook revive-ou-reembolsa.
@@ -394,13 +428,16 @@ export async function stripeRoutes(app: FastifyInstance) {
         payment_intent_data: {
           setup_future_usage: 'on_session', // Salva cartão
           statement_descriptor: 'CHARME BELA',
-          description: `Tratamento: ${service.name}`,
+          description: isPackageCheckout ? `Pacote: ${service.name}` : `Tratamento: ${service.name}`,
           receipt_email: user.email, // Envia recibo por email
           metadata: {
             userId: user.id,
             serviceId: service.id,
             serviceName: service.name,
             appointmentId: appointmentId || '',
+            packagePurchaseId: resolvedPackagePurchaseId,
+            appointmentIds: appointmentIdsMeta,
+            type: isPackageCheckout ? 'package' : 'single_treatment',
           },
         },
         
@@ -422,7 +459,9 @@ export async function stripeRoutes(app: FastifyInstance) {
           serviceId: service.id,
           serviceName: service.name,
           appointmentId: appointmentId || '',
-          type: 'single_treatment', // Identifica como avulso
+          packagePurchaseId: resolvedPackagePurchaseId,
+          appointmentIds: appointmentIdsMeta,
+          type: isPackageCheckout ? 'package' : 'single_treatment',
         },
       })
       
@@ -1179,6 +1218,15 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 
 // Sessão de checkout expirou sem pagamento → libera a reserva (se ainda for hold)
 async function handlePaymentSessionExpired(session: Stripe.Checkout.Session) {
+  const packagePurchaseId = session.metadata?.packagePurchaseId
+  if (packagePurchaseId) {
+    logger.info(`⏰ Checkout de pacote expirado: ${session.id} (${packagePurchaseId})`)
+    await prisma.$transaction(async (tx) => {
+      await cancelUnpaidPackagePurchase(tx, packagePurchaseId, 'Checkout expirado sem pagamento')
+    })
+    return
+  }
+
   const appointmentId = session.metadata?.appointmentId
   if (!appointmentId) return
   
@@ -1207,8 +1255,58 @@ async function handlePaymentCompleted(session: Stripe.Checkout.Session) {
   logger.info('💳 Pagamento único completado:', session.id)
   
   const appointmentId = session.metadata?.appointmentId
+  const packagePurchaseId = session.metadata?.packagePurchaseId
   const userId = session.metadata?.userId
   const serviceName = session.metadata?.serviceName
+  const paidAmount = (session.amount_total || 0) / 100
+
+  if (packagePurchaseId) {
+    const purchase = await prisma.packagePurchase.findUnique({
+      where: { id: packagePurchaseId },
+      include: { packageService: { select: { name: true } } },
+    })
+    if (!purchase) {
+      logger.error(`❌ Webhook de pacote para compra inexistente: ${packagePurchaseId}`)
+      return
+    }
+    if (purchase.paymentStatus === 'PAID') {
+      logger.info(`ℹ️ Pacote ${packagePurchaseId} já estava pago (webhook repetido)`)
+      return
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await markPackagePurchasePaid(tx, packagePurchaseId, paidAmount)
+    })
+    logger.success(`✅ Pacote ${packagePurchaseId} pago e confirmado`)
+
+    if (userId) {
+      const user = await prisma.user.findUnique({ where: { id: userId } })
+      await notifyPaymentSucceeded(userId, {
+        amount: paidAmount,
+        description: `Pacote: ${serviceName || purchase.packageService.name}`,
+      })
+      if (user) {
+        await createNotification({
+          userId: null,
+          type: 'PAYMENT_SUCCEEDED',
+          title: 'Pagamento de Pacote Recebido! 💵',
+          message: `${user.name} - R$ ${paidAmount.toFixed(2).replace('.', ',')} (${serviceName || purchase.packageService.name})`,
+          icon: 'CARD',
+          priority: 'NORMAL',
+          actionUrl: '/admin/atividades',
+          actionLabel: 'Ver Atividades',
+          metadata: {
+            userId: user.id,
+            amount: paidAmount,
+            serviceName,
+            packagePurchaseId,
+            sessionId: session.id,
+          },
+        })
+      }
+    }
+    return
+  }
   
   if (appointmentId) {
     const appointment = await prisma.appointment.findUnique({

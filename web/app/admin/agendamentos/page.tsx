@@ -20,7 +20,8 @@ interface Appointment {
   status: 'scheduled' | 'completed' | 'canceled'
   notes?: string
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
-  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED'
+  origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
+  packageSummary?: string
 }
 
 // Função helper para converter UTC string para Date local (sem conversão de timezone)
@@ -112,7 +113,13 @@ export default function AgendamentosPage() {
                   apt.status === 'CANCELED' ? 'canceled' as const : 'scheduled' as const,
           notes: apt.notes,
           paymentStatus: apt.paymentStatus,
-          origin: apt.origin
+          origin: apt.origin,
+          packageSummary: Array.isArray(apt.packagePurchase?.itemsSnapshot)
+            ? apt.packagePurchase.itemsSnapshot.map((item: any) => item.name).join(' + ')
+            : apt.service?.packageItems
+              ?.map((item) => item.includedService?.name)
+              .filter(Boolean)
+              .join(' + '),
         }
       })
       
@@ -355,6 +362,7 @@ export default function AgendamentosPage() {
                         const isAdminPending = apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
                         const isSubscription = apt.origin === 'SUBSCRIPTION'
                         const isClientSingle = apt.origin === 'SINGLE'
+                        const isPackage = apt.origin === 'PACKAGE'
                         
                         let bgColor = 'bg-pink-100'
                         let borderColor = 'border-pink-600'
@@ -374,6 +382,12 @@ export default function AgendamentosPage() {
                           textColor = 'text-purple-900'
                           textSecondary = 'text-purple-700'
                           badge = '✨'
+                        } else if (isPackage) {
+                          bgColor = 'bg-orange-100'
+                          borderColor = 'border-orange-600'
+                          textColor = 'text-orange-900'
+                          textSecondary = 'text-orange-700'
+                          badge = '🎁'
                         } else if (isClientSingle) {
                           bgColor = 'bg-blue-100'
                           borderColor = 'border-blue-600'
@@ -409,6 +423,11 @@ export default function AgendamentosPage() {
                             <div className={`mt-0.5 ${textSecondary}`}>
                             {apt.service}
                           </div>
+                          {apt.packageSummary && (
+                            <div className="mt-0.5 text-[10px] text-orange-700 leading-tight">
+                              {apt.packageSummary}
+                            </div>
+                          )}
                         </button>
                         )
                       })}
@@ -481,6 +500,7 @@ export default function AgendamentosPage() {
                         const isAdminPending = apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
                         const isSubscription = apt.origin === 'SUBSCRIPTION'
                         const isClientSingle = apt.origin === 'SINGLE'
+                        const isPackage = apt.origin === 'PACKAGE'
                         
                         let bgColor = 'bg-white'
                         let borderColor = 'border-pink-200'
@@ -503,6 +523,12 @@ export default function AgendamentosPage() {
                           timeBg = 'bg-purple-600'
                           badge = '✨'
                           badgeBg = 'bg-purple-200 text-purple-800'
+                        } else if (isPackage) {
+                          bgColor = 'bg-orange-100'
+                          borderColor = 'border-orange-600'
+                          textColor = 'text-orange-900'
+                          textSecondary = 'text-orange-700'
+                          badge = '🎁'
                         } else if (isClientSingle) {
                           bgColor = 'bg-blue-50'
                           borderColor = 'border-blue-300'
@@ -555,6 +581,9 @@ export default function AgendamentosPage() {
                               <p className="text-sm text-gray-600 mt-0.5">
                                 {apt.service}
                               </p>
+                              {apt.packageSummary && (
+                                <p className="text-xs text-orange-700 mt-0.5">{apt.packageSummary}</p>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center justify-between">
@@ -663,6 +692,7 @@ export default function AgendamentosPage() {
                       const isAdminPending = apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
                       const isSubscription = apt.origin === 'SUBSCRIPTION'
                       const isClientSingle = apt.origin === 'SINGLE'
+                      const isPackage = apt.origin === 'PACKAGE'
                       
                       let bgColor = 'bg-pink-100'
                       let borderColor = 'border-pink-600'
@@ -679,6 +709,11 @@ export default function AgendamentosPage() {
                         borderColor = 'border-purple-600'
                         textColor = 'text-purple-900'
                         badge = '✨'
+                      } else if (isPackage) {
+                        bgColor = 'bg-orange-100'
+                        borderColor = 'border-orange-600'
+                        textColor = 'text-orange-900'
+                        badge = '🎁'
                       } else if (isClientSingle) {
                         bgColor = 'bg-blue-100'
                         borderColor = 'border-blue-600'

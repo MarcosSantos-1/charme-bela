@@ -33,6 +33,7 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
   const [clienteDetails, setClienteDetails] = useState<any>(null)
   
   const [servicos, setServicos] = useState<api.Service[]>([])
+  const [pacoteAtivo, setPacoteAtivo] = useState<api.PackagePurchase | null>(null)
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
   const [bookedSlots, setBookedSlots] = useState<string[]>([])
@@ -65,6 +66,33 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
       loadClienteDetails()
     }
   }, [formData.clienteId])
+
+  useEffect(() => {
+    async function loadPurchase() {
+      if (!formData.clienteId || !formData.servicoId) {
+        setPacoteAtivo(null)
+        return
+      }
+      const selected = servicos.find((item) => item.id === formData.servicoId)
+      if (selected?.category !== 'COMBO') {
+        setPacoteAtivo(null)
+        return
+      }
+      try {
+        const purchases = await api.getPackagePurchases(formData.clienteId)
+        const active = purchases.find(
+          (item) =>
+            item.packageServiceId === formData.servicoId &&
+            item.paymentStatus === 'PAID' &&
+            (item.status === 'ACTIVE' || item.remainingSessions > 0),
+        )
+        setPacoteAtivo(active || null)
+      } catch {
+        setPacoteAtivo(null)
+      }
+    }
+    loadPurchase()
+  }, [formData.clienteId, formData.servicoId, servicos])
 
   const loadClientes = async () => {
     try {
@@ -229,6 +257,28 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
       // Criar data e hora combinadas - IMPORTANTE: Força UTC para evitar problemas de timezone
       const dateStr = formData.data.toISOString().split('T')[0]
       const startTime = new Date(`${dateStr}T${formData.hora}:00.000Z`)
+      
+      if (selectedService.category === 'COMBO') {
+        if (pacoteAtivo && pacoteAtivo.remainingSessions > 0) {
+          await api.schedulePackageSessions(pacoteAtivo.id, [startTime.toISOString()], {
+            notes: formData.observacoes || undefined,
+            adminExtended: true,
+          })
+          toast.success(`Sessão ${pacoteAtivo.sessionsScheduled + 1}/${pacoteAtivo.sessionCount} agendada`)
+        } else {
+          await api.createPackagePurchase({
+            userId: formData.clienteId,
+            serviceId: formData.servicoId,
+            slots: [startTime.toISOString()],
+            paidAtClinic: true,
+            notes: formData.observacoes || undefined,
+          })
+          toast.success('Pacote vendido e primeira sessão agendada')
+        }
+        resetForm()
+        onClose()
+        return
+      }
       
       console.log('🕐 Criando agendamento para:', {
         dateStr,
@@ -732,7 +782,16 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
             )}
 
             {/* Tipo de Pagamento */}
-            {formData.hora && formData.data && (
+            {formData.hora && formData.data && servicoSelecionado?.category === 'COMBO' && (
+              <div className="rounded-xl border-2 border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+                {pacoteAtivo && pacoteAtivo.remainingSessions > 0 ? (
+                  <>Pacote ativo: {pacoteAtivo.sessionsScheduled}/{pacoteAtivo.sessionCount} sessões usadas. Esta data consome mais uma sessão, sem nova cobrança.</>
+                ) : (
+                  <>Venda do pacote na clínica: a cliente paga o valor total agora e esta fica como a 1ª sessão.</>
+                )}
+              </div>
+            )}
+            {formData.hora && formData.data && servicoSelecionado?.category !== 'COMBO' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   💳 Forma de Pagamento *

@@ -8,7 +8,9 @@ primary_region = 'gru'
   NODE_ENV = 'production'
 
 [deploy]
-  release_command = 'npx prisma migrate deploy'
+  # --no-install evita o npx baixar Prisma 7 (quebra sem prisma.config.ts).
+  # O CLI precisa estar em dependencies para sobreviver ao npm prune.
+  release_command = 'npx --no-install prisma migrate deploy'
 
 [http_service]
   internal_port = 8080

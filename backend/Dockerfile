@@ -19,8 +19,10 @@ RUN npx prisma generate
 # Build TypeScript
 RUN npm run build
 
-# Remover devDependencies após build (economizar espaço)
+# Remover devDependencies após build (economizar espaço).
+# prisma CLI fica em dependencies — o Fly release_command precisa dele.
 RUN npm prune --production
+RUN test -x node_modules/.bin/prisma
 
 # Fly injeta PORT=8080; fallback local continua 3333
 EXPOSE 8080

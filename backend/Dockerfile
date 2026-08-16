@@ -23,10 +23,10 @@ RUN npm run build
 # prisma CLI fica em dependencies — o Fly release_command precisa dele.
 RUN npm prune --production
 RUN test -x node_modules/.bin/prisma
+RUN chmod +x scripts/fly-migrate.sh
 
 # Fly injeta PORT=8080; fallback local continua 3333
 EXPOSE 8080
 
-# Start
 CMD ["npm", "start"]
 

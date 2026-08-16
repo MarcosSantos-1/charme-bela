@@ -9,8 +9,8 @@ primary_region = 'gru'
 
 [deploy]
   # --no-install evita o npx baixar Prisma 7 (quebra sem prisma.config.ts).
-  # O CLI precisa estar em dependencies para sobreviver ao npm prune.
-  release_command = 'npx --no-install prisma migrate deploy'
+  # Script usa o binary local e tira -pooler da URL (migrate no Neon precisa de conexão direta).
+  release_command = 'sh scripts/fly-migrate.sh'
 
 [http_service]
   internal_port = 8080

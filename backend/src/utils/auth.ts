@@ -207,6 +207,8 @@ export const PUBLIC_ROUTE_EXACT = new Set([
   'GET /banners',
   'GET /config',
   'GET /schedule/available',
+  'GET /schedule/available-days',
+  'GET /schedule/day-markers',
 ])
 
 /** Rotas internas chamadas pelo cron via localhost — exigem header X-Cron-Secret se CRON_SECRET estiver setado. */

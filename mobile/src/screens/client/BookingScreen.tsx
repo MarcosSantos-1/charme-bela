@@ -22,7 +22,9 @@ import {
   createPaymentSession,
   getAvailableDays,
   getAvailableSlots,
+  getDayMarkers,
   rescheduleAppointment,
+  type DayMarker,
 } from '../../lib/api';
 import {
   CATEGORY_META,
@@ -162,12 +164,37 @@ export function BookingScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     if (!service) return;
+    let cancelled = false;
     setLoadingDays(true);
-    void getAvailableDays(minDate, maxDate, service.id)
-      .then((res) => setDayMarkers((res.days || []).map((day) => day.date)))
-      .catch(() => setDayMarkers([]))
-      .finally(() => setLoadingDays(false));
-  }, [minDate, maxDate, service?.id]);
+    void (async () => {
+      try {
+        const res = await getAvailableDays(minDate, maxDate, service.id);
+        if (!cancelled) setDayMarkers((res.days || []).map((day) => day.date));
+      } catch {
+        try {
+          const res = await getDayMarkers(minDate, maxDate);
+          const machineKind = service.machineKind || null;
+          if (!cancelled) {
+            setDayMarkers(
+              (res.days || [])
+                .filter((marker) => isBookableDay(marker, machineKind))
+                .map((marker) => marker.date),
+            );
+          }
+        } catch (requestError) {
+          if (!cancelled) {
+            setDayMarkers([]);
+            setError(getApiErrorMessage(requestError, 'Erro ao buscar dias disponíveis'));
+          }
+        }
+      } finally {
+        if (!cancelled) setLoadingDays(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [minDate, maxDate, service?.id, service?.machineKind]);
 
   const daysByMonth = useMemo(() => groupDaysByMonth(dayMarkers), [dayMarkers]);
   const remainingForSelectedDate = remainingForMonth(subscription, date);
@@ -836,6 +863,15 @@ function addDays(ymd: string, days: number) {
 function lastDayOfNextMonth() {
   const now = new Date();
   return localDateKey(new Date(now.getFullYear(), now.getMonth() + 2, 0));
+}
+function isBookableDay(marker: DayMarker, machineKind: 'LASER' | 'CRYO' | null) {
+  if (machineKind === 'LASER') {
+    return marker.markers.includes('LASER') && marker.released.LASER;
+  }
+  if (machineKind === 'CRYO') {
+    return marker.markers.includes('CRYO') && marker.released.CRYO;
+  }
+  return !marker.closed && !marker.laserExclusive;
 }
 function remainingForMonth(subscription: Subscription | null | undefined, ymd: string) {
   if (!subscription || !ymd) return 0;

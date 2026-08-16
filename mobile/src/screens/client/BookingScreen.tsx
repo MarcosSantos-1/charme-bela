@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ClientStackParamList } from '../../navigation/ClientNavigator';
@@ -21,16 +20,16 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   createAppointment,
   createPaymentSession,
+  getAvailableDays,
   getAvailableSlots,
-  getDayMarkers,
   rescheduleAppointment,
-  type DayMarker,
 } from '../../lib/api';
 import {
   CATEGORY_META,
   getApiErrorMessage,
   type AppointmentOrigin,
   type Plan,
+  type Subscription,
 } from '../../types/commercial';
 
 type Props = NativeStackScreenProps<ClientStackParamList, 'Booking'>;
@@ -62,7 +61,9 @@ export function BookingScreen({ route, navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [bookingOrigin, setBookingOrigin] = useState<BookableOrigin>('SINGLE');
   const [originInitialized, setOriginInitialized] = useState(false);
-  const [dayMarkers, setDayMarkers] = useState<DayMarker[]>([]);
+  const [dayMarkers, setDayMarkers] = useState<string[]>([]);
+  const [loadingDays, setLoadingDays] = useState(true);
+  const scrollRef = useRef<ScrollView>(null);
 
   const preferredVoucherId = route.params.applyVoucherId;
 
@@ -95,7 +96,7 @@ export function BookingScreen({ route, navigation }: Props) {
   // machineKind services default to avulso unless allowOnSubscription
   const machineBlocksPlan = Boolean(service?.machineKind && service.allowOnSubscription === false);
   const remainingSessions = subscription?.remaining.thisMonth ?? 0;
-  const canUsePlan = serviceInUserPlan && remainingSessions > 0 && !machineBlocksPlan;
+  const canUsePlan = serviceInUserPlan && !machineBlocksPlan;
 
   const startingPlan = useMemo(() => {
     if (!service) return null;
@@ -156,6 +157,40 @@ export function BookingScreen({ route, navigation }: Props) {
       .finally(() => setLoadingSlots(false));
   }, [date, service]);
 
+  const minDate = localDateKey(new Date());
+  const maxDate = service?.machineKind ? lastDayOfNextMonth() : addDays(minDate, 29);
+
+  useEffect(() => {
+    if (!service) return;
+    setLoadingDays(true);
+    void getAvailableDays(minDate, maxDate, service.id)
+      .then((res) => setDayMarkers((res.days || []).map((day) => day.date)))
+      .catch(() => setDayMarkers([]))
+      .finally(() => setLoadingDays(false));
+  }, [minDate, maxDate, service?.id]);
+
+  const daysByMonth = useMemo(() => groupDaysByMonth(dayMarkers), [dayMarkers]);
+  const remainingForSelectedDate = remainingForMonth(subscription, date);
+  const planMonthFull = Boolean(
+    date && bookingOrigin === 'SUBSCRIPTION' && remainingForSelectedDate <= 0,
+  );
+
+  useEffect(() => {
+    if (step !== 'date' || !date) return;
+    const handle = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+    return () => clearTimeout(handle);
+  }, [date, step, planMonthFull]);
+
+  const selectDay = (ymd: string) => {
+    if (date === ymd) {
+      setDate('');
+      setTime('');
+      return;
+    }
+    setDate(ymd);
+    setTime('');
+  };
+
   if (!service) {
     return <CenteredMessage title="Serviço indisponível" action={() => navigation.goBack()} />;
   }
@@ -167,51 +202,10 @@ export function BookingScreen({ route, navigation }: Props) {
     slots: allSlots.filter((slot) => shift.match(hourFromSlot(slot))),
   })).filter((shift) => shift.slots.length > 0);
 
-  const minDate = localDateKey(new Date());
-  const lastNextMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 2, 0).toISOString().slice(0, 10);
   const canProceedFromDetails =
     bookingOrigin === 'SINGLE' ||
     (bookingOrigin === 'VOUCHER' && Boolean(matchingVoucher)) ||
     (bookingOrigin === 'SUBSCRIPTION' && canUsePlan);
-
-  useEffect(() => {
-    void getDayMarkers(minDate, lastNextMonth)
-      .then((res) => setDayMarkers(res.days || []))
-      .catch(() => setDayMarkers([]));
-  }, [minDate, lastNextMonth]);
-
-  const calendarMarked = useMemo(() => {
-    const marks: Record<string, any> = {};
-    const machineKind = service?.machineKind || null;
-    for (const m of dayMarkers) {
-      let disabled = m.closed;
-      if (machineKind === 'LASER') {
-        disabled = !(m.markers.includes('LASER') && m.released.LASER);
-      } else if (machineKind === 'CRYO') {
-        disabled = !(m.markers.includes('CRYO') && m.released.CRYO);
-      } else if (m.laserExclusive) {
-        disabled = true;
-      }
-      const dots: Array<{ color: string }> = [];
-      if (m.markers.includes('LASER')) dots.push({ color: '#a855f7' });
-      if (m.markers.includes('CRYO')) dots.push({ color: '#0ea5e9' });
-      if (m.closed) dots.push({ color: '#9ca3af' });
-      marks[m.date] = {
-        disabled,
-        disableTouchEvent: disabled,
-        marked: dots.length > 0,
-        dots: dots.length ? dots : undefined,
-      };
-    }
-    if (date) {
-      marks[date] = {
-        ...(marks[date] || {}),
-        selected: true,
-        selectedColor: '#ec4899',
-      };
-    }
-    return marks;
-  }, [dayMarkers, service?.machineKind, date]);
 
   const summaryValue =
     bookingOrigin === 'SUBSCRIPTION'
@@ -300,10 +294,14 @@ export function BookingScreen({ route, navigation }: Props) {
         <View style={[styles.progressFill, { width: `${progress(step)}%` }]} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         {step === 'details' && (
           <>
-            <View style={styles.heroIcon}>
+            <View style={[styles.heroIcon, { backgroundColor: `${CATEGORY_META[service.category].color}22` }]}>
               <Image
                 source={categoryIllustrations[service.category]}
                 style={styles.heroCategoryIcon}
@@ -317,8 +315,13 @@ export function BookingScreen({ route, navigation }: Props) {
             <Text style={styles.description}>{service.description}</Text>
 
             <View style={styles.summaryRow}>
-              <Summary icon="time-outline" label="Duração" value={`${service.duration} min`} />
-              <Summary icon="cash-outline" label="Valor" value={summaryValue} />
+              <Summary icon="time-outline" label="Duração" value={`${service.duration} min`} accent="#0ea5e9" />
+              <Summary
+                icon="cash-outline"
+                label="Valor"
+                value={summaryValue}
+                accent={bookingOrigin === 'SUBSCRIPTION' || finalPrice === 0 ? '#10b981' : '#ec4899'}
+              />
             </View>
 
             {(serviceInUserPlan || startingPlan) ? (
@@ -331,7 +334,8 @@ export function BookingScreen({ route, navigation }: Props) {
                 ) : null}
                 {serviceInUserPlan ? (
                   <Text style={styles.planSessionsText}>
-                    {remainingSessions} {remainingSessions === 1 ? 'sessão disponível' : 'sessões disponíveis'} este mês
+                    {remainingSessions} {remainingSessions === 1 ? 'sessão disponível' : 'sessões disponíveis'} este
+                    mês · a sessão conta no mês da data
                   </Text>
                 ) : null}
                 {startingPlan ? (
@@ -357,8 +361,8 @@ export function BookingScreen({ route, navigation }: Props) {
                 title="Usar Plano"
                 subtitle={
                   canUsePlan
-                    ? `Consumir 1 sessão (${remainingSessions} disponíveis)`
-                    : 'Limite mensal do plano atingido'
+                    ? 'A sessão conta no mês da data escolhida'
+                    : 'Este tratamento não pode ser agendado pelo plano'
                 }
                 accent="#8b5cf6"
                 onPress={() => canUsePlan && setBookingOrigin('SUBSCRIPTION')}
@@ -404,54 +408,93 @@ export function BookingScreen({ route, navigation }: Props) {
         {step === 'date' && (
           <>
             <Text style={styles.sectionTitle}>Escolha o melhor dia</Text>
-            <View style={styles.calendarCard}>
-              <Calendar
-                minDate={minDate}
-                maxDate={lastNextMonth}
-                onDayPress={(day) => {
-                  const mark = calendarMarked[day.dateString];
-                  if (mark?.disabled) return;
-                  if (date === day.dateString) {
-                    setDate('');
-                    setTime('');
-                    return;
-                  }
-                  setDate(day.dateString);
-                  setTime('');
-                }}
-                markedDates={calendarMarked}
-                markingType="multi-dot"
-                theme={{
-                  arrowColor: '#ec4899',
-                  todayTextColor: '#ec4899',
-                  selectedDayBackgroundColor: '#ec4899',
-                  selectedDayTextColor: '#ffffff',
-                  textDayHeaderColor: '#111827',
-                  textDayHeaderFontWeight: '700',
-                  textDayHeaderFontSize: 13,
-                  textDayFontSize: 16,
-                  textDayFontWeight: '500',
-                  textMonthFontSize: 18,
-                  textMonthFontWeight: '700',
-                  textMonthColor: '#111827',
-                  dayTextColor: '#111827',
-                }}
-              />
-            </View>
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
-              <Text style={{ fontSize: 11, color: '#6b7280' }}>● Cinza fechado</Text>
-              <Text style={{ fontSize: 11, color: '#a855f7' }}>● Laser</Text>
-              <Text style={{ fontSize: 11, color: '#0ea5e9' }}>● Crio</Text>
-            </View>
-            {service?.machineKind ? (
-              <Text style={{ fontSize: 12, color: '#be185d', marginTop: 6 }}>
-                Este tratamento só pode ser agendado no dia liberado da máquina.
-              </Text>
-            ) : null}
+
+            {loadingDays ? (
+              <ActivityIndicator size="large" color="#ec4899" style={{ marginTop: 48 }} />
+            ) : daysByMonth.length === 0 ? (
+              <View style={styles.emptySlotsBox}>
+                <Ionicons name="calendar-outline" size={42} color="#d1d5db" />
+                <Text style={styles.emptySlotsTitle}>Nenhum dia disponível</Text>
+                <Text style={styles.emptySlotsHint}>
+                  {service.machineKind
+                    ? 'Este tratamento só pode ser agendado no dia liberado da máquina.'
+                    : 'Não há dias com horário nesta janela. Tente novamente mais tarde.'}
+                </Text>
+              </View>
+            ) : (
+              <>
+                {service.machineKind ? (
+                  <Text style={styles.machineHint}>
+                    Este tratamento só pode ser agendado no dia liberado da máquina.
+                  </Text>
+                ) : null}
+
+                {daysByMonth.map((group) => (
+                  <View key={group.key} style={styles.shiftBlock}>
+                    <View style={styles.shiftHeader}>
+                      <View style={styles.shiftIconWrap}>
+                        <Ionicons name="calendar-outline" size={16} color="#ec4899" />
+                      </View>
+                      <Text style={styles.shiftLabel}>{group.title}</Text>
+                      <View style={styles.shiftLine} />
+                    </View>
+                    <View style={styles.slots}>
+                      {group.days.map((day) => {
+                        const selected = date === day;
+                        const isToday = day === minDate;
+                        return (
+                          <TouchableOpacity
+                            key={day}
+                            onPress={() => selectDay(day)}
+                            activeOpacity={0.85}
+                            style={[styles.slot, styles.dayChip, selected && styles.slotSelected]}
+                          >
+                            <Text
+                              style={[
+                                isToday ? styles.dayChipTodayLabel : styles.dayChipNumber,
+                                selected && styles.slotTextSelected,
+                              ]}
+                            >
+                              {isToday ? 'Hoje' : dayNumber(day)}
+                            </Text>
+                            <Text style={[styles.dayChipWeekday, selected && styles.dayChipWeekdaySelected]}>
+                              {weekdayShort(day)}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
+
             {date ? (
               <View style={styles.dateConfirmBlock}>
-                <Text style={styles.dateConfirmLabel}>{formatConfirmDate(date)}</Text>
-                <PrimaryButton title="Confirmar" onPress={() => setStep('time')} />
+                {planMonthFull ? (
+                  <View style={styles.onlyBookedBanner}>
+                    <Ionicons name="information-circle-outline" size={18} color="#be185d" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.onlyBookedText}>
+                        Sem sessões em {monthTitle(date)} — pague avulso ou escolha outro dia.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => setBookingOrigin('SINGLE')}
+                        style={styles.emptySlotsButton}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.emptySlotsButtonText}>Pagar avulso neste dia</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <Text style={styles.dateConfirmLabel}>{formatConfirmDate(date)}</Text>
+                )}
+                <PrimaryButton
+                  title="Ver horários"
+                  onPress={() => setStep('time')}
+                  disabled={planMonthFull}
+                />
               </View>
             ) : null}
           </>
@@ -552,7 +595,15 @@ export function BookingScreen({ route, navigation }: Props) {
               />
               <ReviewRow icon="time-outline" label="Horário" value={time} />
               {!isRescheduling && (
-                <ReviewRow icon="wallet-outline" label="Pagamento" value={originLabel(bookingOrigin)} />
+                <ReviewRow
+                  icon="wallet-outline"
+                  label="Pagamento"
+                  value={
+                    bookingOrigin === 'SUBSCRIPTION'
+                      ? `Sessão de ${monthTitle(date)} (${remainingForSelectedDate} restantes)`
+                      : originLabel(bookingOrigin)
+                  }
+                />
               )}
               {!isRescheduling && bookingOrigin !== 'SUBSCRIPTION' && (
                 <ReviewRow icon="cash-outline" label="Total" value={currency(finalPrice)} />
@@ -656,10 +707,22 @@ function PrimaryButton({
   );
 }
 
-function Summary({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
+function Summary({
+  icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  accent: string;
+}) {
   return (
     <View style={styles.summary}>
-      <Ionicons name={icon} size={22} color="#ec4899" />
+      <View style={[styles.summaryIconWrap, { backgroundColor: `${accent}18` }]}>
+        <Ionicons name={icon} size={22} color={accent} />
+      </View>
       <Text style={styles.summaryLabel}>{label}</Text>
       <Text style={styles.summaryValue}>{value}</Text>
     </View>
@@ -765,6 +828,47 @@ function hourFromSlot(slot: string) {
 function localDateKey(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
 }
+function addDays(ymd: string, days: number) {
+  const dateValue = new Date(`${ymd}T12:00:00`);
+  dateValue.setDate(dateValue.getDate() + days);
+  return localDateKey(dateValue);
+}
+function lastDayOfNextMonth() {
+  const now = new Date();
+  return localDateKey(new Date(now.getFullYear(), now.getMonth() + 2, 0));
+}
+function remainingForMonth(subscription: Subscription | null | undefined, ymd: string) {
+  if (!subscription || !ymd) return 0;
+  const key = ymd.slice(0, 7);
+  const mapped = subscription.remaining.byMonth?.[key];
+  if (typeof mapped === 'number') return mapped;
+  const todayKey = localDateKey(new Date()).slice(0, 7);
+  if (key === todayKey) return subscription.remaining.thisMonth;
+  return subscription.plan.maxTreatmentsPerMonth;
+}
+function dayNumber(ymd: string) {
+  return new Date(`${ymd}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit' });
+}
+function weekdayShort(ymd: string) {
+  const weekday = new Date(`${ymd}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short' });
+  return capitalize(weekday.replace('.', ''));
+}
+function monthTitle(ymd: string) {
+  return capitalize(new Date(`${ymd}T12:00:00`).toLocaleDateString('pt-BR', { month: 'long' }));
+}
+function groupDaysByMonth(days: string[]) {
+  const groups: Array<{ key: string; title: string; days: string[] }> = [];
+  for (const day of days) {
+    const key = day.slice(0, 7);
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) {
+      last.days.push(day);
+    } else {
+      groups.push({ key, title: monthTitle(day), days: [day] });
+    }
+  }
+  return groups;
+}
 /** Remove slots cujo início já passou no dia de hoje (hora local do dispositivo). */
 function filterFutureSlots(date: string, list: string[]) {
   if (date !== localDateKey(new Date())) return list;
@@ -828,6 +932,13 @@ const styles = StyleSheet.create({
     borderColor: '#f3f4f6',
   },
   summaryLabel: { fontSize: 12, color: '#6b7280', marginTop: 8 },
+  summaryIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   summaryValue: { fontSize: 16, fontWeight: '800', color: '#111827', marginTop: 3 },
 
   planInfoCard: {
@@ -885,14 +996,22 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { color: 'white', fontWeight: '800', fontSize: 16 },
   sectionTitle: { fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 18 },
-  calendarCard: {
-    backgroundColor: 'white',
-    borderRadius: 18,
-    overflow: 'hidden',
-    padding: 6,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+  machineHint: {
+    fontSize: 12,
+    color: '#be185d',
+    fontWeight: '600',
+    lineHeight: 18,
+    marginBottom: 16,
   },
+  dayChip: {
+    flexGrow: 0,
+    paddingVertical: 12,
+    minHeight: 72,
+  },
+  dayChipNumber: { fontSize: 20, fontWeight: '800', color: '#111827' },
+  dayChipTodayLabel: { fontSize: 16, fontWeight: '800', color: '#111827' },
+  dayChipWeekday: { fontSize: 12, fontWeight: '600', color: '#6b7280', marginTop: 2 },
+  dayChipWeekdaySelected: { color: 'rgba(255,255,255,0.92)' },
   dateConfirmBlock: {
     marginTop: 18,
   },

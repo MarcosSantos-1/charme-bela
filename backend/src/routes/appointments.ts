@@ -2,9 +2,15 @@ import { FastifyInstance } from 'fastify'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
-import { hoursUntilStoredStart, wallClockNowAsStoredUtc } from '../utils/wallClock'
+import { hoursUntilStoredStart, wallClockNowAsStoredUtc, wallClockYearMonth } from '../utils/wallClock'
 import { newPaymentHoldExpiration, releaseExpiredPaymentHolds, countActivePaymentHolds, MAX_ACTIVE_PAYMENT_HOLDS_PER_USER, PAYMENT_HOLD_MINUTES } from '../utils/paymentHolds'
 import { assertStartTimeOnSchedule } from '../utils/scheduleValidation'
+import {
+  incrementMonthlyUsage,
+  decrementMonthlyUsage,
+  assertSubscriptionCapacity,
+  PlanQuotaError,
+} from '../utils/planUsage'
 import {
   notifyAppointmentConfirmed,
   notifyAppointmentCanceled,
@@ -29,34 +35,6 @@ class VoucherUnavailableError extends Error {
     super(message)
     this.name = 'VoucherUnavailableError'
   }
-}
-
-// Função auxiliar para verificar e atualizar uso mensal.
-// Aceita um client transacional para rodar atomicamente com a criação do agendamento.
-async function updateMonthlyUsage(
-  userId: string,
-  appointmentDate: Date,
-  tx: Prisma.TransactionClient = prisma
-) {
-  const month = appointmentDate.getMonth() + 1
-  const year = appointmentDate.getFullYear()
-  
-  await tx.monthlyUsage.upsert({
-    where: {
-      userId_month_year: { userId, month, year }
-    },
-    create: {
-      userId,
-      month,
-      year,
-      totalTreatments: 1,
-      facialTreatments: 0, // Mantém por compatibilidade, mas não usa mais
-      weeklyUsage: {} // Mantém por compatibilidade, mas não usa mais
-    },
-    update: {
-      totalTreatments: { increment: 1 }
-    }
-  })
 }
 
 export async function appointmentsRoutes(app: FastifyInstance) {
@@ -545,56 +523,21 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         }
         
         const plan = user.subscription.plan
-        const month = appointmentStart.getMonth() + 1
-        const year = appointmentStart.getFullYear()
         
-        // Busca uso mensal DO MÊS DO AGENDAMENTO (não do mês atual)
-        const monthlyUsage = await prisma.monthlyUsage.findUnique({
-          where: {
-            userId_month_year: { userId, month, year }
+        try {
+          await assertSubscriptionCapacity(userId, appointmentStart, plan.maxTreatmentsPerMonth)
+        } catch (quotaError) {
+          if (quotaError instanceof PlanQuotaError) {
+            const { month, year } = wallClockYearMonth(appointmentStart)
+            return reply.status(400).send({
+              success: false,
+              error: quotaError.message,
+              limit: quotaError.message.includes('dia') ? 3 : plan.maxTreatmentsPerMonth,
+              month,
+              year,
+            })
           }
-        })
-        
-        // Valida limite mensal para o mês ESPECÍFICO do agendamento
-        // Cada mês tem seu próprio limite independente
-        if (monthlyUsage && monthlyUsage.totalTreatments >= plan.maxTreatmentsPerMonth) {
-          return reply.status(400).send({
-            success: false,
-            error: `Limite mensal de ${plan.maxTreatmentsPerMonth} tratamentos atingido para ${month}/${year}`,
-            currentUsage: monthlyUsage.totalTreatments,
-            limit: plan.maxTreatmentsPerMonth,
-            month,
-            year
-          })
-        }
-        
-        // NOVA VALIDAÇÃO: Máximo 3 tratamentos por dia
-        const dayStart = new Date(appointmentStart)
-        dayStart.setHours(0, 0, 0, 0)
-        
-        const dayEnd = new Date(appointmentStart)
-        dayEnd.setHours(23, 59, 59, 999)
-        
-        const appointmentsToday = await prisma.appointment.count({
-          where: {
-            userId,
-            startTime: {
-              gte: dayStart,
-              lte: dayEnd
-            },
-            status: { not: 'CANCELED' },
-            origin: 'SUBSCRIPTION'
-          }
-        })
-        
-        if (appointmentsToday >= 3) {
-          return reply.status(400).send({
-            success: false,
-            error: 'Limite de 3 tratamentos por dia atingido',
-            currentUsage: appointmentsToday,
-            limit: 3,
-            message: 'Para sua segurança e melhor resultado, recomendamos no máximo 3 tratamentos por dia.'
-          })
+          throw quotaError
         }
       }
       
@@ -792,7 +735,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           
           // Atualiza uso mensal se for de assinatura (atômico com a criação)
           if (origin === 'SUBSCRIPTION') {
-            await updateMonthlyUsage(userId, appointmentStart, tx)
+            await incrementMonthlyUsage(userId, appointmentStart, tx)
           }
           
           return created
@@ -1041,24 +984,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         lostTreatment = true
         // Não remove do MonthlyUsage - cliente perdeu o tratamento
       } else if (appointment.origin === 'SUBSCRIPTION') {
-        // Remove do uso mensal se cancelou com antecedência adequada
-        const month = appointment.startTime.getMonth() + 1
-        const year = appointment.startTime.getFullYear()
-        
-        const monthlyUsage = await prisma.monthlyUsage.findUnique({
-          where: {
-            userId_month_year: { userId: appointment.userId, month, year }
-          }
-        })
-        
-        if (monthlyUsage && monthlyUsage.totalTreatments > 0) {
-          await prisma.monthlyUsage.update({
-            where: { id: monthlyUsage.id },
-            data: {
-              totalTreatments: monthlyUsage.totalTreatments - 1
-            }
-          })
-        }
+        await decrementMonthlyUsage(appointment.userId, appointment.startTime)
       }
       
       // SISTEMA DE REEMBOLSO/CRÉDITO para tratamentos AVULSOS pagos
@@ -1313,7 +1239,10 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       
       const appointment = await prisma.appointment.findUnique({
         where: { id },
-        include: { service: true }
+        include: {
+          service: true,
+          user: { include: { subscription: { include: { plan: true } } } },
+        },
       })
       
       if (!appointment) {
@@ -1377,10 +1306,28 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       // Checagem + update em transação Serializable para impedir double-booking
       // quando duas requisições disputam o mesmo slot.
       const maxSimultaneous = config?.maxSimultaneous || 1
+      const oldMonth = wallClockYearMonth(appointment.startTime)
+      const newMonth = wallClockYearMonth(newStart)
+      const crossesMonth =
+        appointment.origin === 'SUBSCRIPTION' && oldMonth.key !== newMonth.key
+      const maxPerMonth = appointment.user.subscription?.plan.maxTreatmentsPerMonth
       
       let updatedAppointment
       try {
         updatedAppointment = await prisma.$transaction(async (tx) => {
+          if (appointment.origin === 'SUBSCRIPTION' && maxPerMonth != null) {
+            await assertSubscriptionCapacity(
+              appointment.userId,
+              newStart,
+              maxPerMonth,
+              tx,
+              {
+                excludeAppointmentId: id,
+                skipMonthCheck: !crossesMonth,
+              }
+            )
+          }
+
           const overlappingCount = await tx.appointment.count({
             where: {
               id: { not: id },
@@ -1393,6 +1340,11 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           if (overlappingCount >= maxSimultaneous) {
             logger.warning(`❌ Conflito ao reagendar ${id} para ${newStart.toISOString()}: ${overlappingCount}/${maxSimultaneous} ocupados`)
             throw new SlotTakenError()
+          }
+
+          if (crossesMonth) {
+            await decrementMonthlyUsage(appointment.userId, appointment.startTime, tx)
+            await incrementMonthlyUsage(appointment.userId, newStart, tx)
           }
           
           return tx.appointment.update({
@@ -1414,6 +1366,12 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           return reply.status(400).send({
             success: false,
             error: 'Já existe um agendamento no novo horário'
+          })
+        }
+        if (txError instanceof PlanQuotaError) {
+          return reply.status(400).send({
+            success: false,
+            error: txError.message,
           })
         }
         // P2034: conflito de serialização (outra transação gravou o mesmo slot primeiro)

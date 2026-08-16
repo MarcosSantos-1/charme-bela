@@ -26,6 +26,7 @@ interface BookingModalProps {
   onClose: () => void
   hasSubscription: boolean
   remainingTreatments: number
+  remainingByMonth?: Record<string, number>
   isIncludedInPlan: boolean
   userId: string
   onSuccess: (type: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER') => void
@@ -39,6 +40,7 @@ export function BookingModal({
   onClose,
   hasSubscription,
   remainingTreatments,
+  remainingByMonth,
   isIncludedInPlan,
   userId,
   onSuccess,
@@ -109,6 +111,22 @@ export function BookingModal({
   }, [isOpen, hasSubscription, isIncludedInPlan, availableVoucher, discountVoucher])
 
   if (!isOpen || !service) return null
+
+  const selectedDateKey = selectedDate
+    ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}`
+    : null
+  const remainingForSelectedDate = selectedDateKey
+    ? remainingByMonth?.[selectedDateKey] ??
+      (selectedDateKey === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+        ? remainingTreatments
+        : remainingTreatments)
+    : remainingTreatments
+  const selectedMonthLabel = selectedDate
+    ? selectedDate.toLocaleDateString('pt-BR', { month: 'long' })
+    : ''
+  const planMonthFull = Boolean(
+    selectedDate && bookingType === 'SUBSCRIPTION' && remainingForSelectedDate <= 0
+  )
 
   const markerByDate = new Map(dayMarkers.map((d) => [d.date, d]))
   const machineKind = (service as api.Service).machineKind || null
@@ -229,6 +247,10 @@ export function BookingModal({
   const handleConfirmBooking = async () => {
     if (!selectedDate || !selectedSlot) {
       toast.error('Selecione data e horário')
+      return
+    }
+    if (bookingType === 'SUBSCRIPTION' && remainingForSelectedDate <= 0) {
+      toast.error(`Sem sessões disponíveis em ${selectedMonthLabel}`)
       return
     }
 
@@ -410,7 +432,9 @@ export function BookingModal({
                   <div className="bg-purple-50 border-l-4 border-purple-500 p-4 rounded">
                     <div className="text-sm font-medium text-purple-900">Sessões Disponíveis</div>
                     <div className="text-2xl font-bold text-purple-700 mt-1">{remainingTreatments}</div>
-                    <div className="text-xs text-purple-600 mt-1">tratamentos restantes este mês</div>
+                    <div className="text-xs text-purple-600 mt-1">
+                      restantes este mês · a sessão conta no mês da data escolhida
+                    </div>
                   </div>
                 )}
               </div>
@@ -576,10 +600,16 @@ export function BookingModal({
                 <div className="bg-purple-50 border-l-4 border-purple-500 p-4 rounded-xl mb-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-sm font-medium text-purple-900">Sessões Disponíveis</div>
-                      <div className="text-xs text-purple-600 mt-0.5">Use seu plano ou pague avulso</div>
+                      <div className="text-sm font-medium text-purple-900">
+                        Sessões em {selectedMonthLabel}
+                      </div>
+                      <div className="text-xs text-purple-600 mt-0.5">
+                        {remainingForSelectedDate > 0
+                          ? 'Use seu plano ou pague avulso'
+                          : 'Sem sessões neste mês — pague avulso ou escolha outro dia'}
+                      </div>
                     </div>
-                    <div className="text-2xl font-bold text-purple-700">{remainingTreatments}</div>
+                    <div className="text-2xl font-bold text-purple-700">{remainingForSelectedDate}</div>
                   </div>
                 </div>
               )}
@@ -689,12 +719,21 @@ export function BookingModal({
                     </button>
                   )}
                 
-                  {hasSubscription && isIncludedInPlan && remainingTreatments > 0 ? (
+                  {hasSubscription && isIncludedInPlan ? (
                     <>
                       <button
-                        onClick={() => setBookingType('SUBSCRIPTION')}
+                        onClick={() => {
+                          if (remainingForSelectedDate <= 0) {
+                            toast.error(`Sem sessões disponíveis em ${selectedMonthLabel}`)
+                            return
+                          }
+                          setBookingType('SUBSCRIPTION')
+                        }}
+                        disabled={remainingForSelectedDate <= 0}
                         className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
-                          bookingType === 'SUBSCRIPTION'
+                          remainingForSelectedDate <= 0
+                            ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
+                            : bookingType === 'SUBSCRIPTION'
                             ? 'border-purple-500 bg-purple-50'
                             : 'border-gray-200 hover:border-purple-300'
                         }`}
@@ -702,9 +741,13 @@ export function BookingModal({
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="font-semibold text-gray-900">✨ Usar Plano</div>
-                            <div className="text-sm text-gray-600">Consumir 1 sessão ({remainingTreatments} disponíveis)</div>
+                            <div className="text-sm text-gray-600">
+                              {remainingForSelectedDate > 0
+                                ? `Consumir 1 sessão de ${selectedMonthLabel || 'mês da data'} (${remainingForSelectedDate} disponíveis)`
+                                : `Sem sessões em ${selectedMonthLabel}`}
+                            </div>
                           </div>
-                          {bookingType === 'SUBSCRIPTION' && (
+                          {bookingType === 'SUBSCRIPTION' && remainingForSelectedDate > 0 && (
                             <Check className="w-6 h-6 text-purple-600" />
                           )}
                         </div>
@@ -740,8 +783,8 @@ export function BookingModal({
                         <div>
                           <div className="font-semibold text-gray-900">💰 Pagamento Avulso</div>
                           <div className="text-sm text-gray-600">R$ {service.price.toFixed(2)}</div>
-                          {hasSubscription && remainingTreatments === 0 && (
-                            <div className="text-xs text-orange-600 mt-1">⚠️ Limite mensal do plano atingido</div>
+                          {hasSubscription && remainingForSelectedDate === 0 && (
+                            <div className="text-xs text-orange-600 mt-1">Limite do plano atingido neste mês</div>
                           )}
                         </div>
                         <Check className="w-6 h-6 text-pink-600" />
@@ -764,7 +807,7 @@ export function BookingModal({
                   variant="primary"
                   className="flex-1"
                   onClick={handleConfirmBooking}
-                  disabled={!selectedDate || !selectedSlot}
+                  disabled={!selectedDate || !selectedSlot || planMonthFull}
                 >
                   Confirmar Agendamento
                 </Button>

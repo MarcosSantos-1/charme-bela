@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { notifyAdminNewClientRegistered, notifyWelcome } from '../utils/notifications'
+import { buildRemainingByMonth } from '../utils/planUsage'
 
 export async function usersRoutes(app: FastifyInstance) {
   // GET - Buscar aniversariantes do mês
@@ -247,36 +248,21 @@ export async function usersRoutes(app: FastifyInstance) {
       // Se tem subscription ativa, calcular remaining e limits
       let userData: any = { ...user }
       if (user.subscription && user.subscription.status === 'ACTIVE') {
-        const now = new Date()
-        const month = now.getMonth() + 1
-        const year = now.getFullYear()
-        
-        logger.debug(`Calculando usage para usuário ${id}: mês ${month}/${year}`)
-        
-        const monthlyUsage = await prisma.monthlyUsage.findUnique({
-          where: {
-            userId_month_year: { userId: id, month, year }
-          }
-        })
-        
         const maxPerMonth = user.subscription.plan.maxTreatmentsPerMonth
-        const usedThisMonth = monthlyUsage?.totalTreatments || 0
-        const remainingThisMonth = maxPerMonth - usedThisMonth
+        const remaining = await buildRemainingByMonth(id, maxPerMonth)
         
-        logger.debug(`📊 Usage: usado=${usedThisMonth}, max=${maxPerMonth}, remaining=${remainingThisMonth}`)
+        logger.debug(`📊 Usage: remaining thisMonth=${remaining.thisMonth}, max=${maxPerMonth}`)
         
         userData.subscription = {
           ...user.subscription,
           currentMonthUsage: {
-            totalTreatments: usedThisMonth
+            totalTreatments: maxPerMonth - remaining.thisMonth
           },
           limits: {
             maxPerMonth: maxPerMonth,
             maxPerDay: 3
           },
-          remaining: {
-            thisMonth: remainingThisMonth
-          }
+          remaining
         }
       }
       

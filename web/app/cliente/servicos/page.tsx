@@ -354,6 +354,7 @@ function ServicosContent() {
           onClose={() => setShowModal(false)}
           hasSubscription={hasSubscription}
           remainingTreatments={remainingTreatments || 0}
+          remainingByMonth={subscription?.remaining?.byMonth}
           isIncludedInPlan={selectedService ? isIncludedInPlan(selectedService.id) : false}
           userId={user?.id || ''}
           onSuccess={handleBookingSuccess}

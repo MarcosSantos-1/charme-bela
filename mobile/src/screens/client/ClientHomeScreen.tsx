@@ -319,22 +319,27 @@ export function ClientHomeScreen() {
             <View style={styles.section}>
               <View style={styles.quickActionsGrid}>
                 <TouchableOpacity
-                  style={[styles.quickActionCard, { backgroundColor: '#fce7f3' }]}
+                  style={[styles.quickActionCard, styles.quickActionAnamnesis]}
                   onPress={() => navigation.navigate('Profile', { openScreen: 'anamnesis' })}
+                  activeOpacity={0.88}
                 >
                   <View style={styles.quickActionIcon}>
-                    <Ionicons name="clipboard-outline" size={32} color="#ec4899" />
+                    <Ionicons name="clipboard-outline" size={28} color="#ffffff" />
                   </View>
-                  <Text style={styles.quickActionTitle}>Minha Anamnese</Text>
-                  <Text style={styles.quickActionSubtitle}>Histórico médico</Text>
+                  <Text style={styles.quickActionTitleLight}>Minha Anamnese</Text>
+                  <Text style={styles.quickActionSubtitleLight}>Histórico médico</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: '#e0e7ff' }]} onPress={() => navigation.navigate('Plan')}>
+                <TouchableOpacity
+                  style={[styles.quickActionCard, styles.quickActionPlan]}
+                  onPress={() => navigation.navigate('Plan')}
+                  activeOpacity={0.88}
+                >
                   <View style={styles.quickActionIcon}>
-                    <Ionicons name="card-outline" size={32} color="#6366f1" />
+                    <Ionicons name="card-outline" size={28} color="#ffffff" />
                   </View>
-                  <Text style={styles.quickActionTitle}>Meu Plano</Text>
-                  <Text style={styles.quickActionSubtitle}>Gerenciar assinatura</Text>
+                  <Text style={styles.quickActionTitleLight}>Meu Plano</Text>
+                  <Text style={styles.quickActionSubtitleLight}>Gerenciar assinatura</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -999,20 +1004,31 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     alignItems: 'center',
+    shadowColor: '#111827',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  quickActionAnamnesis: {
+    backgroundColor: '#db2777',
+  },
+  quickActionPlan: {
+    backgroundColor: '#4f46e5',
   },
   quickActionIcon: {
     marginBottom: 12,
   },
-  quickActionTitle: {
+  quickActionTitleLight: {
     fontSize: 15,
     fontWeight: 'bold',
-    color: '#111827',
+    color: '#ffffff',
     textAlign: 'center',
     marginBottom: 4,
   },
-  quickActionSubtitle: {
+  quickActionSubtitleLight: {
     fontSize: 12,
-    color: '#6b7280',
+    color: 'rgba(255,255,255,0.86)',
     textAlign: 'center',
   },
 });

@@ -9,6 +9,7 @@ import {
   dateToYmd,
   ensureCurrentAndNextOccurrences,
   finalizePastReleasedOccurrences,
+  spTodayYmd,
   ymdToDate,
 } from '../utils/machineRental'
 
@@ -102,6 +103,36 @@ function splitAvailability(
   }
 
   return { available, booked }
+}
+
+type SchedulePeriod = { start: string; end: string }
+
+function periodsForDay(
+  ymd: string,
+  dow: number,
+  scheduleByDow: Map<number, { isAvailable: boolean; availableSlots: any }>,
+  overrideByYmd: Map<string, { isAvailable: boolean; availableSlots: any }>
+): SchedulePeriod[] | null {
+  const override = overrideByYmd.get(ymd)
+  if (override) {
+    if (!override.isAvailable) return null
+    return (override.availableSlots as SchedulePeriod[] | null) || []
+  }
+  const schedule = scheduleByDow.get(dow)
+  if (!schedule || !schedule.isAvailable) return null
+  return (schedule.availableSlots as SchedulePeriod[]) || []
+}
+
+function machineAllowsDay(
+  ymd: string,
+  machineKind: MachineKind | null,
+  occurrences: Array<{ kind: MachineKind; date: Date; status: MachineRentalStatus }>
+) {
+  const onDay = occurrences.filter((occ) => dateToYmd(occ.date) === ymd)
+  if (!machineKind) {
+    return !onDay.some((occ) => occ.kind === MachineKind.LASER)
+  }
+  return onDay.some((occ) => occ.kind === machineKind && occ.status === MachineRentalStatus.RELEASED)
 }
 
 export async function scheduleRoutes(app: FastifyInstance) {
@@ -717,6 +748,140 @@ export async function scheduleRoutes(app: FastifyInstance) {
       return reply.status(500).send({
         success: false,
         error: 'Erro ao remover exceção'
+      })
+    }
+  })
+
+  // GET - Dias com pelo menos um horário livre para o serviço
+  app.get('/schedule/available-days', async (request, reply) => {
+    logger.route('GET', '/schedule/available-days')
+
+    try {
+      const { from, to, serviceId } = request.query as {
+        from?: string
+        to?: string
+        serviceId?: string
+      }
+      if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+        return reply.status(400).send({
+          success: false,
+          error: 'from e to são obrigatórios (YYYY-MM-DD)',
+        })
+      }
+      if (from > to) {
+        return reply.status(400).send({
+          success: false,
+          error: 'from deve ser anterior ou igual a to',
+        })
+      }
+
+      const fromDate = ymdToDate(from)
+      const toDate = ymdToDate(to)
+      const spanDays = (toDate.getTime() - fromDate.getTime()) / 86400000
+      if (spanDays > 62) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Intervalo máximo de 62 dias',
+        })
+      }
+
+      await finalizePastReleasedOccurrences()
+      await ensureCurrentAndNextOccurrences()
+      await releaseExpiredPaymentHolds()
+
+      let serviceMachineKind: MachineKind | null = null
+      const config = await prisma.systemConfig.findFirst()
+      const slotDuration = config?.slotDuration || 30
+      const maxSimultaneous = config?.maxSimultaneous || 1
+      let serviceDuration = slotDuration
+
+      if (serviceId) {
+        const svc = await prisma.service.findUnique({
+          where: { id: serviceId },
+          select: { machineKind: true, duration: true },
+        })
+        serviceMachineKind = svc?.machineKind ?? null
+        if (svc?.duration) serviceDuration = svc.duration
+      }
+
+      const [schedules, overrides, occurrences, appointments] = await Promise.all([
+        prisma.managerSchedule.findMany(),
+        prisma.scheduleOverride.findMany({
+          where: { date: { gte: fromDate, lte: toDate } },
+        }),
+        prisma.machineRentalOccurrence.findMany({
+          where: {
+            date: { gte: fromDate, lte: toDate },
+            status: {
+              in: [
+                MachineRentalStatus.HELD,
+                MachineRentalStatus.RELEASED,
+                MachineRentalStatus.DONE,
+              ],
+            },
+          },
+        }),
+        prisma.appointment.findMany({
+          where: {
+            startTime: { gte: fromDate, lte: new Date(`${to}T23:59:59.999Z`) },
+            status: { not: 'CANCELED' },
+          },
+          select: { startTime: true, endTime: true },
+        }),
+      ])
+
+      const scheduleByDow = new Map(schedules.map((s) => [s.dayOfWeek, s]))
+      const overrideByYmd = new Map(overrides.map((o) => [dateToYmd(o.date), o]))
+      const appointmentsByYmd = new Map<string, Array<{ startTime: Date; endTime: Date }>>()
+      for (const apt of appointments) {
+        const ymd = dateToYmd(apt.startTime)
+        const list = appointmentsByYmd.get(ymd) || []
+        list.push(apt)
+        appointmentsByYmd.set(ymd, list)
+      }
+
+      const saoPauloDateStr = spTodayYmd()
+      const wallNow = wallClockNowAsStoredUtc()
+      const days: Array<{ date: string }> = []
+      const cursor = new Date(fromDate)
+      const end = new Date(toDate)
+
+      while (cursor.getTime() <= end.getTime()) {
+        const ymd = dateToYmd(cursor)
+        if (ymd >= saoPauloDateStr && machineAllowsDay(ymd, serviceMachineKind, occurrences)) {
+          const periods = periodsForDay(ymd, cursor.getUTCDay(), scheduleByDow, overrideByYmd)
+          if (periods && periods.length > 0) {
+            let candidateSlots: string[] = []
+            for (const period of periods) {
+              candidateSlots.push(
+                ...generateSlotStarts(period.start, period.end, slotDuration, serviceDuration)
+              )
+            }
+            candidateSlots = Array.from(new Set(candidateSlots)).sort()
+            if (ymd === saoPauloDateStr) {
+              candidateSlots = candidateSlots.filter(
+                (slot) => slotToDate(ymd, slot).getTime() > wallNow.getTime()
+              )
+            }
+            const { available } = splitAvailability(
+              ymd,
+              candidateSlots,
+              serviceDuration,
+              appointmentsByYmd.get(ymd) || [],
+              maxSimultaneous
+            )
+            if (available.length > 0) days.push({ date: ymd })
+          }
+        }
+        cursor.setUTCDate(cursor.getUTCDate() + 1)
+      }
+
+      return reply.status(200).send({ success: true, data: { days } })
+    } catch (error) {
+      logger.error('Erro ao buscar dias disponíveis:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao buscar dias disponíveis',
       })
     }
   })

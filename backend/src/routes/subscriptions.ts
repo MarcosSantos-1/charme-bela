@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
+import { buildRemainingByMonth } from '../utils/planUsage'
 
 /** Fim do ciclo já pago a partir do dia de aniversário da assinatura (fallback sem Stripe). */
 function computeAccessUntilFromStartDate(startDate: Date, now: Date = new Date()): Date {
@@ -88,16 +89,7 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         })
       }
       
-      // Busca uso mensal atual
-      const now = new Date()
-      const month = now.getMonth() + 1
-      const year = now.getFullYear()
-      
-      const monthlyUsage = await prisma.monthlyUsage.findUnique({
-        where: {
-          userId_month_year: { userId, month, year }
-        }
-      })
+      const remaining = await buildRemainingByMonth(userId, subscription.plan.maxTreatmentsPerMonth)
       
       logger.success(`Assinatura encontrada: ${subscription.id}`)
       return reply.status(200).send({
@@ -105,15 +97,13 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         data: {
           ...subscription,
           currentMonthUsage: {
-            totalTreatments: monthlyUsage?.totalTreatments || 0
+            totalTreatments: subscription.plan.maxTreatmentsPerMonth - remaining.thisMonth
           },
           limits: {
             maxPerMonth: subscription.plan.maxTreatmentsPerMonth,
             maxPerDay: 3
           },
-          remaining: {
-            thisMonth: subscription.plan.maxTreatmentsPerMonth - (monthlyUsage?.totalTreatments || 0)
-          }
+          remaining
         }
       })
     } catch (error) {

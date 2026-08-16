@@ -30,3 +30,18 @@ export function wallClockNowAsStoredUtc(now: Date = new Date()): Date {
 export function hoursUntilStoredStart(startTime: Date, now: Date = new Date()): number {
   return (startTime.getTime() - wallClockNowAsStoredUtc(now).getTime()) / (1000 * 60 * 60)
 }
+
+/** Mês/ano da data de parede gravada em fake-UTC (`YYYY-MM-DDTHH:mm:00.000Z`). */
+export function wallClockYearMonth(start: Date): { year: number; month: number; key: string } {
+  const year = start.getUTCFullYear()
+  const month = start.getUTCMonth() + 1
+  return { year, month, key: `${year}-${String(month).padStart(2, '0')}` }
+}
+
+/** YYYY-MM-DD de parede a partir do startTime fake-UTC. */
+export function wallClockYmd(start: Date): string {
+  const y = start.getUTCFullYear()
+  const m = String(start.getUTCMonth() + 1).padStart(2, '0')
+  const d = String(start.getUTCDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}

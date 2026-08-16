@@ -238,6 +238,15 @@ export async function getAvailableSlots(date: string, serviceId?: string): Promi
   return unwrap<AvailableSlots>(response.data);
 }
 
+export async function getAvailableDays(
+  from: string,
+  to: string,
+  serviceId?: string,
+): Promise<{ days: Array<{ date: string }> }> {
+  const response = await api.get('/schedule/available-days', { params: { from, to, serviceId } });
+  return unwrap<{ days: Array<{ date: string }> }>(response.data);
+}
+
 export async function getDayMarkers(from: string, to: string): Promise<{ days: DayMarker[] }> {
   const response = await api.get('/schedule/day-markers', { params: { from, to } });
   return unwrap<{ days: DayMarker[] }>(response.data);

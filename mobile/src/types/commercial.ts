@@ -71,7 +71,7 @@ export interface Subscription {
   canceledAt?: string | null;
   currentMonthUsage: { totalTreatments: number };
   limits: { maxPerMonth: number; maxPerDay: number };
-  remaining: { thisMonth: number };
+  remaining: { thisMonth: number; byMonth?: Record<string, number> };
 }
 
 export interface AvailableSlots {

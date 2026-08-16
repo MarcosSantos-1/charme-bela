@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -76,11 +76,13 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
     void loadPayments();
   }, [loadPayments, subscription?.id]);
 
-  useEffect(() => {
-    if (subscription?.planId) {
-      setExpandedPlanId(subscription.planId);
-    }
-  }, [subscription?.planId]);
+  const orderedPlans = useMemo(() => {
+    const currentId = subscription?.status !== 'CANCELED' ? subscription?.planId : undefined;
+    if (!currentId) return plans;
+    const current = plans.find((plan) => plan.id === currentId);
+    const rest = plans.filter((plan) => plan.id !== currentId);
+    return current ? [current, ...rest] : plans;
+  }, [plans, subscription?.planId, subscription?.status]);
 
   const run = async (key: string, action: () => Promise<any>, success: string) => {
     setBusy(key);
@@ -287,7 +289,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
         </View>
 
         <View style={styles.planList}>
-          {plans.map((plan) => (
+          {orderedPlans.map((plan) => (
             <PlanOption
               key={plan.id}
               plan={plan}
@@ -450,7 +452,11 @@ function PlanOption({
               <View style={styles.tierRow}>
                 <Ionicons name="diamond-outline" size={14} color={brand.rose} />
                 <Text style={styles.tierLabel}>{tierLabel}</Text>
-                {current ? <Text style={styles.currentBadge}>SEU PLANO</Text> : null}
+                {current ? (
+                  <View style={styles.currentBadge}>
+                    <Text style={styles.currentBadgeText}>Seu plano</Text>
+                  </View>
+                ) : null}
               </View>
               <Text style={styles.optionName}>{plan.name}</Text>
             </View>
@@ -834,10 +840,16 @@ const styles = StyleSheet.create({
   },
   currentBadge: {
     marginLeft: 4,
+    backgroundColor: brand.rose,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  currentBadgeText: {
     fontSize: 10,
-    fontWeight: '900',
-    color: brand.rose,
-    letterSpacing: 0.4,
+    fontWeight: '800',
+    color: '#ffffff',
+    letterSpacing: 0.3,
   },
   optionName: { fontSize: 17, fontWeight: '800', color: brand.ink },
   priceBlock: { alignItems: 'flex-end' },

@@ -121,6 +121,7 @@ export interface Subscription {
   }
   remaining?: {
     thisMonth: number
+    byMonth?: Record<string, number>
   }
 }
 

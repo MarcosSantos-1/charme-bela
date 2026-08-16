@@ -197,7 +197,8 @@ export const CATEGORY_META: Record<ServiceCategory, { label: string; color: stri
 
 export function getApiErrorMessage(error: unknown, fallback = 'Não foi possível concluir a operação') {
   const value = error as any;
-  return value?.response?.data?.error || value?.response?.data?.message || value?.message || fallback;
+  const data = value?.response?.data;
+  return data?.details || data?.error || data?.message || value?.message || fallback;
 }
 
 /** Hold de checkout online ainda dentro dos 5 minutos. */

@@ -20,6 +20,7 @@ export interface AnamnesisPersonalDataV2 {
   sex?: SexValue
   phone?: string
   email?: string
+  cpf?: string
 }
 
 export interface AnamnesisHealthDataV2 {

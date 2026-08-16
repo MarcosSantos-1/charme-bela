@@ -367,7 +367,8 @@ export async function usersRoutes(app: FastifyInstance) {
       const { 
         name, 
         email, 
-        phone, 
+        phone,
+        cpf,
         profileImageUrl,
         isActive,
         clubWelcomeSeenAt,
@@ -378,6 +379,7 @@ export async function usersRoutes(app: FastifyInstance) {
         name?: string
         email?: string
         phone?: string
+        cpf?: string | null
         profileImageUrl?: string
         isActive?: boolean
         clubWelcomeSeenAt?: string | Date | null
@@ -413,6 +415,7 @@ export async function usersRoutes(app: FastifyInstance) {
           ...(name && { name }),
           ...(email && { email }),
           ...(phone !== undefined && { phone }),
+          ...(cpf !== undefined && { cpf: cpf ? cpf.replace(/\D/g, '') : null }),
           ...(profileImageUrl !== undefined && { profileImageUrl }),
           ...(isActive !== undefined && { isActive }),
           ...(welcomeSeenValue !== undefined && { clubWelcomeSeenAt: welcomeSeenValue }),

@@ -307,6 +307,13 @@ export function BookingModal({
           serviceId: service.id,
           slots: [startTime.toISOString()],
         })
+        const payerCpf = window.prompt('Digite o CPF para gerar o Pix (obrigatório pelo Asaas):')
+        const cpfDigits = (payerCpf || '').replace(/\D/g, '')
+        if (cpfDigits.length !== 11) {
+          toast.error('Informe um CPF válido com 11 dígitos')
+          setStep('booking')
+          return
+        }
         const cardData = await api.createPaymentSession(
           userId,
           service.id,
@@ -314,6 +321,7 @@ export function BookingModal({
           service.price,
           undefined,
           purchase.id,
+          cpfDigits,
         )
         if (cardData?.url || cardData?.invoiceUrl) {
           window.location.href = (cardData.url || cardData.invoiceUrl) as string
@@ -358,12 +366,21 @@ export function BookingModal({
         }
         
         // Cria sessão de pagamento no Asaas COM PREÇO FINAL
+        const payerCpf = window.prompt('Digite o CPF para gerar o Pix (obrigatório pelo Asaas):')
+        const cpfDigits = (payerCpf || '').replace(/\D/g, '')
+        if (cpfDigits.length !== 11) {
+          toast.error('Informe um CPF válido com 11 dígitos')
+          setStep('booking')
+          return
+        }
         const cardData = await api.createPaymentSession(
           userId, 
           service.id, 
           appointment.id,
-          finalPrice,  // Passa o preço final com desconto
-          customDesc   // Descrição do desconto
+          finalPrice,
+          customDesc,
+          undefined,
+          cpfDigits,
         )
         
         if (cardData && (cardData.url || cardData.invoiceUrl)) {

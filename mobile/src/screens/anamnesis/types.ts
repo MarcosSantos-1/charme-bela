@@ -1,3 +1,5 @@
+import { cpfDigits, maskCpf } from '../../lib/cpf';
+
 export type SexValue = 'female' | 'male' | 'other' | 'prefer_not';
 export type YesNo = 'yes' | 'no';
 export type YesNoUnknown = 'yes' | 'no' | 'unknown';
@@ -11,6 +13,7 @@ export interface AnamnesisFormState {
   birthDate: string;
   sex: SexValue | null;
   phone: string;
+  cpf: string;
   email: string;
 
   diagnosedDisease: YesNo | null;
@@ -81,6 +84,7 @@ export function createInitialState(prefill?: {
   name?: string;
   email?: string;
   phone?: string;
+  cpf?: string;
 }): AnamnesisFormState {
   const looksPhone = (v?: string) => Boolean(v && /^\+?\d[\d\s().-]{7,}$/.test(v.trim()));
   return {
@@ -88,6 +92,7 @@ export function createInitialState(prefill?: {
     birthDate: '',
     sex: null,
     phone: prefill?.phone || '',
+    cpf: prefill?.cpf ? maskCpf(prefill.cpf) : '',
     email: prefill?.email?.endsWith('@phone.charmebela.local') ? '' : prefill?.email || '',
 
     diagnosedDisease: null,
@@ -212,6 +217,7 @@ export function toBackendPayload(state: AnamnesisFormState) {
       birthDate: state.birthDate.trim(),
       sex: state.sex,
       phone: state.phone.trim(),
+      cpf: cpfDigits(state.cpf),
       email: state.email.trim(),
     },
     healthData: {
@@ -280,7 +286,7 @@ export function toBackendPayload(state: AnamnesisFormState) {
 /** Hydrate wizard state from a saved AnamnesisForm (edit mode). */
 export function fromBackendForm(
   form: any,
-  prefill?: { name?: string; email?: string; phone?: string },
+  prefill?: { name?: string; email?: string; phone?: string; cpf?: string },
 ): AnamnesisFormState {
   const base = createInitialState(prefill);
   if (!form) return base;
@@ -295,6 +301,7 @@ export function fromBackendForm(
     birthDate: p.birthDate || '',
     sex: p.sex || null,
     phone: p.phone || base.phone,
+    cpf: maskCpf(p.cpf || base.cpf),
     email: p.email && !String(p.email).endsWith('@phone.charmebela.local') ? p.email : base.email,
 
     diagnosedDisease: h.diagnosedDisease ?? null,

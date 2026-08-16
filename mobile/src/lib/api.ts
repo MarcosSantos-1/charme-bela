@@ -73,6 +73,7 @@ export interface User {
   email: string;
   name: string;
   phone?: string;
+  cpf?: string | null;
   role: 'CLIENT' | 'ADMIN' | 'MANAGER';
   isActive: boolean;
   firebaseUid?: string;
@@ -118,6 +119,7 @@ export async function updateUser(
   data: {
     name?: string;
     phone?: string;
+    cpf?: string | null;
     email?: string;
     clubWelcomeSeenAt?: string | null;
     expoPushToken?: string | null;
@@ -268,8 +270,8 @@ export async function getVouchers(userId: string): Promise<Voucher[]> {
   return unwrap<Voucher[]>(response.data);
 }
 
-export async function createCheckoutSession(userId: string, planId: string) {
-  const response = await api.post('/payments/subscribe', { userId, planId });
+export async function createCheckoutSession(userId: string, planId: string, cpf?: string) {
+  const response = await api.post('/payments/subscribe', { userId, planId, cpf });
   return unwrap<{
     paymentId: string;
     sessionId: string;
@@ -290,6 +292,7 @@ export async function createPaymentSession(
   customAmount?: number,
   customDescription?: string,
   packagePurchaseId?: string,
+  cpf?: string,
 ) {
   const response = await api.post('/payments/checkout', {
     userId,
@@ -298,6 +301,7 @@ export async function createPaymentSession(
     customAmount,
     customDescription,
     packagePurchaseId,
+    cpf,
   });
   return unwrap<{
     paymentId: string;

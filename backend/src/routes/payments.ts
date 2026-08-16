@@ -17,8 +17,10 @@ import {
   listPayments,
   listSubscriptionPayments,
   mapAsaasBillingType,
+  normalizeCpfCnpj,
   refundPayment,
   toCheckoutPayload,
+  updateCustomer,
 } from '../lib/asaas'
 import { cancelUnpaidPackagePurchase, markPackagePurchasePaid } from '../utils/packages'
 import {
@@ -37,6 +39,7 @@ type CheckoutBody = {
   packagePurchaseId?: string
   customAmount?: number
   customDescription?: string
+  cpf?: string
 }
 
 function webhookTokensMatch(received: string | undefined, expected: string) {
@@ -60,23 +63,39 @@ function resolveUserId(request: FastifyRequest, bodyUserId?: string) {
   return { error: null, userId }
 }
 
-async function ensureAsaasCustomer(user: {
-  id: string
-  name: string
-  email: string
-  phone: string | null
-  asaasCustomerId: string | null
-}) {
-  if (user.asaasCustomerId) return user.asaasCustomerId
+async function ensureAsaasCustomer(
+  user: {
+    id: string
+    name: string
+    email: string
+    phone: string | null
+    cpf: string | null
+    asaasCustomerId: string | null
+  },
+  cpfCnpj: string,
+) {
+  if (user.asaasCustomerId) {
+    await updateCustomer(user.asaasCustomerId, {
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      cpfCnpj,
+    })
+    if (user.cpf !== cpfCnpj) {
+      await prisma.user.update({ where: { id: user.id }, data: { cpf: cpfCnpj } })
+    }
+    return user.asaasCustomerId
+  }
   const customer = await createCustomer({
     name: user.name,
     email: user.email,
     phone: user.phone,
+    cpfCnpj,
     externalReference: user.id,
   })
   await prisma.user.update({
     where: { id: user.id },
-    data: { asaasCustomerId: customer.id },
+    data: { asaasCustomerId: customer.id, cpf: cpfCnpj },
   })
   logger.info(`Customer Asaas criado para ${user.id}`)
   return customer.id
@@ -255,7 +274,15 @@ export async function paymentsRoutes(app: FastifyInstance) {
         ? `Pacote ${service.name} - Charme & Bela`
         : `${service.name} - Charme & Bela`
 
-      const customerId = await ensureAsaasCustomer(user)
+      const cpfCnpj = normalizeCpfCnpj(body.cpf) || normalizeCpfCnpj(user.cpf)
+      if (!cpfCnpj) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Informe o CPF para gerar o Pix. O Asaas exige o documento do pagador.',
+        })
+      }
+
+      const customerId = await ensureAsaasCustomer(user, cpfCnpj)
       const externalReference = resolvedPackagePurchaseId
         ? `pkg_${resolvedPackagePurchaseId}`
         : `apt_${appointmentId || service.id}`
@@ -295,7 +322,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
         return reply.status(503).send({ success: false, error: 'Asaas não configurado (ASAAS_API_KEY)' })
       }
 
-      const body = request.body as { userId?: string; planId: string }
+      const body = request.body as { userId?: string; planId: string; cpf?: string }
       const resolved = resolveUserId(request, body.userId)
       if (resolved.error === 'forbidden') {
         return reply.status(403).send({ success: false, error: 'Você só pode assinar no próprio cadastro' })
@@ -316,7 +343,15 @@ export async function paymentsRoutes(app: FastifyInstance) {
         return reply.status(404).send({ success: false, error: 'Plano não encontrado' })
       }
 
-      const customerId = await ensureAsaasCustomer(user)
+      const cpfCnpj = normalizeCpfCnpj(body.cpf) || normalizeCpfCnpj(user.cpf)
+      if (!cpfCnpj) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Informe o CPF para gerar o Pix. O Asaas exige o documento do pagador.',
+        })
+      }
+
+      const customerId = await ensureAsaasCustomer(user, cpfCnpj)
       const subscription = await createSubscription({
         customer: customerId,
         value: plan.price,

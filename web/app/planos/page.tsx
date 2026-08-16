@@ -83,7 +83,13 @@ export default function PlanosPage() {
         }
       } else {
         // Se NÃO TEM assinatura, cria nova (via Asaas)
-        const response = await createCheckoutSession(user.id, planId)
+        const payerCpf = window.prompt('Digite o CPF para gerar o Pix (obrigatório pelo Asaas):')
+        const cpfDigits = (payerCpf || '').replace(/\D/g, '')
+        if (cpfDigits.length !== 11) {
+          toast.error('Informe um CPF válido com 11 dígitos')
+          return
+        }
+        const response = await createCheckoutSession(user.id, planId, cpfDigits)
         const checkoutUrl = (response as any).url || (response as any).invoiceUrl || (response as any).data?.url
         if (checkoutUrl) {
           window.location.href = checkoutUrl

@@ -30,6 +30,7 @@ import { saveAnamnesis, updateUser } from '../../lib/api';
 import { getApiErrorMessage } from '../../types/commercial';
 import { brand } from '../../theme/brand';
 import { phonePrefillFromUser } from '../../lib/userDisplay';
+import { cpfDigits, isValidCpf, maskCpf } from '../../lib/cpf';
 import { useAuth } from '../../contexts/AuthContext';
 
 type StepId =
@@ -57,6 +58,7 @@ interface PrefillUser {
   name?: string;
   email?: string;
   phone?: string;
+  cpf?: string | null;
 }
 
 interface AnamnesisFlowProps {
@@ -97,7 +99,11 @@ function canContinue(step: StepId, state: AnamnesisFormState): boolean {
     case 'welcome':
       return true;
     case 'personal':
-      return Boolean(state.fullName.trim() && state.birthDate.trim().length >= 8);
+      return Boolean(
+        state.fullName.trim() &&
+          state.birthDate.trim().length >= 8 &&
+          isValidCpf(state.cpf),
+      );
     case 'sex':
       return state.sex != null;
     case 'health_disease':
@@ -207,6 +213,7 @@ export function AnamnesisFlow({ user, onComplete, initialForm }: AnamnesisFlowPr
         name: user.name,
         email: user.email,
         phone: phonePrefillFromUser(user) || user.phone,
+        cpf: user.cpf ? maskCpf(user.cpf) : '',
       };
       return initialForm
         ? fromBackendForm(initialForm, prefill)
@@ -276,10 +283,12 @@ export function AnamnesisFlow({ user, onComplete, initialForm }: AnamnesisFlowPr
         // Sync display name / phone on User so Home & Profile stay correct
         const fullName = state.fullName.trim();
         const phoneDigits = state.phone.replace(/\D/g, '');
+        const document = cpfDigits(state.cpf);
         try {
           const updated = await updateUser(user.id, {
             ...(fullName ? { name: fullName } : {}),
             ...(phoneDigits.length >= 10 ? { phone: phoneDigits } : {}),
+            ...(isValidCpf(document) ? { cpf: document } : {}),
           });
           await setUserProfile(updated);
         } catch {
@@ -505,6 +514,18 @@ function renderStep(
             placeholder="(00) 00000-0000"
             keyboardType="phone-pad"
           />
+          <RevealInput
+            label="CPF"
+            value={state.cpf}
+            onChangeText={(v) => patch({ cpf: maskCpf(v) })}
+            placeholder="000.000.000-00"
+            keyboardType="numeric"
+          />
+          {cpfDigits(state.cpf).length === 11 && !isValidCpf(state.cpf) ? (
+            <Text style={{ color: '#b91c1c', fontSize: 13, fontWeight: '600', marginTop: -4 }}>
+              CPF inválido. Confira os dígitos.
+            </Text>
+          ) : null}
         </>
       );
 

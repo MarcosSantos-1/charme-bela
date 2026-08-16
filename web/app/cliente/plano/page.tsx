@@ -100,7 +100,13 @@ export default function PlanoPage() {
       // Se NÃO TEM assinatura → Cria nova via Asaas
       else {
         console.log('🔵 Criando checkout session...', { userId: user.id, planId })
-        const checkoutData = await api.createCheckoutSession(user.id, planId)
+        const payerCpf = window.prompt('Digite o CPF para gerar o Pix (obrigatório pelo Asaas):')
+        const cpfDigits = (payerCpf || '').replace(/\D/g, '')
+        if (cpfDigits.length !== 11) {
+          toast.error('Informe um CPF válido com 11 dígitos')
+          return
+        }
+        const checkoutData = await api.createCheckoutSession(user.id, planId, cpfDigits)
         
         console.log('🔵 Dados do checkout:', checkoutData)
         

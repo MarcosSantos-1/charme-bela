@@ -28,6 +28,7 @@ import {
   saveAnamnesis,
   updateUser,
 } from '../../../lib/api';
+import { cpfDigits, isValidCpf, maskCpf } from '../../../lib/cpf';
 import { auth, firebaseConfig } from '../../../lib/firebase';
 import { FirebaseRecaptchaVerifierModal } from '../../../lib/phone-recaptcha';
 
@@ -123,6 +124,7 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
     user?.email && !isPhoneLocalEmail(user.email) ? user.email : '';
 
   const [phone, setPhone] = useState(() => phonePrefillFromUser(user));
+  const [cpf, setCpf] = useState(() => maskCpf(user?.cpf || ''));
   const [birthDate, setBirthDate] = useState('');
   const [loadingForm, setLoadingForm] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -227,6 +229,10 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
       Alert.alert('Telefone inválido', 'Informe um telefone com DDD.');
       return;
     }
+    if (!isValidCpf(cpf)) {
+      Alert.alert('CPF inválido', 'Informe um CPF válido no formato 000.000.000-00.');
+      return;
+    }
     if (birthDate && birthDate.replace(/\D/g, '').length > 0 && birthDate.replace(/\D/g, '').length < 8) {
       Alert.alert('Data inválida', 'Use o formato DD/MM/AAAA.');
       return;
@@ -240,10 +246,11 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
           : `+55${phoneDigits}`
         : undefined;
 
-      if (e164) {
-        const updated = await updateUser(user.id, { phone: e164 });
-        await setUserProfile(updated);
-      }
+      const updated = await updateUser(user.id, {
+        ...(e164 ? { phone: e164 } : {}),
+        cpf: cpfDigits(cpf),
+      });
+      await setUserProfile(updated);
 
       if (birthDate.replace(/\D/g, '').length === 8) {
         const current = await getAnamnesis(user.id);
@@ -251,6 +258,7 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
           personalData: {
             ...(current?.personalData || {}),
             birthDate: birthDate.trim(),
+            cpf: cpfDigits(cpf),
             ...(e164 ? { phone: e164 } : {}),
           },
           lifestyleData: current?.lifestyleData || {},
@@ -413,6 +421,19 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
             editable
           />
           <FormField
+            label="CPF"
+            icon="card-outline"
+            value={cpf}
+            onChangeText={(t) => setCpf(maskCpf(t))}
+            placeholder="000.000.000-00"
+            keyboardType="number-pad"
+            maxLength={14}
+            editable
+          />
+          {cpfDigits(cpf).length === 11 && !isValidCpf(cpf) ? (
+            <Text style={styles.fieldError}>CPF inválido. Confira os dígitos.</Text>
+          ) : null}
+          <FormField
             label="Data de Nascimento"
             icon="calendar-outline"
             value={birthDate}
@@ -421,14 +442,6 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
             keyboardType="number-pad"
             editable
           />
-          {/* SaaS: campo CPF
-          <FormField
-            label="CPF"
-            icon="card-outline"
-            placeholder="000.000.000-00"
-            keyboardType="number-pad"
-          />
-          */}
         </View>
 
         {loadingForm && (
@@ -634,6 +647,14 @@ const styles = StyleSheet.create({
   },
   form: {
     paddingHorizontal: 20,
+  },
+  fieldError: {
+    color: '#b91c1c',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: -12,
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
   inputGroup: {
     marginBottom: 20,

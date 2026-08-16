@@ -1234,11 +1234,12 @@ export interface PaymentHistory {
 // Criar sessão de checkout (assinatura)
 export async function createCheckoutSession(
   userId: string,
-  planId: string
+  planId: string,
+  cpf?: string
 ): Promise<CheckoutSessionResponse> {
   return apiRequest('/payments/subscribe', {
     method: 'POST',
-    body: JSON.stringify({ userId, planId })
+    body: JSON.stringify({ userId, planId, cpf })
   })
 }
 
@@ -1249,7 +1250,8 @@ export async function createPaymentSession(
   appointmentId?: string,
   customAmount?: number,
   customDescription?: string,
-  packagePurchaseId?: string
+  packagePurchaseId?: string,
+  cpf?: string
 ): Promise<CheckoutSessionResponse> {
   return apiRequest('/payments/checkout', {
     method: 'POST',
@@ -1259,7 +1261,8 @@ export async function createPaymentSession(
       appointmentId,
       packagePurchaseId,
       customAmount,
-      customDescription
+      customDescription,
+      cpf
     })
   })
 }

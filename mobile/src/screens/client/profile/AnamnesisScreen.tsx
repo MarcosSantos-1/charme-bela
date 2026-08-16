@@ -14,11 +14,12 @@ import { getAnamnesis } from '../../../lib/api';
 import { getApiErrorMessage } from '../../../types/commercial';
 import { ScreenHeader } from '../../../components/ScreenHeader';
 import { brand } from '../../../theme/brand';
+import { maskCpf } from '../../../lib/cpf';
 import { AnamnesisFlow } from '../../anamnesis/AnamnesisFlow';
 
 const LABELS: Record<string, string> = {
   fullName: 'Nome completo',
-  birthDate: 'Data de nascimento',
+  cpf: 'CPF',
   diagnosedDisease: 'Doença diagnosticada',
   diagnosedDiseaseDetails: 'Quais doenças',
   medicalTreatment: 'Tratamento médico',
@@ -163,6 +164,7 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
   const personal = data?.personalData || {};
   const fullName = personal.fullName || personal.name || '—';
   const birthDate = personal.birthDate || '—';
+  const cpf = personal.cpf ? maskCpf(String(personal.cpf)) : '—';
 
   const detailSections: SectionMeta[] = data
     ? [
@@ -277,6 +279,11 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
                   <View style={styles.personalRow}>
                     <Text style={styles.personalLabel}>Data de nascimento</Text>
                     <Text style={styles.personalValue}>{String(birthDate)}</Text>
+                  </View>
+                  <View style={styles.personalDivider} />
+                  <View style={styles.personalRow}>
+                    <Text style={styles.personalLabel}>CPF</Text>
+                    <Text style={styles.personalValue}>{String(cpf)}</Text>
                   </View>
                 </View>
               </View>

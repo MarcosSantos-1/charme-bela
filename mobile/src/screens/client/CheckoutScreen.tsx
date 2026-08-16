@@ -6,6 +6,7 @@ import {
   Share,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -25,9 +26,10 @@ import {
 } from '../../lib/api';
 import { getApiErrorMessage } from '../../types/commercial';
 import { brand } from '../../theme/brand';
+import { isValidCpf, maskCpf } from '../../lib/cpf';
 
 type Props = NativeStackScreenProps<ClientStackParamList, 'Checkout'>;
-type Phase = 'loading' | 'awaiting' | 'paid' | 'expired' | 'error';
+type Phase = 'need_cpf' | 'loading' | 'awaiting' | 'paid' | 'expired' | 'error';
 
 function formatMoney(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -45,8 +47,11 @@ export function CheckoutScreen({ route, navigation }: Props) {
   const { user } = useAuth();
   const { refresh } = useCommercial();
   const params = route.params;
-  const [phase, setPhase] = useState<Phase>('loading');
+  const [phase, setPhase] = useState<Phase>(() =>
+    isValidCpf(user?.cpf) ? 'loading' : 'need_cpf',
+  );
   const [error, setError] = useState<string | null>(null);
+  const [cpf, setCpf] = useState(() => maskCpf(user?.cpf || ''));
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const [invoiceUrl, setInvoiceUrl] = useState<string | null>(null);
   const [pixCopy, setPixCopy] = useState<string | null>(null);
@@ -58,14 +63,22 @@ export function CheckoutScreen({ route, navigation }: Props) {
   );
   const [remaining, setRemaining] = useState(0);
   const abandoning = useRef(false);
+  const cpfRef = useRef(cpf);
+  cpfRef.current = cpf;
 
   const loadCheckout = useCallback(async () => {
     if (!user) return;
+    const document = cpfRef.current.replace(/\D/g, '');
+    if (!isValidCpf(document)) {
+      setPhase('need_cpf');
+      setError(cpfRef.current.replace(/\D/g, '').length === 11 ? 'CPF inválido. Confira os dígitos.' : null);
+      return;
+    }
     setPhase('loading');
     setError(null);
     try {
       const checkout = params.planId
-        ? await createCheckoutSession(user.id, params.planId)
+        ? await createCheckoutSession(user.id, params.planId, document)
         : await createPaymentSession(
             user.id,
             params.serviceId || '',
@@ -73,6 +86,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
             params.amount,
             params.customDescription,
             params.packagePurchaseId,
+            document,
           );
       setPaymentId(checkout.paymentId);
       setInvoiceUrl(checkout.invoiceUrl || checkout.url);
@@ -89,8 +103,12 @@ export function CheckoutScreen({ route, navigation }: Props) {
   }, [params.amount, params.appointmentId, params.customDescription, params.packagePurchaseId, params.planId, params.serviceId, user]);
 
   useEffect(() => {
-    void loadCheckout();
-  }, [loadCheckout]);
+    if (isValidCpf(user?.cpf)) {
+      void loadCheckout();
+    } else {
+      setPhase('need_cpf');
+    }
+  }, [loadCheckout, user?.cpf]);
 
   useEffect(() => {
     const tick = () => setRemaining(Math.max(0, expiresAt - Date.now()));
@@ -185,6 +203,37 @@ export function CheckoutScreen({ route, navigation }: Props) {
           <Ionicons name="close" size={24} color={brand.ink} />
         </TouchableOpacity>
       </ScreenHeader>
+
+      {phase === 'need_cpf' ? (
+        <View style={styles.centered}>
+          <Ionicons name="id-card-outline" size={48} color={brand.rose} />
+          <Text style={styles.successTitle}>CPF do pagador</Text>
+          <Text style={styles.muted}>
+            O Pix e o cartão no Asaas exigem o CPF de quem vai pagar. Usamos só para emitir a cobrança.
+          </Text>
+          <TextInput
+            value={cpf}
+            onChangeText={(value) => setCpf(maskCpf(value))}
+            placeholder="000.000.000-00"
+            placeholderTextColor={brand.muted}
+            keyboardType="number-pad"
+            style={styles.cpfInput}
+            maxLength={14}
+          />
+          {cpf.replace(/\D/g, '').length === 11 && !isValidCpf(cpf) ? (
+            <Text style={styles.errorText}>CPF inválido. Confira os dígitos.</Text>
+          ) : error ? (
+            <Text style={styles.errorText}>{error}</Text>
+          ) : null}
+          <TouchableOpacity
+            style={[styles.primaryButton, !isValidCpf(cpf) && styles.primaryButtonDisabled]}
+            disabled={!isValidCpf(cpf)}
+            onPress={() => void loadCheckout()}
+          >
+            <Text style={styles.primaryButtonText}>Continuar para o Pix</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {phase === 'loading' ? (
         <View style={styles.centered}>
@@ -288,6 +337,22 @@ const styles = StyleSheet.create({
   body: { padding: 16, gap: 14 },
   muted: { color: brand.muted, textAlign: 'center', lineHeight: 20 },
   errorText: { color: brand.ink, textAlign: 'center', fontWeight: '600' },
+  cpfInput: {
+    width: '100%',
+    maxWidth: 280,
+    borderWidth: 1,
+    borderColor: brand.border,
+    backgroundColor: brand.white,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 18,
+    fontWeight: '700',
+    color: brand.ink,
+    textAlign: 'center',
+    letterSpacing: 1,
+  },
+  primaryButtonDisabled: { opacity: 0.45 },
   hero: { borderRadius: 24, padding: 22, gap: 6 },
   heroLabel: { color: 'rgba(255,255,255,0.85)', fontWeight: '600', fontSize: 13 },
   heroAmount: { color: 'white', fontSize: 34, fontWeight: '800' },

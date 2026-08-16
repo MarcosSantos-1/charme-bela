@@ -115,6 +115,7 @@ async function asaasFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
+      'User-Agent': 'CharmeBela/1.0 (Node.js)',
       access_token: apiKey(),
       ...(init?.headers || {}),
     },
@@ -158,10 +159,18 @@ function digitsOnly(value?: string | null) {
   return (value || '').replace(/\D/g, '')
 }
 
+/** CPF (11) ou CNPJ (14). Asaas recusa cobrança se o cliente não tiver documento. */
+export function normalizeCpfCnpj(value?: string | null): string | null {
+  const digits = digitsOnly(value)
+  if (digits.length === 11 || digits.length === 14) return digits
+  return null
+}
+
 export async function createCustomer(input: {
   name: string
   email: string
   phone?: string | null
+  cpfCnpj: string
   externalReference: string
 }) {
   const mobile = digitsOnly(input.phone)
@@ -170,9 +179,31 @@ export async function createCustomer(input: {
     body: JSON.stringify({
       name: input.name,
       email: input.email,
+      cpfCnpj: input.cpfCnpj,
       mobilePhone: mobile.length >= 10 ? mobile : undefined,
       notificationDisabled: false,
       externalReference: input.externalReference,
+    }),
+  })
+}
+
+export async function updateCustomer(
+  id: string,
+  input: {
+    name?: string
+    email?: string
+    phone?: string | null
+    cpfCnpj: string
+  },
+) {
+  const mobile = digitsOnly(input.phone)
+  return asaasFetch<AsaasCustomer>(`/customers/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      ...(input.name ? { name: input.name } : {}),
+      ...(input.email ? { email: input.email } : {}),
+      cpfCnpj: input.cpfCnpj,
+      ...(mobile.length >= 10 ? { mobilePhone: mobile } : {}),
     }),
   })
 }

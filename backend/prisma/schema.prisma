@@ -19,6 +19,7 @@ model User {
   name               String
   email              String             @unique
   phone              String?            // Telefone do cliente
+  cpf                String?            // CPF do pagador (Asaas exige para Pix/cartão)
   firebaseUid        String?            @unique // Firebase Auth (pode ser null para clientes criados pelo admin)
   profileImageUrl    String?
   role               Role               @default(CLIENT)

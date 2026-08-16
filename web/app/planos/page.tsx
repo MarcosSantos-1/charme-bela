@@ -83,16 +83,16 @@ export default function PlanosPage() {
         }
       } else {
         // Se NÃO TEM assinatura, cria nova (via Asaas)
-        const payerCpf = window.prompt('Digite o CPF para gerar o Pix (obrigatório pelo Asaas):')
+        const payerCpf = window.prompt('Digite o CPF do titular do cartão (obrigatório pelo Asaas):')
         const cpfDigits = (payerCpf || '').replace(/\D/g, '')
         if (cpfDigits.length !== 11) {
           toast.error('Informe um CPF válido com 11 dígitos')
           return
         }
         const response = await createCheckoutSession(user.id, planId, cpfDigits)
-        const checkoutUrl = (response as any).url || (response as any).invoiceUrl || (response as any).data?.url
-        if (checkoutUrl) {
-          window.location.href = checkoutUrl
+        const paymentId = (response as any).paymentId || (response as any).sessionId || (response as any).data?.paymentId
+        if (paymentId) {
+          router.push(`/cliente/checkout?paymentId=${encodeURIComponent(paymentId)}&plan=1`)
         } else {
           throw new Error('Erro ao criar sessão de pagamento')
         }

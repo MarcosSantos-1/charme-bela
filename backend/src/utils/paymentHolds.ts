@@ -3,7 +3,7 @@ import { logger } from './logger'
 import { notifyAppointmentCanceled } from './notifications'
 import { releaseVoucherOnCancel } from './vouchers'
 import { cancelUnpaidPackagePurchase } from './packages'
-import { cancelPaymentSilent } from '../lib/asaas'
+import { cancelPaymentSilent, cancelPendingByExternalReference } from '../lib/asaas'
 
 /**
  * Reserva de horário com pagamento online pendente ("hold").
@@ -63,6 +63,7 @@ export async function releaseExpiredPaymentHolds(): Promise<number> {
           where: { id: appointment.packagePurchaseId },
           select: { asaasPaymentId: true },
         })
+        await cancelPendingByExternalReference(`pkg_${appointment.packagePurchaseId}`)
         await cancelPaymentSilent(purchase?.asaasPaymentId || appointment.asaasPaymentId)
         await prisma.$transaction(async (tx) => {
           await cancelUnpaidPackagePurchase(tx, appointment.packagePurchaseId!, cancelReason)
@@ -80,6 +81,7 @@ export async function releaseExpiredPaymentHolds(): Promise<number> {
         continue
       }
 
+      await cancelPendingByExternalReference(`apt_${appointment.id}`)
       await cancelPaymentSilent(appointment.asaasPaymentId)
       await prisma.appointment.update({
         where: { id: appointment.id },

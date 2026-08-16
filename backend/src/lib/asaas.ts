@@ -68,6 +68,7 @@ export type AsaasPayment = {
   paymentDate?: string | null
   confirmedDate?: string | null
   creditCard?: AsaasCreditCardSummary | null
+  creditCardToken?: string | null
   deleted?: boolean
 }
 
@@ -234,14 +235,23 @@ export async function getPayment(id: string) {
 }
 
 export async function getPixQrCode(paymentId: string): Promise<AsaasPixQr | null> {
-  try {
-    return await asaasFetch<AsaasPixQr>(`/payments/${paymentId}/pixQrCode`)
-  } catch (error) {
-    if (error instanceof AsaasError && (error.statusCode === 400 || error.statusCode === 404)) {
-      return null
+  let lastError: unknown = null
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const pix = await asaasFetch<AsaasPixQr>(`/payments/${paymentId}/pixQrCode`)
+      if (pix?.payload || pix?.encodedImage) return pix
+    } catch (error) {
+      lastError = error
+      const retryable =
+        error instanceof AsaasError && (error.statusCode === 400 || error.statusCode === 404)
+      if (!retryable) throw error
     }
-    throw error
+    await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)))
   }
+  if (lastError instanceof AsaasError) {
+    logger.warning(`Pix QR indisponível para ${paymentId}: ${lastError.message}`)
+  }
+  return null
 }
 
 export async function cancelPayment(paymentId: string) {
@@ -268,11 +278,78 @@ export async function refundPayment(paymentId: string, value?: number, descripti
   })
 }
 
+export async function cancelPendingByExternalReference(
+  externalReference?: string | null,
+  exceptPaymentId?: string | null,
+) {
+  if (!externalReference) return
+  try {
+    const listed = await listPayments({ externalReference, limit: 20 })
+    for (const payment of listed.data || []) {
+      if (exceptPaymentId && payment.id === exceptPaymentId) continue
+      if (payment.status === 'PENDING' || payment.status === 'OVERDUE') {
+        await cancelPaymentSilent(payment.id)
+      }
+    }
+  } catch (error: any) {
+    logger.warning(
+      `Não foi possível cancelar cobranças irmãs de ${externalReference}: ${error.message}`,
+    )
+  }
+}
+
+export async function payChargeWithCardToken(
+  paymentId: string,
+  creditCardToken: string,
+  remoteIp: string,
+) {
+  return asaasFetch<AsaasPayment>(`/payments/${paymentId}/payWithCreditCard`, {
+    method: 'POST',
+    body: JSON.stringify({ creditCardToken, remoteIp }),
+  })
+}
+
+export async function createPaymentWithCardToken(input: {
+  customer: string
+  value: number
+  description: string
+  externalReference: string
+  creditCardToken: string
+  remoteIp: string
+}) {
+  return asaasFetch<AsaasPayment>('/payments', {
+    method: 'POST',
+    body: JSON.stringify({
+      customer: input.customer,
+      billingType: 'CREDIT_CARD',
+      value: Number(input.value.toFixed(2)),
+      dueDate: todaySaoPauloISODate(),
+      description: input.description.slice(0, 500),
+      externalReference: input.externalReference.slice(0, 100),
+      creditCardToken: input.creditCardToken,
+      remoteIp: input.remoteIp,
+      postalService: false,
+    }),
+  })
+}
+
+export function cardBrandLabel(brand?: string | null) {
+  const value = (brand || '').toLowerCase()
+  if (value.includes('master')) return 'Mastercard'
+  if (value.includes('visa')) return 'Visa'
+  if (value.includes('amex') || value.includes('american')) return 'American Express'
+  if (value.includes('elo')) return 'Elo'
+  if (value.includes('hiper')) return 'Hipercard'
+  if (value.includes('diners')) return 'Diners'
+  return brand ? brand : 'Cartão'
+}
+
 export async function listPayments(params: {
   customer?: string
   subscription?: string
   status?: string
   billingType?: string
+  externalReference?: string
   'dateCreated[ge]'?: string
   'dateCreated[le]'?: string
   'paymentDate[ge]'?: string
@@ -295,17 +372,23 @@ export async function createSubscription(input: {
   description: string
   externalReference: string
   cycle?: 'MONTHLY' | 'WEEKLY' | 'YEARLY'
+  billingType?: AsaasBillingType
+  creditCardToken?: string
+  remoteIp?: string
 }) {
   return asaasFetch<AsaasSubscription>('/subscriptions', {
     method: 'POST',
     body: JSON.stringify({
       customer: input.customer,
-      billingType: 'UNDEFINED',
+      billingType: input.billingType || 'CREDIT_CARD',
       value: Number(input.value.toFixed(2)),
       nextDueDate: todaySaoPauloISODate(),
       cycle: input.cycle || 'MONTHLY',
       description: input.description.slice(0, 500),
       externalReference: input.externalReference.slice(0, 100),
+      ...(input.creditCardToken
+        ? { creditCardToken: input.creditCardToken, remoteIp: input.remoteIp }
+        : {}),
     }),
   })
 }
@@ -346,10 +429,11 @@ export type CheckoutPayload = {
 
 export async function toCheckoutPayload(
   payment: AsaasPayment,
-  extras?: { expiresAt?: Date | string | null; description?: string },
+  extras?: { expiresAt?: Date | string | null; description?: string; invoiceUrl?: string | null },
 ): Promise<CheckoutPayload> {
-  const pix = await getPixQrCode(payment.id)
-  const invoiceUrl = payment.invoiceUrl || null
+  const canHavePix = payment.billingType !== 'CREDIT_CARD' && payment.billingType !== 'BOLETO'
+  const pix = canHavePix ? await getPixQrCode(payment.id) : null
+  const invoiceUrl = extras?.invoiceUrl || payment.invoiceUrl || null
   return {
     paymentId: payment.id,
     sessionId: payment.id,

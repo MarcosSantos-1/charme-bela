@@ -401,9 +401,34 @@ export async function getPaymentHistory(userId: string): Promise<PaymentHistoryI
 
 export async function getPaymentStatus(paymentId: string) {
   const response = await api.get(`/payments/status/${paymentId}`);
-  return unwrap<{ paymentId: string; status: string; paid: boolean; billingType: string; value: number; invoiceUrl: string | null }>(
-    response.data,
-  );
+  return unwrap<{
+    paymentId: string;
+    status: string;
+    paid: boolean;
+    billingType: string;
+    value: number;
+    invoiceUrl: string | null;
+    pixCopyPaste?: string | null;
+    pixQrBase64?: string | null;
+  }>(response.data);
+}
+
+export async function chargeSavedCard(data: {
+  userId?: string;
+  paymentId?: string;
+  appointmentId?: string;
+  packagePurchaseId?: string;
+  savedCardId?: string;
+  planId?: string;
+}) {
+  const response = await api.post('/payments/charge-saved-card', data);
+  return unwrap<{
+    paid: boolean;
+    paymentId: string;
+    status: string;
+    brand?: string | null;
+    last4?: string | null;
+  }>(response.data);
 }
 
 export async function abandonCheckout(data: {

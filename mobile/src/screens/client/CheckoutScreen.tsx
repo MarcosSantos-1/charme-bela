@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -13,6 +15,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
+import { WebView } from 'react-native-webview';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ClientStackParamList } from '../../navigation/ClientNavigator';
 import { ScreenHeader } from '../../components/ScreenHeader';
@@ -20,13 +24,16 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useCommercial } from '../../contexts/CommercialContext';
 import {
   abandonCheckout,
+  chargeSavedCard,
   createCheckoutSession,
   createPaymentSession,
+  getPaymentMethods,
   getPaymentStatus,
 } from '../../lib/api';
-import { getApiErrorMessage } from '../../types/commercial';
+import { getApiErrorMessage, type PaymentMethod } from '../../types/commercial';
 import { brand } from '../../theme/brand';
 import { isValidCpf, maskCpf } from '../../lib/cpf';
+import { creditCard3dSource } from '../../assets/brandAssets';
 
 type Props = NativeStackScreenProps<ClientStackParamList, 'Checkout'>;
 type Phase = 'need_cpf' | 'loading' | 'awaiting' | 'paid' | 'expired' | 'error';
@@ -43,10 +50,21 @@ function formatCountdown(ms: number) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+function cardBrandLabel(brandName?: string | null) {
+  const value = (brandName || '').toLowerCase();
+  if (value.includes('master')) return 'Mastercard';
+  if (value.includes('visa')) return 'Visa';
+  if (value.includes('amex') || value.includes('american')) return 'Amex';
+  if (value.includes('elo')) return 'Elo';
+  if (value.includes('hiper')) return 'Hipercard';
+  return 'Cartão';
+}
+
 export function CheckoutScreen({ route, navigation }: Props) {
   const { user } = useAuth();
   const { refresh } = useCommercial();
   const params = route.params;
+  const isPlan = Boolean(params.planId);
   const [phase, setPhase] = useState<Phase>(() =>
     isValidCpf(user?.cpf) ? 'loading' : 'need_cpf',
   );
@@ -58,11 +76,16 @@ export function CheckoutScreen({ route, navigation }: Props) {
   const [pixQr, setPixQr] = useState<string | null>(null);
   const [amount, setAmount] = useState(params.amount || 0);
   const [description, setDescription] = useState(params.description || 'Charme & Bela');
-  const [expiresAt, setExpiresAt] = useState<number>(
-    params.expiresAt ? new Date(params.expiresAt).getTime() : Date.now() + 5 * 60 * 1000,
-  );
+  const [expiresAt, setExpiresAt] = useState<number | null>(() => {
+    if (params.planId) return null;
+    return params.expiresAt ? new Date(params.expiresAt).getTime() : Date.now() + 5 * 60 * 1000;
+  });
   const [remaining, setRemaining] = useState(0);
+  const [cardOpen, setCardOpen] = useState(false);
+  const [savedCards, setSavedCards] = useState<PaymentMethod[]>([]);
+  const [chargingSavedId, setChargingSavedId] = useState<string | null>(null);
   const abandoning = useRef(false);
+  const startedRef = useRef(false);
   const cpfRef = useRef(cpf);
   cpfRef.current = cpf;
 
@@ -90,37 +113,53 @@ export function CheckoutScreen({ route, navigation }: Props) {
           );
       setPaymentId(checkout.paymentId);
       setInvoiceUrl(checkout.invoiceUrl || checkout.url);
-      setPixCopy(checkout.pixCopyPaste);
-      setPixQr(checkout.pixQrBase64);
+      setPixCopy(isPlan ? null : checkout.pixCopyPaste);
+      setPixQr(isPlan ? null : checkout.pixQrBase64);
       setAmount(checkout.amount);
       setDescription(checkout.description);
-      if (checkout.expiresAt) setExpiresAt(new Date(checkout.expiresAt).getTime());
+      if (checkout.expiresAt && !isPlan) setExpiresAt(new Date(checkout.expiresAt).getTime());
+      try {
+        const methods = await getPaymentMethods(user.id);
+        setSavedCards(methods.filter((method) => method.last4));
+      } catch {
+        setSavedCards([]);
+      }
       setPhase('awaiting');
     } catch (requestError) {
       setError(getApiErrorMessage(requestError, 'Não foi possível abrir o pagamento'));
       setPhase('error');
     }
-  }, [params.amount, params.appointmentId, params.customDescription, params.packagePurchaseId, params.planId, params.serviceId, user]);
+  }, [params.amount, params.appointmentId, params.customDescription, params.packagePurchaseId, params.planId, params.serviceId, user?.id]);
 
   useEffect(() => {
-    if (isValidCpf(user?.cpf)) {
-      void loadCheckout();
-    } else {
+    if (!user) return;
+    if (!isValidCpf(user.cpf) && !isValidCpf(cpfRef.current)) {
       setPhase('need_cpf');
+      return;
     }
-  }, [loadCheckout, user?.cpf]);
+    if (startedRef.current) return;
+    startedRef.current = true;
+    void loadCheckout();
+  }, [loadCheckout, user]);
 
   useEffect(() => {
-    const tick = () => setRemaining(Math.max(0, expiresAt - Date.now()));
+    const tick = () => {
+      if (expiresAt == null) {
+        setRemaining(0);
+        return;
+      }
+      setRemaining(Math.max(0, expiresAt - Date.now()));
+    };
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
   }, [expiresAt]);
 
   useEffect(() => {
+    if (isPlan || expiresAt == null) return;
     if (phase !== 'awaiting' || remaining > 0) return;
     setPhase('expired');
-  }, [phase, remaining]);
+  }, [expiresAt, isPlan, phase, remaining]);
 
   useEffect(() => {
     if (phase !== 'awaiting' || !paymentId) return;
@@ -129,8 +168,12 @@ export function CheckoutScreen({ route, navigation }: Props) {
       try {
         const status = await getPaymentStatus(paymentId);
         if (cancelled) return;
+        if (status.pixQrBase64 && !isPlan) setPixQr(status.pixQrBase64);
+        if (status.pixCopyPaste && !isPlan) setPixCopy(status.pixCopyPaste);
+        if (status.invoiceUrl) setInvoiceUrl(status.invoiceUrl);
         if (status.paid) {
           setPhase('paid');
+          setCardOpen(false);
           await refresh();
         }
       } catch {
@@ -143,7 +186,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [phase, paymentId, refresh]);
+  }, [isPlan, phase, paymentId, refresh]);
 
   const qrSource = useMemo(() => {
     if (!pixQr) return null;
@@ -189,7 +232,48 @@ export function CheckoutScreen({ route, navigation }: Props) {
       Alert.alert('Cartão', 'Link de pagamento indisponível no momento.');
       return;
     }
-    await WebBrowser.openBrowserAsync(invoiceUrl);
+    setCardOpen(true);
+  };
+
+  const payWithSaved = async (card: PaymentMethod) => {
+    if (!user || !paymentId || chargingSavedId) return;
+    setChargingSavedId(card.id);
+    try {
+      const result = await chargeSavedCard({
+        userId: user.id,
+        paymentId,
+        appointmentId: params.appointmentId,
+        packagePurchaseId: params.packagePurchaseId,
+        savedCardId: card.id,
+        planId: params.planId,
+      });
+      if (result.paid) {
+        setPhase('paid');
+        setCardOpen(false);
+        await refresh();
+        return;
+      }
+      Alert.alert(
+        'Cartão em análise',
+        'Estamos confirmando a cobrança. Se não atualizar em alguns segundos, use o checkout seguro.',
+      );
+    } catch (requestError) {
+      Alert.alert(
+        'Não cobramos este cartão',
+        getApiErrorMessage(
+          requestError,
+          isPlan
+            ? 'Use outro cartão salvo ou o checkout seguro. Débito não assina o plano.'
+            : 'Pague no checkout seguro ou com Pix.',
+        ),
+        [
+          { text: 'Ok', style: 'cancel' },
+          { text: 'Usar outro cartão', onPress: () => void openCard() },
+        ],
+      );
+    } finally {
+      setChargingSavedId(null);
+    }
   };
 
   return (
@@ -209,7 +293,9 @@ export function CheckoutScreen({ route, navigation }: Props) {
           <Ionicons name="id-card-outline" size={48} color={brand.rose} />
           <Text style={styles.successTitle}>CPF do pagador</Text>
           <Text style={styles.muted}>
-            O Pix e o cartão no Asaas exigem o CPF de quem vai pagar. Usamos só para emitir a cobrança.
+            {isPlan
+              ? 'O cartão no Asaas exige o CPF de quem vai pagar. Usamos só para emitir a assinatura.'
+              : 'O Pix e o cartão no Asaas exigem o CPF de quem vai pagar. Usamos só para emitir a cobrança.'}
           </Text>
           <TextInput
             value={cpf}
@@ -230,7 +316,9 @@ export function CheckoutScreen({ route, navigation }: Props) {
             disabled={!isValidCpf(cpf)}
             onPress={() => void loadCheckout()}
           >
-            <Text style={styles.primaryButtonText}>Continuar para o Pix</Text>
+            <Text style={styles.primaryButtonText}>
+              {isPlan ? 'Continuar para o cartão' : 'Continuar para o pagamento'}
+            </Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -238,7 +326,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       {phase === 'loading' ? (
         <View style={styles.centered}>
           <ActivityIndicator color={brand.rose} size="large" />
-          <Text style={styles.muted}>Gerando Pix seguro…</Text>
+          <Text style={styles.muted}>{isPlan ? 'Preparando o cartão…' : 'Gerando Pix seguro…'}</Text>
         </View>
       ) : null}
 
@@ -258,7 +346,11 @@ export function CheckoutScreen({ route, navigation }: Props) {
             <Ionicons name="checkmark" size={36} color="white" />
           </View>
           <Text style={styles.successTitle}>Pagamento confirmado</Text>
-          <Text style={styles.muted}>Seu horário está reservado. A clínica confirma em seguida.</Text>
+          <Text style={styles.muted}>
+            {isPlan
+              ? 'Sua assinatura está ativa. Os tratamentos do plano já podem ser agendados.'
+              : 'Seu horário está reservado. A clínica confirma em seguida.'}
+          </Text>
           <TouchableOpacity
             style={styles.primaryButton}
             onPress={() => navigation.navigate('ClientTabs', { screen: 'Agenda' })}
@@ -280,28 +372,36 @@ export function CheckoutScreen({ route, navigation }: Props) {
       ) : null}
 
       {phase === 'awaiting' ? (
-        <View style={styles.body}>
+        <ScrollView contentContainerStyle={styles.body}>
           <LinearGradient colors={[brand.rose, brand.roseDeep]} style={styles.hero}>
             <Text style={styles.heroLabel}>Valor a pagar</Text>
             <Text style={styles.heroAmount}>{formatMoney(amount)}</Text>
             <Text style={styles.heroDesc} numberOfLines={2}>
               {description}
             </Text>
-            <View style={styles.timerPill}>
-              <Ionicons name="hourglass-outline" size={16} color="white" />
-              <Text style={styles.timerText}>Reserva expira em {formatCountdown(remaining)}</Text>
-            </View>
+            {expiresAt != null ? (
+              <View style={styles.timerPill}>
+                <Ionicons name="hourglass-outline" size={16} color="white" />
+                <Text style={styles.timerText}>Reserva expira em {formatCountdown(remaining)}</Text>
+              </View>
+            ) : null}
           </LinearGradient>
 
+          {!isPlan ? (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Pague com Pix</Text>
             <Text style={styles.cardHint}>O pagamento cai na hora. Não compartilhe este QR fora do app.</Text>
             {qrSource ? (
               <Image source={qrSource} style={styles.qr} />
+            ) : pixCopy ? (
+              <View style={styles.qrPlaceholder}>
+                <Ionicons name="qr-code-outline" size={42} color={brand.rose} />
+                <Text style={styles.muted}>Copie o código Pix abaixo para pagar no banco.</Text>
+              </View>
             ) : (
               <View style={styles.qrPlaceholder}>
                 <ActivityIndicator color={brand.rose} />
-                <Text style={styles.muted}>Carregando QR…</Text>
+                <Text style={styles.muted}>Gerando QR Pix…</Text>
               </View>
             )}
             {pixCopy ? (
@@ -310,21 +410,99 @@ export function CheckoutScreen({ route, navigation }: Props) {
                 <Text style={styles.copyText}>Copiar código Pix</Text>
               </TouchableOpacity>
             ) : null}
-            <Text selectable style={styles.pixPayload} numberOfLines={2}>
-              {pixCopy || 'QR disponível no link do cartão se o Pix ainda não carregou.'}
-            </Text>
+            {pixCopy ? (
+              <Text selectable style={styles.pixPayload} numberOfLines={3}>
+                {pixCopy}
+              </Text>
+            ) : null}
           </View>
+          ) : null}
 
-          <TouchableOpacity style={styles.cardButton} onPress={() => void openCard()}>
-            <Ionicons name="card-outline" size={22} color={brand.ink} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardButtonTitle}>Pagar com cartão</Text>
-              <Text style={styles.cardHint}>Abre o checkout seguro do Asaas. Não digitamos dados do cartão no app.</Text>
-            </View>
-            <Ionicons name="open-outline" size={18} color={brand.muted} />
+          {savedCards.map((card) => {
+            const charging = chargingSavedId === card.id;
+            return (
+              <TouchableOpacity
+                key={card.id}
+                style={styles.savedCardButton}
+                onPress={() => void payWithSaved(card)}
+                disabled={Boolean(chargingSavedId)}
+              >
+                <LinearGradient colors={[brand.rose, brand.roseDeep]} style={styles.savedCardGradient}>
+                  {charging ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Ionicons name="checkmark-circle" size={22} color="white" />
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.savedCardTitle}>
+                      Pagar agora com {cardBrandLabel(card.brand)} •••• {card.last4}
+                    </Text>
+                    <Text style={styles.savedCardHint}>
+                      {card.isDefault ? 'Cartão principal · um toque' : 'Um toque. Sem preencher de novo.'}
+                    </Text>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            );
+          })}
+
+          <TouchableOpacity style={styles.cardCta} onPress={() => void openCard()} activeOpacity={0.9}>
+            <LinearGradient colors={['#3a1d2c', brand.roseDeep]} style={styles.cardCtaInner}>
+              <Image source={creditCard3dSource} style={styles.cardCtaArt} resizeMode="contain" />
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={styles.cardCtaKicker}>
+                  {isPlan ? 'SOMENTE CRÉDITO · VISA · MASTER · ELO · AMEX' : 'CRÉDITO OU DÉBITO · VISA · MASTER · ELO · AMEX'}
+                </Text>
+                <Text style={styles.cardCtaTitle}>
+                  {savedCards.length
+                    ? isPlan
+                      ? 'Usar outro cartão de crédito'
+                      : 'Usar outro cartão'
+                    : isPlan
+                      ? 'Pagar com cartão de crédito'
+                      : 'Pagar com crédito ou débito'}
+                </Text>
+                <Text style={styles.cardCtaHint}>
+                  {isPlan
+                    ? savedCards.length
+                      ? 'Abre o checkout seguro para cadastrar outro cartão de crédito. Débito não assina o plano.'
+                      : 'A assinatura renova no crédito. Depois desta compra o cartão fica salvo para o próximo pagamento.'
+                    : savedCards.length
+                      ? 'Abre o checkout seguro para crédito, débito ou outro cartão. Cartões novos de crédito também ficam salvos.'
+                      : 'Crédito ou débito no checkout seguro. Cartão de crédito fica salvo para a próxima.'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.85)" />
+            </LinearGradient>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       ) : null}
+
+      <Modal visible={cardOpen} animationType="slide" onRequestClose={() => setCardOpen(false)}>
+        <SafeAreaProvider>
+          <SafeAreaView style={styles.cardModal} edges={['top', 'bottom']}>
+            <View style={styles.cardModalHeader}>
+              <Text style={styles.cardModalTitle}>{isPlan ? 'Cartão de crédito' : 'Crédito ou débito'}</Text>
+              <TouchableOpacity
+                onPress={() => setCardOpen(false)}
+                style={styles.modalClose}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons name="close" size={26} color={brand.ink} />
+              </TouchableOpacity>
+            </View>
+            {invoiceUrl ? (
+              <WebView source={{ uri: invoiceUrl }} startInLoadingState style={{ flex: 1 }} />
+            ) : null}
+            <TouchableOpacity
+              style={styles.externalLink}
+              onPress={() => invoiceUrl && WebBrowser.openBrowserAsync(invoiceUrl)}
+            >
+              <Text style={styles.externalLinkText}>Abrir no navegador</Text>
+            </TouchableOpacity>
+          </SafeAreaView>
+        </SafeAreaProvider>
+      </Modal>
     </View>
   );
 }
@@ -393,17 +571,29 @@ const styles = StyleSheet.create({
   },
   copyText: { color: brand.roseDeep, fontWeight: '800' },
   pixPayload: { fontSize: 11, color: brand.muted, textAlign: 'center' },
-  cardButton: {
+  savedCardButton: { borderRadius: 22, overflow: 'hidden' },
+  savedCardGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: brand.white,
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: brand.border,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
   },
-  cardButtonTitle: { fontWeight: '800', color: brand.ink, fontSize: 15 },
+  savedCardTitle: { color: 'white', fontWeight: '800', fontSize: 15 },
+  savedCardHint: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
+  cardCta: { borderRadius: 24, overflow: 'hidden' },
+  cardCtaInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    minHeight: 108,
+  },
+  cardCtaArt: { width: 64, height: 64 },
+  cardCtaKicker: { color: brand.goldSoft, fontWeight: '700', fontSize: 11, letterSpacing: 0.4 },
+  cardCtaTitle: { color: 'white', fontWeight: '800', fontSize: 16 },
+  cardCtaHint: { color: 'rgba(255,255,255,0.82)', fontSize: 12, lineHeight: 17 },
   primaryButton: {
     marginTop: 8,
     backgroundColor: brand.rose,
@@ -421,4 +611,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   successTitle: { fontSize: 22, fontWeight: '800', color: brand.ink, textAlign: 'center' },
+  cardModal: { flex: 1, backgroundColor: brand.background },
+  cardModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 10,
+    minHeight: 56,
+  },
+  cardModalTitle: { fontSize: 17, fontWeight: '800', color: brand.ink, flex: 1 },
+  modalClose: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: brand.white,
+  },
+  externalLink: { alignItems: 'center', paddingVertical: 16, paddingHorizontal: 16 },
+  externalLinkText: { color: brand.roseDeep, fontWeight: '700', fontSize: 16 },
 });

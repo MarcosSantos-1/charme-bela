@@ -399,8 +399,14 @@ function PagamentosContent() {
                         {/* Footer: Validade + Bandeira */}
                         <div className="flex justify-between items-end">
                           <div>
-                            <div className="text-xs opacity-70 mb-1 uppercase tracking-wider">Válido até</div>
-                            <div className="text-base font-semibold">{String(card.expMonth).padStart(2, '0')}/{String(card.expYear).slice(-2)}</div>
+                            <div className="text-xs opacity-70 mb-1 uppercase tracking-wider">
+                              {card.expMonth ? 'Válido até' : 'Cartão salvo'}
+                            </div>
+                            <div className="text-base font-semibold">
+                              {card.expMonth
+                                ? `${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)}`
+                                : card.isDefault ? 'Principal' : 'Um clique'}
+                            </div>
                           </div>
                           <div className="text-2xl font-bold uppercase tracking-wider opacity-90">
                             {card.brand}

@@ -4,7 +4,7 @@ import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { hoursUntilStoredStart, wallClockNowAsStoredUtc, wallClockYearMonth } from '../utils/wallClock'
 import { newPaymentHoldExpiration, releaseExpiredPaymentHolds, countActivePaymentHolds, MAX_ACTIVE_PAYMENT_HOLDS_PER_USER, PAYMENT_HOLD_MINUTES } from '../utils/paymentHolds'
-import { cancelPaymentSilent, refundPayment } from '../lib/asaas'
+import { cancelPaymentSilent, cancelPendingByExternalReference, refundPayment } from '../lib/asaas'
 import { assertStartTimeOnSchedule } from '../utils/scheduleValidation'
 import {
   incrementMonthlyUsage,
@@ -99,6 +99,11 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       }
       
       const cancelReason = 'Pagamento cancelado no checkout'
+      if (appointment.packagePurchaseId) {
+        await cancelPendingByExternalReference(`pkg_${appointment.packagePurchaseId}`)
+      } else {
+        await cancelPendingByExternalReference(`apt_${appointment.id}`)
+      }
       await cancelPaymentSilent(appointment.asaasPaymentId)
       if (appointment.packagePurchaseId) {
         const purchase = await prisma.packagePurchase.findUnique({

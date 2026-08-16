@@ -323,8 +323,8 @@ export function BookingModal({
           purchase.id,
           cpfDigits,
         )
-        if (cardData?.url || cardData?.invoiceUrl) {
-          window.location.href = (cardData.url || cardData.invoiceUrl) as string
+        if (cardData?.paymentId) {
+          router.push(`/cliente/checkout?paymentId=${encodeURIComponent(cardData.paymentId)}&appointmentId=${encodeURIComponent(purchase.appointments?.[0]?.id || '')}`)
           return
         }
         throw new Error('Erro ao criar sessão de pagamento')
@@ -383,8 +383,9 @@ export function BookingModal({
           cpfDigits,
         )
         
-        if (cardData && (cardData.url || cardData.invoiceUrl)) {
-          console.log('✅ Redirecionando para checkout Asaas:', cardData.url || cardData.invoiceUrl)
+        if (cardData?.paymentId) {
+          router.push(`/cliente/checkout?paymentId=${encodeURIComponent(cardData.paymentId)}&appointmentId=${encodeURIComponent(appointment.id)}`)
+        } else if (cardData && (cardData.url || cardData.invoiceUrl)) {
           window.location.href = (cardData.url || cardData.invoiceUrl) as string
         } else {
           throw new Error('Erro ao criar sessão de pagamento')

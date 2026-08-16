@@ -25,6 +25,7 @@ model User {
   role               Role               @default(CLIENT)
   stripeCustomerId   String?            @unique // legado Stripe (não usar)
   asaasCustomerId    String?            @unique // ID do cliente no Asaas
+  savedCards         SavedCard[]
   
   // Relacionamentos
   anamnesisForm      AnamnesisForm?
@@ -51,6 +52,22 @@ model User {
 
   @@index([email])
   @@index([role])
+}
+
+/** Cartão tokenizado no Asaas (nunca armazena PAN/CVV). Um cliente pode ter vários. */
+model SavedCard {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asaasToken String
+  brand      String?
+  last4      String
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, asaasToken])
+  @@index([userId])
 }
 
 // ============================================

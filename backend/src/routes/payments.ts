@@ -8,16 +8,20 @@ import {
   AsaasPayment,
   AsaasSubscription,
   cancelPaymentSilent,
+  cancelPendingByExternalReference,
   createCustomer,
   createPayment,
+  createPaymentWithCardToken,
   createSubscription,
   getPayment,
+  getPixQrCode,
   isAsaasConfigured,
   isAsaasPaidStatus,
   listPayments,
   listSubscriptionPayments,
   mapAsaasBillingType,
   normalizeCpfCnpj,
+  payChargeWithCardToken,
   refundPayment,
   toCheckoutPayload,
   updateCustomer,
@@ -125,6 +129,47 @@ async function persistPaymentId(opts: {
   }
 }
 
+function last4FromAsaas(value?: string | null) {
+  const digits = (value || '').replace(/\D/g, '')
+  return digits.slice(-4) || null
+}
+
+function clientIp(request: FastifyRequest) {
+  const forwarded = request.headers['x-forwarded-for']
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0].trim()
+  }
+  if (Array.isArray(forwarded) && forwarded[0]) {
+    return forwarded[0].split(',')[0].trim()
+  }
+  return request.ip || '127.0.0.1'
+}
+
+async function ensureCardInvoice(opts: {
+  customerId: string
+  value: number
+  description: string
+  externalReference: string
+}) {
+  const listed = await listPayments({
+    customer: opts.customerId,
+    externalReference: opts.externalReference,
+    billingType: 'CREDIT_CARD',
+    limit: 10,
+  })
+  const pending = (listed.data || []).find(
+    (item) => item.status === 'PENDING' || item.status === 'OVERDUE',
+  )
+  if (pending?.invoiceUrl) return pending
+  return createPayment({
+    customer: opts.customerId,
+    value: opts.value,
+    description: opts.description,
+    externalReference: opts.externalReference,
+    billingType: 'CREDIT_CARD',
+  })
+}
+
 async function reuseOrCreateCharge(opts: {
   customerId: string
   value: number
@@ -133,53 +178,163 @@ async function reuseOrCreateCharge(opts: {
   existingPaymentId?: string | null
   expiresAt?: Date | null
 }) {
+  let pix: AsaasPayment | null = null
   if (opts.existingPaymentId) {
     try {
       const existing = await getPayment(opts.existingPaymentId)
       if (existing.status === 'PENDING' || existing.status === 'OVERDUE') {
-        return toCheckoutPayload(existing, { expiresAt: opts.expiresAt, description: opts.description })
+        pix = existing
       }
     } catch (error: any) {
       logger.warning(`Cobrança Asaas anterior indisponível (${opts.existingPaymentId}): ${error.message}`)
     }
   }
 
-  const payment = await createPayment({
-    customer: opts.customerId,
-    value: opts.value,
+  if (!pix) {
+    pix = await createPayment({
+      customer: opts.customerId,
+      value: opts.value,
+      description: opts.description,
+      externalReference: opts.externalReference,
+      billingType: 'PIX',
+    })
+  }
+
+  let cardInvoiceUrl: string | null = null
+  try {
+    const card = await ensureCardInvoice({
+      customerId: opts.customerId,
+      value: opts.value,
+      description: opts.description,
+      externalReference: opts.externalReference,
+    })
+    cardInvoiceUrl = card.invoiceUrl || null
+  } catch (error: any) {
+    logger.warning(`Fatura de cartão indisponível para ${opts.externalReference}: ${error.message}`)
+  }
+
+  return toCheckoutPayload(pix, {
+    expiresAt: opts.expiresAt,
     description: opts.description,
-    externalReference: opts.externalReference,
-    billingType: 'UNDEFINED',
+    invoiceUrl: cardInvoiceUrl,
   })
-  return toCheckoutPayload(payment, { expiresAt: opts.expiresAt, description: opts.description })
 }
 
 async function listCardMethods(userId: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId } })
-  if (!user?.asaasCustomerId) return []
-  const payments = await listPayments({
-    customer: user.asaasCustomerId,
-    billingType: 'CREDIT_CARD',
-    limit: 20,
+  const cards = await prisma.savedCard.findMany({
+    where: { userId },
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
   })
-  const unique = new Map<string, { id: string; brand: string; last4: string; expMonth: number; expYear: number; isDefault: boolean }>()
-  for (const payment of payments.data || []) {
-    const last4 = payment.creditCard?.creditCardNumber || ''
-    const brand = (payment.creditCard?.creditCardBrand || 'card').toLowerCase()
-    if (!last4) continue
-    const key = `${brand}-${last4}`
-    if (!unique.has(key)) {
-      unique.set(key, {
-        id: payment.id,
-        brand,
-        last4,
-        expMonth: 0,
-        expYear: 0,
-        isDefault: unique.size === 0,
-      })
+  return cards.map((card) => ({
+    id: card.id,
+    brand: (card.brand || 'card').toLowerCase(),
+    last4: card.last4,
+    expMonth: 0,
+    expYear: 0,
+    isDefault: card.isDefault,
+  }))
+}
+
+async function persistSavedCard(payment: AsaasPayment) {
+  let full = payment
+  if (!full.creditCardToken) {
+    try {
+      full = await getPayment(payment.id)
+    } catch {
+      return
     }
   }
-  return Array.from(unique.values())
+  if (!full.creditCardToken || !full.customer) return
+  const user = await prisma.user.findFirst({
+    where: { asaasCustomerId: full.customer },
+    select: { id: true },
+  })
+  if (!user) return
+
+  const last4 = last4FromAsaas(full.creditCard?.creditCardNumber) || '****'
+  const brand = (full.creditCard?.creditCardBrand || '').toLowerCase() || null
+  const existing = await prisma.savedCard.findFirst({
+    where: {
+      userId: user.id,
+      OR: [
+        { asaasToken: full.creditCardToken },
+        ...(last4 !== '****' && brand ? [{ last4, brand }] : []),
+      ],
+    },
+  })
+
+  await prisma.$transaction(async (tx) => {
+    await tx.savedCard.updateMany({
+      where: { userId: user.id },
+      data: { isDefault: false },
+    })
+    if (existing) {
+      await tx.savedCard.update({
+        where: { id: existing.id },
+        data: {
+          asaasToken: full.creditCardToken!,
+          brand,
+          last4,
+          isDefault: true,
+        },
+      })
+      return
+    }
+    await tx.savedCard.create({
+      data: {
+        userId: user.id,
+        asaasToken: full.creditCardToken!,
+        brand,
+        last4,
+        isDefault: true,
+      },
+    })
+  })
+}
+
+async function checkoutPaidStatus(payment: AsaasPayment) {
+  if (isAsaasPaidStatus(payment.status)) {
+    return {
+      paid: true,
+      status: payment.status,
+      billingType: mapAsaasBillingType(payment.billingType),
+      invoiceUrl: payment.invoiceUrl || null,
+    }
+  }
+
+  let invoiceUrl = payment.billingType === 'CREDIT_CARD' ? payment.invoiceUrl || null : null
+  if (payment.externalReference) {
+    try {
+      const siblings = await listPayments({
+        externalReference: payment.externalReference,
+        limit: 20,
+      })
+      const paidSibling = (siblings.data || []).find((item) => isAsaasPaidStatus(item.status))
+      if (paidSibling) {
+        return {
+          paid: true,
+          status: paidSibling.status,
+          billingType: mapAsaasBillingType(paidSibling.billingType),
+          invoiceUrl: paidSibling.invoiceUrl || payment.invoiceUrl || null,
+        }
+      }
+      const card = (siblings.data || []).find(
+        (item) =>
+          item.billingType === 'CREDIT_CARD' &&
+          (item.status === 'PENDING' || item.status === 'OVERDUE'),
+      )
+      invoiceUrl = card?.invoiceUrl || invoiceUrl || payment.invoiceUrl || null
+    } catch (error: any) {
+      logger.warning(`Não foi possível listar cobranças irmãs de ${payment.id}: ${error.message}`)
+    }
+  }
+
+  return {
+    paid: false,
+    status: payment.status,
+    billingType: mapAsaasBillingType(payment.billingType),
+    invoiceUrl: invoiceUrl || payment.invoiceUrl || null,
+  }
 }
 
 export async function paymentsRoutes(app: FastifyInstance) {
@@ -278,7 +433,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
       if (!cpfCnpj) {
         return reply.status(400).send({
           success: false,
-          error: 'Informe o CPF para gerar o Pix. O Asaas exige o documento do pagador.',
+          error: 'Informe o CPF para emitir a cobrança. O Asaas exige o documento do pagador.',
         })
       }
 
@@ -347,22 +502,27 @@ export async function paymentsRoutes(app: FastifyInstance) {
       if (!cpfCnpj) {
         return reply.status(400).send({
           success: false,
-          error: 'Informe o CPF para gerar o Pix. O Asaas exige o documento do pagador.',
+          error: 'Informe o CPF para emitir a cobrança. O Asaas exige o documento do pagador.',
         })
       }
 
       const customerId = await ensureAsaasCustomer(user, cpfCnpj)
+      const externalReference = `sub_${user.id}_${plan.id}`
       const subscription = await createSubscription({
         customer: customerId,
         value: plan.price,
         description: `Charme & Bela Club - ${plan.name}`,
-        externalReference: `sub_${user.id}_${plan.id}`,
+        externalReference,
+        billingType: 'CREDIT_CARD',
       })
 
       const payments = await listSubscriptionPayments(subscription.id)
       const first = payments.data?.[0]
       const checkout = first
-        ? await toCheckoutPayload(first, { description: `Assinatura ${plan.name}` })
+        ? await toCheckoutPayload(first, {
+            description: `Assinatura ${plan.name}`,
+            invoiceUrl: first.invoiceUrl || null,
+          })
         : {
             paymentId: subscription.id,
             sessionId: subscription.id,
@@ -511,7 +671,24 @@ export async function paymentsRoutes(app: FastifyInstance) {
         }
       }
 
-      await cancelPaymentSilent(paymentId)
+      let externalReference: string | null = body.packagePurchaseId
+        ? `pkg_${body.packagePurchaseId}`
+        : body.appointmentId
+          ? `apt_${body.appointmentId}`
+          : null
+      if (!externalReference && paymentId) {
+        try {
+          const payment = await getPayment(paymentId)
+          externalReference = payment.externalReference || null
+        } catch {
+          // cancela só o id abaixo
+        }
+      }
+      if (externalReference) {
+        await cancelPendingByExternalReference(externalReference)
+      } else {
+        await cancelPaymentSilent(paymentId)
+      }
       return reply.status(200).send({ success: true, released: true, message: 'Horário liberado' })
     } catch (error: any) {
       logger.error('Erro ao abandonar checkout:', error)
@@ -527,15 +704,22 @@ export async function paymentsRoutes(app: FastifyInstance) {
         return reply.status(503).send({ success: false, error: 'Asaas não configurado' })
       }
       const payment = await getPayment(paymentId)
+      const paidInfo = await checkoutPaidStatus(payment)
+      const pix =
+        paidInfo.paid || payment.billingType === 'CREDIT_CARD' || payment.billingType === 'DEBIT_CARD'
+          ? null
+          : await getPixQrCode(payment.id)
       return reply.status(200).send({
         success: true,
         data: {
           paymentId: payment.id,
-          status: payment.status,
-          paid: isAsaasPaidStatus(payment.status),
-          billingType: mapAsaasBillingType(payment.billingType),
+          status: paidInfo.status,
+          paid: paidInfo.paid,
+          billingType: paidInfo.billingType,
           value: payment.value,
-          invoiceUrl: payment.invoiceUrl || null,
+          invoiceUrl: paidInfo.invoiceUrl,
+          pixCopyPaste: pix?.payload || null,
+          pixQrBase64: pix?.encodedImage || null,
         },
       })
     } catch (error: any) {
@@ -578,6 +762,154 @@ export async function paymentsRoutes(app: FastifyInstance) {
     } catch (error: any) {
       logger.error('Erro ao listar métodos Asaas:', error)
       return reply.status(200).send({ success: true, data: [] })
+    }
+  })
+
+  app.post('/payments/charge-saved-card', async (request, reply) => {
+    logger.route('POST', '/payments/charge-saved-card')
+    try {
+      if (!isAsaasConfigured()) {
+        return reply.status(503).send({ success: false, error: 'Asaas não configurado (ASAAS_API_KEY)' })
+      }
+      const body = request.body as {
+        userId?: string
+        paymentId?: string
+        appointmentId?: string
+        packagePurchaseId?: string
+        savedCardId?: string
+        planId?: string
+      }
+      const resolved = resolveUserId(request, body.userId)
+      if (resolved.error === 'forbidden') {
+        return reply.status(403).send({ success: false, error: 'Acesso negado' })
+      }
+      if (!resolved.userId) {
+        return reply.status(400).send({ success: false, error: 'Usuário não autenticado' })
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: resolved.userId },
+        include: { subscription: true },
+      })
+      if (!user?.asaasCustomerId) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Nenhum cartão salvo. Pague uma vez no checkout seguro para guardar o cartão.',
+        })
+      }
+
+      const savedCard = body.savedCardId
+        ? await prisma.savedCard.findFirst({ where: { id: body.savedCardId, userId: user.id } })
+        : await prisma.savedCard.findFirst({
+            where: { userId: user.id },
+            orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+          })
+      if (!savedCard) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Nenhum cartão salvo. Pague uma vez no checkout seguro para guardar o cartão.',
+        })
+      }
+
+      let paymentId = body.paymentId || null
+      if (!paymentId && body.packagePurchaseId) {
+        const purchase = await prisma.packagePurchase.findUnique({
+          where: { id: body.packagePurchaseId },
+          select: { asaasPaymentId: true, userId: true },
+        })
+        if (purchase?.userId !== resolved.userId && request.authUser?.role !== 'MANAGER') {
+          return reply.status(403).send({ success: false, error: 'Acesso negado' })
+        }
+        paymentId = purchase?.asaasPaymentId || null
+      }
+      if (!paymentId && body.appointmentId) {
+        const appointment = await prisma.appointment.findUnique({
+          where: { id: body.appointmentId },
+          select: { asaasPaymentId: true, userId: true },
+        })
+        if (appointment?.userId !== resolved.userId && request.authUser?.role !== 'MANAGER') {
+          return reply.status(403).send({ success: false, error: 'Acesso negado' })
+        }
+        paymentId = appointment?.asaasPaymentId || null
+      }
+      if (!paymentId && body.planId && user.subscription?.asaasSubscriptionId) {
+        const subPayments = await listSubscriptionPayments(user.subscription.asaasSubscriptionId)
+        paymentId = subPayments.data?.find((item) => item.status === 'PENDING' || item.status === 'OVERDUE')?.id || null
+      }
+      if (!paymentId) {
+        return reply.status(400).send({ success: false, error: 'Cobrança não encontrada para cobrar o cartão salvo' })
+      }
+
+      const payment = await getPayment(paymentId)
+      if (payment.customer !== user.asaasCustomerId) {
+        return reply.status(403).send({ success: false, error: 'Essa cobrança não pertence a você' })
+      }
+      if (isAsaasPaidStatus(payment.status)) {
+        return reply.status(200).send({
+          success: true,
+          data: { paid: true, paymentId: payment.id, status: payment.status },
+        })
+      }
+
+      const remoteIp = clientIp(request)
+      let charged: AsaasPayment | null = null
+      const tryPay = async (id: string) => {
+        charged = await payChargeWithCardToken(id, savedCard.asaasToken, remoteIp)
+      }
+
+      try {
+        await tryPay(payment.id)
+      } catch (firstError: any) {
+        logger.warning(`payWithCreditCard em ${payment.id} falhou: ${firstError.message}`)
+        try {
+          const card = await ensureCardInvoice({
+            customerId: user.asaasCustomerId,
+            value: payment.value,
+            description: payment.description || 'Charme & Bela',
+            externalReference: payment.externalReference || payment.id,
+          })
+          await tryPay(card.id)
+        } catch (secondError: any) {
+          logger.warning(`Cobrança de cartão irmã falhou: ${secondError.message}`)
+          charged = await createPaymentWithCardToken({
+            customer: user.asaasCustomerId,
+            value: payment.value,
+            description: payment.description || 'Charme & Bela',
+            externalReference: payment.externalReference || payment.id,
+            creditCardToken: savedCard.asaasToken,
+            remoteIp,
+          })
+        }
+      }
+
+      if (!charged) {
+        return reply.status(502).send({ success: false, error: 'Não foi possível cobrar o cartão salvo' })
+      }
+
+      await persistSavedCard(charged)
+      if (isAsaasPaidStatus(charged.status)) {
+        await handlePaymentPaid(charged)
+      }
+
+      return reply.status(200).send({
+        success: true,
+        data: {
+          paid: isAsaasPaidStatus(charged.status),
+          paymentId: charged.id,
+          status: charged.status,
+          brand: savedCard.brand,
+          last4: savedCard.last4,
+        },
+      })
+    } catch (error: any) {
+      logger.error('Erro ao cobrar cartão salvo:', error)
+      const status = error instanceof AsaasError ? Math.min(error.statusCode, 502) || 502 : 500
+      return reply.status(status >= 400 && status < 600 ? status : 500).send({
+        success: false,
+        error:
+          error.message ||
+          'Não foi possível cobrar o cartão salvo. Use o checkout seguro.',
+      })
     }
   })
 
@@ -834,6 +1166,9 @@ function parseExternalReference(ref?: string | null) {
 async function handlePaymentPaid(payment: AsaasPayment) {
   if (!isAsaasPaidStatus(payment.status)) return
 
+  await persistSavedCard(payment)
+  await cancelPendingByExternalReference(payment.externalReference, payment.id)
+
   if (payment.subscription) {
     await handleSubscriptionInvoicePaid(payment)
     return
@@ -842,6 +1177,11 @@ async function handlePaymentPaid(payment: AsaasPayment) {
   const ref = parseExternalReference(payment.externalReference)
   const method = mapAsaasBillingType(payment.billingType)
   const paidAmount = payment.value
+
+  if (ref.kind === 'subscription') {
+    await handleSubscriptionInvoicePaid(payment)
+    return
+  }
 
   if (ref.kind === 'package' && ref.id) {
     await confirmPackagePayment(ref.id, paidAmount, method, payment.id)
@@ -1066,7 +1406,6 @@ async function reviveOrRefundAppointment(
 
 async function handleSubscriptionInvoicePaid(payment: AsaasPayment) {
   const ref = parseExternalReference(payment.externalReference)
-  const asaasSubscriptionId = payment.subscription as string
   let user = await prisma.user.findFirst({
     where: { asaasCustomerId: payment.customer },
     include: { subscription: { include: { plan: true } } },
@@ -1090,13 +1429,14 @@ async function handleSubscriptionInvoicePaid(payment: AsaasPayment) {
 
   const plan = await prisma.subscriptionPlan.findUnique({ where: { id: planId } })
   const existing = await prisma.subscription.findUnique({ where: { userId: user.id } })
+  const asaasSubscriptionId = payment.subscription || existing?.asaasSubscriptionId || null
   const isNew = !existing || existing.status !== 'ACTIVE' || existing.planId !== planId
 
   await prisma.subscription.upsert({
     where: { userId: user.id },
     update: {
       planId,
-      asaasSubscriptionId,
+      ...(asaasSubscriptionId ? { asaasSubscriptionId } : {}),
       status: 'ACTIVE',
       startDate: existing?.status === 'ACTIVE' ? existing.startDate : new Date(),
       minimumCommitmentEnd: null,

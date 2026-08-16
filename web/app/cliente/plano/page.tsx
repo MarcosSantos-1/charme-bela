@@ -100,7 +100,7 @@ export default function PlanoPage() {
       // Se NÃO TEM assinatura → Cria nova via Asaas
       else {
         console.log('🔵 Criando checkout session...', { userId: user.id, planId })
-        const payerCpf = window.prompt('Digite o CPF para gerar o Pix (obrigatório pelo Asaas):')
+        const payerCpf = window.prompt('Digite o CPF do titular do cartão (obrigatório pelo Asaas):')
         const cpfDigits = (payerCpf || '').replace(/\D/g, '')
         if (cpfDigits.length !== 11) {
           toast.error('Informe um CPF válido com 11 dígitos')
@@ -110,10 +110,9 @@ export default function PlanoPage() {
         
         console.log('🔵 Dados do checkout:', checkoutData)
         
-        // apiRequest já retorna só o data, não o objeto completo
-        // então checkoutData = { sessionId, url }
-        if (checkoutData && checkoutData.url) {
-          console.log('Redirecionando para Asaas:', checkoutData.url)
+        if (checkoutData?.paymentId || checkoutData?.sessionId) {
+          router.push(`/cliente/checkout?paymentId=${encodeURIComponent(checkoutData.paymentId || checkoutData.sessionId)}&plan=1`)
+        } else if (checkoutData?.url || checkoutData?.invoiceUrl) {
           window.location.href = checkoutData.url || checkoutData.invoiceUrl || ''
         } else {
           console.error('❌ Dados inválidos:', checkoutData)

@@ -80,8 +80,8 @@ export function PaymentHoldBanner({
         appointment.id,
         amount ?? undefined
       )
-      if (session?.url || session?.invoiceUrl) {
-        window.location.href = (session.url || session.invoiceUrl) as string
+      if (session?.paymentId) {
+        window.location.href = `/cliente/checkout?paymentId=${encodeURIComponent(session.paymentId)}&appointmentId=${encodeURIComponent(appointment.id)}`
         return
       }
       throw new Error('Não foi possível abrir o checkout')

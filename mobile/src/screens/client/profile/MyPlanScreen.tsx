@@ -16,6 +16,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCommercial } from '../../../contexts/CommercialContext';
 import { ScreenHeader } from '../../../components/ScreenHeader';
@@ -23,7 +25,6 @@ import { creditCard3dSource, logoSource } from '../../../assets/brandAssets';
 import {
   cancelSubscription,
   changePlan,
-  createCheckoutSession,
   createPortalSession,
   getPaymentHistory,
   getPaymentMethods,
@@ -38,6 +39,7 @@ import {
   type ServiceCategory,
 } from '../../../types/commercial';
 import { brand } from '../../../theme/brand';
+import type { ClientStackParamList } from '../../../navigation/ClientNavigator';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -52,6 +54,7 @@ const TIER_LABEL = {
 export function MyPlanScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth();
   const { plans, subscription, refreshing, refresh } = useCommercial();
+  const navigation = useNavigation<NativeStackNavigationProp<ClientStackParamList>>();
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [payments, setPayments] = useState<PaymentHistoryItem[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(false);
@@ -100,22 +103,11 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
 
   const openCheckout = async (plan: Plan) => {
     if (!user) return;
-    setBusy(plan.id);
-    try {
-      const result = await createCheckoutSession(user.id, plan.id);
-      const url = result.invoiceUrl || result.url;
-      if (!url) throw new Error('Link de pagamento indisponível');
-      await WebBrowser.openBrowserAsync(url);
-      Alert.alert(
-        'Confirmação em andamento',
-        'Conclua o pagamento no Asaas e volte ao app. Atualizaremos seu plano assim que o Pix ou o cartão for confirmado.',
-      );
-      await refresh();
-    } catch (error) {
-      Alert.alert('Checkout indisponível', getApiErrorMessage(error));
-    } finally {
-      setBusy(null);
-    }
+    navigation.navigate('Checkout', {
+      planId: plan.id,
+      amount: plan.price,
+      description: `Assinatura ${plan.name}`,
+    });
   };
 
   const selectPlan = (plan: Plan) => {
@@ -348,7 +340,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
           {loadingPayments ? (
             <ActivityIndicator color={brand.rose} />
           ) : methods.length ? (
-            methods.slice(0, 2).map((method) => (
+            methods.map((method) => (
               <View key={method.id} style={styles.paymentMethod}>
                 <Image source={creditCard3dSource} style={styles.card3dIcon} resizeMode="contain" />
                 <View style={{ flex: 1 }}>
@@ -356,8 +348,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
                     {(method.brand || 'Cartão').toUpperCase()} •••• {method.last4}
                   </Text>
                   <Text style={styles.methodSubtitle}>
-                    Validade {String(method.expMonth).padStart(2, '0')}/{String(method.expYear).slice(-2)}
-                    {method.isDefault ? ' • Principal' : ''}
+                    {method.isDefault ? 'Principal · salvo para um toque' : 'Salvo para um toque'}
                   </Text>
                 </View>
               </View>

@@ -1244,6 +1244,39 @@ export async function createCheckoutSession(
 }
 
 // Criar sessão de pagamento único (tratamento avulso)
+export async function getPaymentStatus(paymentId: string) {
+  return apiRequest<{
+    paymentId: string
+    status: string
+    paid: boolean
+    billingType: string
+    value: number
+    invoiceUrl: string | null
+    pixCopyPaste?: string | null
+    pixQrBase64?: string | null
+  }>(`/payments/status/${paymentId}`, { method: 'GET' })
+}
+
+export async function chargeSavedCard(data: {
+  userId?: string
+  paymentId?: string
+  appointmentId?: string
+  packagePurchaseId?: string
+  savedCardId?: string
+  planId?: string
+}) {
+  return apiRequest<{
+    paid: boolean
+    paymentId: string
+    status: string
+    brand?: string | null
+    last4?: string | null
+  }>('/payments/charge-saved-card', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
 export async function createPaymentSession(
   userId: string,
   serviceId: string,

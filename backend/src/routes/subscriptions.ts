@@ -2,8 +2,9 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { buildRemainingByMonth } from '../utils/planUsage'
+import { cancelSubscription as cancelAsaasSubscription, getSubscription as getAsaasSubscription, updateSubscriptionValue } from '../lib/asaas'
 
-/** Fim do ciclo já pago a partir do dia de aniversário da assinatura (fallback sem Stripe). */
+/** Fim do ciclo já pago a partir do dia de aniversário da assinatura (fallback sem gateway). */
 function computeAccessUntilFromStartDate(startDate: Date, now: Date = new Date()): Date {
   const dayOfMonth = startDate.getDate()
   const nextBillingDate = new Date(now)
@@ -123,11 +124,13 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
       const {
         userId,
         planId,
-        stripeSubscriptionId  // Null para mock
+        stripeSubscriptionId,
+        asaasSubscriptionId,
       } = request.body as {
         userId: string
         planId: string
         stripeSubscriptionId?: string
+        asaasSubscriptionId?: string
       }
       
       logger.debug('Criando nova assinatura:', { userId, planId })
@@ -174,6 +177,7 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         update: {
           planId,
           stripeSubscriptionId,
+          asaasSubscriptionId,
           status: 'ACTIVE',
           startDate: new Date(),
           minimumCommitmentEnd: null,
@@ -185,6 +189,7 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           userId,
           planId,
           stripeSubscriptionId,
+          asaasSubscriptionId,
           status: 'ACTIVE',
           startDate: new Date()
         },
@@ -244,20 +249,23 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
       
       const now = new Date()
       
-      // Fim do período já pago: usa current_period_end do Stripe se houver;
-      // senão calcula pelo dia do startDate (assinatura mock / mês grátis).
+      // Fim do período já pago: nextDueDate Asaas se houver; senão aniversário local.
       let accessUntil: Date
 
-      if (subscription.stripeSubscriptionId) {
+      if (subscription.asaasSubscriptionId) {
         try {
-          const { stripe } = await import('../lib/stripe')
-          const stripeSub = await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-            cancel_at_period_end: true
-          })
-          accessUntil = new Date(stripeSub.current_period_end * 1000)
-          logger.info(`Stripe: cancel_at_period_end até ${accessUntil.toISOString()}`)
-        } catch (stripeError: any) {
-          logger.error('Erro ao cancelar no Stripe (seguindo com cálculo local):', stripeError.message)
+          const asaasSub = await getAsaasSubscription(subscription.asaasSubscriptionId)
+          if (asaasSub.nextDueDate) {
+            const next = new Date(`${asaasSub.nextDueDate}T23:59:59.999-03:00`)
+            accessUntil = new Date(next)
+            accessUntil.setDate(accessUntil.getDate() - 1)
+          } else {
+            accessUntil = computeAccessUntilFromStartDate(subscription.startDate, now)
+          }
+          await cancelAsaasSubscription(subscription.asaasSubscriptionId)
+          logger.info(`Asaas: assinatura inativada; acesso até ${accessUntil.toISOString()}`)
+        } catch (asaasError: any) {
+          logger.error('Erro ao cancelar no Asaas (seguindo com cálculo local):', asaasError.message)
           accessUntil = computeAccessUntilFromStartDate(subscription.startDate, now)
         }
       } else {
@@ -452,6 +460,14 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           error: 'Novo plano não encontrado'
         })
       }
+
+      if (subscription.asaasSubscriptionId) {
+        try {
+          await updateSubscriptionValue(subscription.asaasSubscriptionId, newPlan.price)
+        } catch (asaasError: any) {
+          logger.error('Erro ao atualizar valor da assinatura Asaas:', asaasError.message)
+        }
+      }
       
       // Atualiza assinatura
       const updatedSubscription = await prisma.subscription.update({
@@ -509,7 +525,7 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
       
       // Verificar se é mês grátis expirado
       const now = new Date()
-      const isFreeMonth = !subscription.stripeSubscriptionId
+      const isFreeMonth = !subscription.stripeSubscriptionId && !subscription.asaasSubscriptionId
       const isExpired = subscription.endDate && subscription.endDate < now
       
       if (isFreeMonth && isExpired && subscription.status === 'ACTIVE') {

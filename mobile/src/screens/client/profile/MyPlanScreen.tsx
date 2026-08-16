@@ -4,7 +4,6 @@ import {
   Alert,
   Image,
   LayoutAnimation,
-  Linking,
   Platform,
   RefreshControl,
   ScrollView,
@@ -16,6 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCommercial } from '../../../contexts/CommercialContext';
 import { ScreenHeader } from '../../../components/ScreenHeader';
@@ -66,7 +66,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
       setMethods(nextMethods);
       setPayments(nextPayments);
     } catch {
-      // A tela de plano continua funcional mesmo se o Stripe estiver indisponível.
+      // A tela de plano continua funcional mesmo se o Asaas estiver indisponível.
     } finally {
       setLoadingPayments(false);
     }
@@ -103,10 +103,12 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
     setBusy(plan.id);
     try {
       const result = await createCheckoutSession(user.id, plan.id);
-      await Linking.openURL(result.url);
+      const url = result.invoiceUrl || result.url;
+      if (!url) throw new Error('Link de pagamento indisponível');
+      await WebBrowser.openBrowserAsync(url);
       Alert.alert(
         'Confirmação em andamento',
-        'Conclua o pagamento no Stripe e volte ao app. Atualizaremos seu plano após a confirmação do webhook.',
+        'Conclua o pagamento no Asaas e volte ao app. Atualizaremos seu plano assim que o Pix ou o cartão for confirmado.',
       );
       await refresh();
     } catch (error) {
@@ -134,7 +136,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
     setBusy('portal');
     try {
       const result = await createPortalSession(user.id);
-      await Linking.openURL(result.url);
+      await WebBrowser.openBrowserAsync(result.url);
       await loadPayments();
     } catch (error) {
       Alert.alert('Portal indisponível', getApiErrorMessage(error));
@@ -364,7 +366,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
             <View style={styles.paymentMethod}>
               <Image source={creditCard3dSource} style={styles.card3dIcon} resizeMode="contain" />
               <Text style={[styles.emptyText, { flex: 1, textAlign: 'left', paddingVertical: 0 }]}>
-                Nenhum cartão salvo no Stripe.
+                Nenhum cartão salvo ainda. O cartão fica só no Asaas — o app não armazena os dados.
               </Text>
             </View>
           )}

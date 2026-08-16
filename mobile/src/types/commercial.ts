@@ -139,6 +139,8 @@ export interface Subscription {
   currentMonthUsage: { totalTreatments: number };
   limits: { maxPerMonth: number; maxPerDay: number };
   remaining: { thisMonth: number; byMonth?: Record<string, number> };
+  stripeSubscriptionId?: string | null;
+  asaasSubscriptionId?: string | null;
 }
 
 export interface AvailableSlots {
@@ -172,6 +174,18 @@ export interface PaymentHistoryItem {
   invoicePdf?: string | null;
   hostedInvoiceUrl?: string | null;
   receiptUrl?: string | null;
+}
+
+export interface CheckoutPayload {
+  paymentId: string;
+  sessionId: string;
+  url: string | null;
+  invoiceUrl: string | null;
+  pixCopyPaste: string | null;
+  pixQrBase64: string | null;
+  expiresAt?: string | null;
+  amount: number;
+  description: string;
 }
 
 export const CATEGORY_META: Record<ServiceCategory, { label: string; color: string; icon: string }> = {

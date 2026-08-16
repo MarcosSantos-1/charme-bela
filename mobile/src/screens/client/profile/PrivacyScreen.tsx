@@ -59,7 +59,7 @@ export function PrivacyScreen({ onBack }: { onBack: () => void }) {
           <DataRow
             icon="card"
             title="Pagamentos"
-            description="Assinatura e cobranças avulsas processadas pelo Stripe (não armazenamos o cartão no app)"
+            description="Assinatura e cobranças avulsas processadas pelo Asaas (não armazenamos o cartão no app)"
           />
           <DataRow
             icon="phone-portrait"
@@ -78,7 +78,7 @@ export function PrivacyScreen({ onBack }: { onBack: () => void }) {
           />
           <UsageRow
             title="Planos e pagamentos"
-            text="Gerenciar assinatura Club, cobranças e comprovantes via Stripe"
+            text="Gerenciar assinatura Club, cobranças e comprovantes via Asaas"
           />
           <UsageRow
             title="Comunicação"

@@ -54,7 +54,7 @@ export default function PrivacidadePage() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-pink-600 mt-1">•</span>
-                    <span>Informações de pagamento (processadas pelo Stripe)</span>
+                    <span>Informações de pagamento (processadas pelo Asaas)</span>
                   </li>
                 </ul>
               </div>

@@ -3,38 +3,30 @@ import { logger } from './logger'
 import { notifyAppointmentCanceled } from './notifications'
 import { releaseVoucherOnCancel } from './vouchers'
 import { cancelUnpaidPackagePurchase } from './packages'
+import { cancelPaymentSilent } from '../lib/asaas'
 
 /**
  * Reserva de horário com pagamento online pendente ("hold").
  *
- * Agendamentos pagos via checkout (Stripe) nascem com status PENDING +
+ * Agendamentos pagos via checkout nascem com status PENDING +
  * paymentStatus PENDING + paymentExpiresAt = agora + PAYMENT_HOLD_MINUTES.
  * Enquanto o hold está ativo, o horário fica reservado (bloqueia conflitos).
- * Se o pagamento não confirmar no prazo, o hold expira e o horário libera.
+ * Se o pagamento não confirmar no prazo, o hold expira, a cobrança Asaas
+ * é cancelada (QR morre) e o horário libera.
  *
  * A expiração NÃO depende só de cron (Fly em scale-to-zero pode dormir):
  * `releaseExpiredPaymentHolds` roda de forma preguiçosa ao listar/buscar
  * agendamentos, ao consultar slots e antes de criar/reagendar.
  *
- * Hold curto (5 min) libera o horário rápido para outras clientes.
- * A sessão do Stripe Checkout exige no mínimo 30 min (`expires_at`) — se o
- * cliente pagar depois do hold expirar, o webhook revive-ou-reembolsa.
+ * Se o Pix cair depois do cancel, o webhook revive-ou-estorna.
  */
 export const PAYMENT_HOLD_MINUTES = 5
-
-/** Mínimo do Stripe Checkout para `expires_at` (segundos). */
-export const STRIPE_CHECKOUT_MIN_EXPIRES_SECONDS = 30 * 60
 
 /** Máximo de holds ativos (checkout não pago) por usuário — anti-abuso. */
 export const MAX_ACTIVE_PAYMENT_HOLDS_PER_USER = 2
 
 export function newPaymentHoldExpiration(): Date {
   return new Date(Date.now() + PAYMENT_HOLD_MINUTES * 60 * 1000)
-}
-
-/** `expires_at` Unix da sessão Stripe (sempre ≥ 30 min). */
-export function stripeCheckoutExpiresAtUnix(nowMs: number = Date.now()): number {
-  return Math.floor(nowMs / 1000) + STRIPE_CHECKOUT_MIN_EXPIRES_SECONDS
 }
 
 /**
@@ -67,6 +59,11 @@ export async function releaseExpiredPaymentHolds(): Promise<number> {
       if (appointment.packagePurchaseId) {
         if (handledPurchases.has(appointment.packagePurchaseId)) continue
         handledPurchases.add(appointment.packagePurchaseId)
+        const purchase = await prisma.packagePurchase.findUnique({
+          where: { id: appointment.packagePurchaseId },
+          select: { asaasPaymentId: true },
+        })
+        await cancelPaymentSilent(purchase?.asaasPaymentId || appointment.asaasPaymentId)
         await prisma.$transaction(async (tx) => {
           await cancelUnpaidPackagePurchase(tx, appointment.packagePurchaseId!, cancelReason)
         })
@@ -83,13 +80,15 @@ export async function releaseExpiredPaymentHolds(): Promise<number> {
         continue
       }
 
+      await cancelPaymentSilent(appointment.asaasPaymentId)
       await prisma.appointment.update({
         where: { id: appointment.id },
         data: {
           status: 'CANCELED',
           canceledBy: 'system',
           canceledAt,
-          cancelReason
+          cancelReason,
+          paymentExpiresAt: null,
         }
       })
       released += 1

@@ -129,7 +129,7 @@ function PagamentosContent() {
       
       // apiRequest já retorna só o data, então portalData = { url }
       if (portalData && portalData.url) {
-        // Redireciona para o Customer Portal do Stripe
+        // Redireciona para o checkout Asaas
         window.location.href = portalData.url
       } else {
         throw new Error('Erro ao abrir portal')
@@ -141,7 +141,7 @@ function PagamentosContent() {
       const errorMessage = error?.message || 'Erro ao abrir portal. Tente novamente.'
       
       if (errorMessage.includes('Portal de Pagamentos precisa ser ativado')) {
-        toast.error('⚙️ Configure o Portal de Pagamentos no Stripe Dashboard primeiro', { duration: 6000 })
+        toast.error('Não foi possível abrir a fatura Asaas. Tente de novo em instantes.', { duration: 6000 })
       } else if (errorMessage.includes('Assine um plano primeiro')) {
         toast.error('Você precisa assinar um plano primeiro para acessar o portal', { duration: 5000 })
       } else {

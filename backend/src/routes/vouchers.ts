@@ -414,7 +414,8 @@ export async function vouchersRoutes(app: FastifyInstance) {
           status: 'ACTIVE',
           startDate,
           endDate, // Termina em 1 mês
-          stripeSubscriptionId: null // Não tem no Stripe (é grátis)
+          stripeSubscriptionId: null,
+          asaasSubscriptionId: null,
         },
         create: {
           userId: voucher.userId,
@@ -422,7 +423,8 @@ export async function vouchersRoutes(app: FastifyInstance) {
           status: 'ACTIVE',
           startDate,
           endDate,
-          stripeSubscriptionId: null
+          stripeSubscriptionId: null,
+          asaasSubscriptionId: null,
         }
       })
       

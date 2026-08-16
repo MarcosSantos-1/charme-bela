@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,7 +19,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   createAppointment,
   createPackagePurchase,
-  createPaymentSession,
   getAvailableDays,
   getAvailableSlots,
   getDayMarkers,
@@ -297,21 +295,13 @@ export function BookingScreen({ route, navigation }: Props) {
           serviceId: service.id,
           slots: isoSlots,
         });
-        const checkout = await createPaymentSession(
-          user.id,
-          service.id,
-          purchase.appointments?.[0]?.id,
-          service.price,
-          undefined,
-          purchase.id,
-        );
-        await Linking.openURL(checkout.url);
-        await refresh();
-        Alert.alert(
-          'Pagamento do pacote',
-          'Ao concluir no Stripe, suas sessões ficam confirmadas. Você pode agendar o restante depois.',
-          [{ text: 'Ver agenda', onPress: () => navigation.navigate('ClientTabs', { screen: 'Agenda' }) }],
-        );
+        navigation.navigate('Checkout', {
+          serviceId: service.id,
+          appointmentId: purchase.appointments?.[0]?.id,
+          packagePurchaseId: purchase.id,
+          amount: service.price,
+          description: `Pacote ${service.name}`,
+        });
         return;
       }
 
@@ -326,20 +316,13 @@ export function BookingScreen({ route, navigation }: Props) {
       });
 
       if (bookingOrigin === 'SINGLE' || (bookingOrigin === 'VOUCHER' && finalPrice > 0)) {
-        const checkout = await createPaymentSession(
-          user.id,
-          service.id,
-          appointment.id,
-          finalPrice,
-          finalPrice < service.price ? 'Voucher aplicado no app' : undefined,
-        );
-        await Linking.openURL(checkout.url);
-        await refresh();
-        Alert.alert(
-          'Pagamento em confirmação',
-          'Ao concluir no Stripe, volte ao app. A agenda será atualizada assim que o pagamento for confirmado.',
-          [{ text: 'Ver agenda', onPress: () => navigation.navigate('ClientTabs', { screen: 'Agenda' }) }],
-        );
+        navigation.navigate('Checkout', {
+          serviceId: service.id,
+          appointmentId: appointment.id,
+          amount: finalPrice,
+          customDescription: finalPrice < service.price ? 'Voucher aplicado no app' : undefined,
+          description: service.name,
+        });
         return;
       }
 

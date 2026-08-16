@@ -52,7 +52,7 @@ export function ClientLayout({ children, title }: ClientLayoutProps) {
   ]
 
   // Verificar se é mês grátis
-  const isFreeMonth = subscription && !subscription.stripeSubscriptionId
+  const isFreeMonth = subscription && !subscription.stripeSubscriptionId && !subscription.asaasSubscriptionId
   
   // Formatar data de próxima cobrança
   const getNextBillingDate = () => {

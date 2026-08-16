@@ -5,6 +5,7 @@ import { logger } from './utils/logger'
 import { healthRoutes } from './routes/health'
 import { servicesRoutes } from './routes/services'
 import { packagesRoutes } from './routes/packages'
+import { paymentsRoutes } from './routes/payments'
 import { anamnesisRoutes } from './routes/anamnesis'
 import { plansRoutes } from './routes/plans'
 import { configRoutes } from './routes/config'
@@ -15,7 +16,6 @@ import { scheduleRoutes } from './routes/schedule'
 import { subscriptionsRoutes } from './routes/subscriptions'
 import { testimonialRoutes } from './routes/testimonials'
 import { bannerRoutes } from './routes/banners'
-import { stripeRoutes } from './routes/stripe'
 import { notificationRoutes } from './routes/notifications'
 import { machineRentalsRoutes } from './routes/machineRentals'
 import { setupCronJobs } from './utils/cron'
@@ -62,7 +62,7 @@ async function start() {
   try {
     logger.info('🚀 Iniciando servidor Charme & Bela API...')
 
-    // Raw body para validação de assinatura do webhook Stripe (bytes originais)
+    // Raw body para validação de webhook (bytes originais)
     app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
       try {
         ;(req as any).rawBody = body
@@ -153,7 +153,7 @@ async function start() {
     await app.register(subscriptionsRoutes)
     await app.register(testimonialRoutes)
     await app.register(bannerRoutes)
-    await app.register(stripeRoutes)
+    await app.register(paymentsRoutes)
     await app.register(notificationRoutes)
     await app.register(machineRentalsRoutes)
     logger.success('Rotas registradas com sucesso')

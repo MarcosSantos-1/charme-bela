@@ -93,7 +93,7 @@ const FAQ_ITEMS: FaqCategory[] = [
         question: 'Posso cancelar ou pausar meu plano?',
         keywords: ['cancelar assinatura', 'pausar'],
         answer:
-          'Sim. Em Plano e Pagamentos você pode cancelar a assinatura; o acesso costuma permanecer até o fim do período já pago. Também há opção de pausar, conforme as regras da clínica. Para alterar cartão ou ver faturas, use o portal de pagamento disponível na mesma tela.',
+          'Sim. Em Plano e Pagamentos você pode cancelar a assinatura; o acesso costuma permanecer até o fim do período já pago. Também há opção de pausar, conforme as regras da clínica. Para pagar, ver faturas ou usar cartão, use o checkout seguro do Asaas na mesma tela.',
       },
       {
         id: '2-3',

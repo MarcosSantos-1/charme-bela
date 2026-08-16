@@ -197,7 +197,7 @@ export async function requireSelfOrManager(
 /** Paths públicos (sem Bearer). Prefix match. */
 export const PUBLIC_ROUTE_PREFIXES = [
   '/health',
-  '/stripe/webhook',
+  '/asaas/webhook',
 ]
 
 export const PUBLIC_ROUTE_EXACT = new Set([

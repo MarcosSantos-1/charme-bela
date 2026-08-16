@@ -151,6 +151,7 @@ async function expireFreeMonthSubscriptions() {
   const expiredFreeMonths = await prisma.subscription.findMany({
     where: {
       stripeSubscriptionId: null,
+      asaasSubscriptionId: null,
       status: 'ACTIVE',
       endDate: {
         lt: now

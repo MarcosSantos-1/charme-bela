@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
-import { cancelAppointment, createPaymentSession } from '../../lib/api';
+import { cancelAppointment } from '../../lib/api';
 import {
   effectiveAppointmentStatus,
   getApiErrorMessage,
@@ -14,7 +14,7 @@ import {
   type Appointment,
 } from '../../types/commercial';
 import { useAuth } from '../../contexts/AuthContext';
-import type { ClientTabParamList } from '../../navigation/ClientNavigator';
+import type { ClientStackParamList, ClientTabParamList } from '../../navigation/ClientNavigator';
 
 LocaleConfig.locales.pt = {
   monthNames: [
@@ -361,6 +361,7 @@ function AppointmentDetail({ appointment, onClose, onCancel, onReschedule, onRef
   onRefresh: () => Promise<void>;
 }) {
   const { user } = useAuth();
+  const navigation = useNavigation<any>();
   const [paying, setPaying] = useState(false);
   const hold = appointment ? isOnlinePaymentHold(appointment) : false;
   const expired = appointment ? isExpiredUnpaidHold(appointment) : false;
@@ -398,17 +399,15 @@ function AppointmentDetail({ appointment, onClose, onCancel, onReschedule, onRef
     if (!user || paying || left <= 0) return;
     setPaying(true);
     try {
-      const checkout = await createPaymentSession(
-        user.id,
-        appointment.serviceId,
-        appointment.id,
-        appointment.paymentAmount ?? appointment.service.price,
-      );
-      await Linking.openURL(checkout.url);
       onClose();
-      await onRefresh();
-    } catch (requestError) {
-      Alert.alert('Pagamento', getApiErrorMessage(requestError, 'Não foi possível abrir o checkout'));
+      navigation.navigate('Checkout', {
+        serviceId: appointment.serviceId,
+        appointmentId: appointment.id,
+        packagePurchaseId: appointment.packagePurchaseId || undefined,
+        amount: appointment.paymentAmount ?? appointment.service.price,
+        description: appointment.service.name,
+        expiresAt: appointment.paymentExpiresAt || undefined,
+      } satisfies ClientStackParamList['Checkout']);
     } finally {
       setPaying(false);
     }

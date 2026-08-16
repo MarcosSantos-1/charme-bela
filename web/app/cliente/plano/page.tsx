@@ -97,7 +97,7 @@ export default function PlanoPage() {
           throw new Error('Erro ao trocar plano')
         }
       } 
-      // Se NÃO TEM assinatura → Cria nova via Stripe
+      // Se NÃO TEM assinatura → Cria nova via Asaas
       else {
         console.log('🔵 Criando checkout session...', { userId: user.id, planId })
         const checkoutData = await api.createCheckoutSession(user.id, planId)
@@ -107,9 +107,8 @@ export default function PlanoPage() {
         // apiRequest já retorna só o data, não o objeto completo
         // então checkoutData = { sessionId, url }
         if (checkoutData && checkoutData.url) {
-          console.log('✅ Redirecionando para Stripe:', checkoutData.url)
-          // Redireciona para checkout do Stripe
-          window.location.href = checkoutData.url
+          console.log('Redirecionando para Asaas:', checkoutData.url)
+          window.location.href = checkoutData.url || checkoutData.invoiceUrl || ''
         } else {
           console.error('❌ Dados inválidos:', checkoutData)
           throw new Error('URL do checkout não encontrada')
@@ -124,8 +123,8 @@ export default function PlanoPage() {
     }
   }
 
-  // Verificar se é mês grátis (sem Stripe)
-  const isFreeMonth = subscription && !subscription.stripeSubscriptionId
+  // Verificar se é mês grátis (sem gateway)
+  const isFreeMonth = subscription && !subscription.stripeSubscriptionId && !subscription.asaasSubscriptionId
   
   // Formatar data de próxima cobrança
   const getNextBillingDate = () => {

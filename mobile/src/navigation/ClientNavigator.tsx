@@ -8,6 +8,7 @@ import { AgendaScreen } from '../screens/client/AgendaScreen';
 import { ServicesScreen } from '../screens/client/ServicesScreen';
 import { ProfileScreen } from '../screens/client/ProfileScreen';
 import { BookingScreen } from '../screens/client/BookingScreen';
+import { CheckoutScreen } from '../screens/client/CheckoutScreen';
 import { PackageTimelineScreen } from '../screens/client/PackageTimelineScreen';
 import { MyPlanScreen } from '../screens/client/profile/MyPlanScreen';
 import { AnamnesisBridgeScreen } from '../screens/client/profile/AnamnesisBridgeScreen';
@@ -30,6 +31,16 @@ export type ClientTabParamList = {
 export type ClientStackParamList = {
   ClientTabs: { screen?: keyof ClientTabParamList; params?: any } | undefined;
   Booking: { serviceId: string; appointmentId?: string; applyVoucherId?: string; packagePurchaseId?: string };
+  Checkout: {
+    serviceId?: string;
+    appointmentId?: string;
+    packagePurchaseId?: string;
+    planId?: string;
+    amount?: number;
+    customDescription?: string;
+    description?: string;
+    expiresAt?: string;
+  };
   PackageTimeline: { purchaseId: string };
   Plan: undefined;
   AnamnesisBridge: { serviceId?: string; appointmentId?: string } | undefined;
@@ -99,6 +110,7 @@ function ClientAppStack({ openPlan }: { openPlan?: boolean }) {
     >
       <Stack.Screen name="ClientTabs" component={ClientTabs} />
       <Stack.Screen name="Booking" component={BookingScreen} />
+      <Stack.Screen name="Checkout" component={CheckoutScreen} />
       <Stack.Screen name="PackageTimeline" component={PackageTimelineScreen} />
       <Stack.Screen name="Plan">
         {({ navigation }) => (

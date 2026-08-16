@@ -804,7 +804,7 @@ export default function LandingPage() {
               {
                 step: '2',
                 title: 'Assine Online',
-                description: 'Cadastro rápido e pagamento seguro via cartão de crédito com Stripe',
+                description: 'Cadastro rápido e pagamento seguro via Pix ou cartão',
                 icon: '💳'
               },
               {

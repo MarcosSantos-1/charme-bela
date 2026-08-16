@@ -44,6 +44,7 @@ Sistema full-stack completo para gestão de clínica de estética com agendament
 - **Fastify 5.6** - Framework web rápido
 - **Prisma 6.17** - ORM moderno
 - **PostgreSQL** - Banco de dados (Neon)
+- **Asaas** - Pix, cartão (checkout hospedado) e assinaturas
 - **Sistema de logs** coloridos e detalhados
 
 ### Frontend
@@ -67,7 +68,7 @@ npm install
 
 # Configure .env com sua connection string do Neon
 cp .env.example .env
-# Edite DATABASE_URL no .env
+# Edite DATABASE_URL e as chaves Asaas (docs/asaas-setup.md)
 
 # Migrations e seed
 npm run db:generate

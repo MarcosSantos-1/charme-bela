@@ -15,7 +15,7 @@ function CheckoutContent() {
   // PONTO 3: Capturar ID do agendamento para cancelar se necessário
   const appointmentId = searchParams.get('appointmentId')
   
-  // Stripe: capturar parâmetros de retorno
+  // Retorno do checkout Asaas (invoiceUrl)
   const success = searchParams.get('success')
   const canceled = searchParams.get('canceled')
 

@@ -22,7 +22,8 @@ model User {
   firebaseUid        String?            @unique // Firebase Auth (pode ser null para clientes criados pelo admin)
   profileImageUrl    String?
   role               Role               @default(CLIENT)
-  stripeCustomerId   String?            @unique // ID do cliente no Stripe
+  stripeCustomerId   String?            @unique // legado Stripe (não usar)
+  asaasCustomerId    String?            @unique // ID do cliente no Asaas
   
   // Relacionamentos
   anamnesisForm      AnamnesisForm?
@@ -99,7 +100,7 @@ model SubscriptionPlan {
   tier                    PlanTier            // BRONZE, SILVER, GOLD
   description             String              @db.Text
   price                   Float               // Valor mensal
-  stripePriceId           String?             @unique // ID do preço no Stripe (null para mock)
+  stripePriceId           String?             @unique // legado Stripe (não usar)
   
   // REGRAS DE LIMITE
   maxTreatmentsPerMonth   Int                 // 4 ou 6 tratamentos por mês
@@ -125,8 +126,8 @@ model Subscription {
   planId                String
   plan                  SubscriptionPlan    @relation(fields: [planId], references: [id])
   
-  // Stripe
-  stripeSubscriptionId  String?             @unique // Null para mock/teste
+  stripeSubscriptionId  String?             @unique // legado Stripe
+  asaasSubscriptionId   String?             @unique
   
   // Status e datas
   status                SubscriptionStatus  @default(ACTIVE)
@@ -196,6 +197,7 @@ model Appointment {
   paymentMethod   String?           // "pix", "credit_card", "debit_card"
   paymentAmount   Float?
   paymentExpiresAt DateTime?        // Hold de checkout online (expira em N min se não pagar)
+  asaasPaymentId   String?          // Cobrança Asaas (estorno / cancelar QR)
   
   // Voucher (se aplicável)
   voucherId       String?
@@ -226,6 +228,7 @@ model Appointment {
   @@index([status])
   @@index([paymentExpiresAt]) // Para encontrar agendamentos expirados
   @@index([packagePurchaseId])
+  @@index([asaasPaymentId])
 }
 
 // ============================================
@@ -260,6 +263,7 @@ model PackagePurchase {
   itemsSnapshot       Json
   installmentsAllowed Boolean                @default(false)
   paymentExpiresAt    DateTime?
+  asaasPaymentId      String?
 
   appointments        Appointment[]
 
@@ -269,6 +273,16 @@ model PackagePurchase {
   @@index([userId, status])
   @@index([packageServiceId])
   @@index([paymentExpiresAt])
+  @@index([asaasPaymentId])
+}
+
+model ProcessedWebhookEvent {
+  id        String   @id
+  source    String   @default("asaas")
+  event     String
+  createdAt DateTime @default(now())
+
+  @@index([source, createdAt])
 }
 
 // ============================================

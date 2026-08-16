@@ -269,8 +269,18 @@ export async function getVouchers(userId: string): Promise<Voucher[]> {
 }
 
 export async function createCheckoutSession(userId: string, planId: string) {
-  const response = await api.post('/stripe/create-checkout-session', { userId, planId });
-  return unwrap<{ sessionId: string; url: string }>(response.data);
+  const response = await api.post('/payments/subscribe', { userId, planId });
+  return unwrap<{
+    paymentId: string;
+    sessionId: string;
+    url: string | null;
+    invoiceUrl: string | null;
+    pixCopyPaste: string | null;
+    pixQrBase64: string | null;
+    expiresAt?: string | null;
+    amount: number;
+    description: string;
+  }>(response.data);
 }
 
 export async function createPaymentSession(
@@ -281,7 +291,7 @@ export async function createPaymentSession(
   customDescription?: string,
   packagePurchaseId?: string,
 ) {
-  const response = await api.post('/stripe/create-payment-session', {
+  const response = await api.post('/payments/checkout', {
     userId,
     serviceId,
     appointmentId,
@@ -289,7 +299,17 @@ export async function createPaymentSession(
     customDescription,
     packagePurchaseId,
   });
-  return unwrap<{ sessionId: string; url: string }>(response.data);
+  return unwrap<{
+    paymentId: string;
+    sessionId: string;
+    url: string | null;
+    invoiceUrl: string | null;
+    pixCopyPaste: string | null;
+    pixQrBase64: string | null;
+    expiresAt?: string | null;
+    amount: number;
+    description: string;
+  }>(response.data);
 }
 
 export async function getPackagePurchases(userId?: string, status?: string) {
@@ -351,13 +371,13 @@ export async function pauseSubscription(userId: string): Promise<Subscription> {
 }
 
 export async function createPortalSession(userId: string) {
-  const response = await api.post('/stripe/create-portal-session', { userId });
+  const response = await api.post('/payments/manage', { userId });
   return unwrap<{ url: string }>(response.data);
 }
 
 export async function getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
   try {
-    const response = await api.get(`/stripe/payment-methods/${userId}`);
+    const response = await api.get(`/payments/methods/${userId}`);
     return unwrap<PaymentMethod[]>(response.data);
   } catch (error: any) {
     if (error?.response?.status === 404) return [];
@@ -367,12 +387,29 @@ export async function getPaymentMethods(userId: string): Promise<PaymentMethod[]
 
 export async function getPaymentHistory(userId: string): Promise<PaymentHistoryItem[]> {
   try {
-    const response = await api.get(`/stripe/payment-history/${userId}`);
+    const response = await api.get(`/payments/history/${userId}`);
     return unwrap<PaymentHistoryItem[]>(response.data);
   } catch (error: any) {
     if (error?.response?.status === 404) return [];
     throw error;
   }
+}
+
+export async function getPaymentStatus(paymentId: string) {
+  const response = await api.get(`/payments/status/${paymentId}`);
+  return unwrap<{ paymentId: string; status: string; paid: boolean; billingType: string; value: number; invoiceUrl: string | null }>(
+    response.data,
+  );
+}
+
+export async function abandonCheckout(data: {
+  userId?: string;
+  appointmentId?: string;
+  packagePurchaseId?: string;
+  paymentId?: string;
+}) {
+  const response = await api.post('/payments/abandon', data);
+  return unwrap<{ released: boolean; message: string }>(response.data);
 }
 
 export async function getAnamnesis(userId: string): Promise<any | null> {

@@ -5,6 +5,7 @@ import { logger } from '../utils/logger'
 import { assertStartTimeOnSchedule } from '../utils/scheduleValidation'
 import { newPaymentHoldExpiration, countActivePaymentHolds, PAYMENT_HOLD_MINUTES } from '../utils/paymentHolds'
 import { notifyAdminNewAppointmentRequest, createNotification } from '../utils/notifications'
+import { refundPayment } from '../lib/asaas'
 import {
   PACKAGE_PURCHASE_INCLUDE,
   PackageError,
@@ -85,7 +86,7 @@ export async function packagesRoutes(app: FastifyInstance) {
     }
   })
 
-  // Cliente: primeira compra (slots opcionais) → hold Stripe
+  // Cliente: primeira compra (slots opcionais) → hold Asaas
   // Admin: paidAtClinic=true cria purchase ACTIVE, slots opcionais
   app.post('/packages/purchases', async (request, reply) => {
     logger.route('POST', '/packages/purchases')
@@ -474,6 +475,14 @@ export async function packagesRoutes(app: FastifyInstance) {
       })
       if (!purchase) {
         return reply.status(404).send({ success: false, error: 'Compra de pacote não encontrada' })
+      }
+
+      if (purchase.asaasPaymentId && purchase.paymentStatus === 'PAID') {
+        try {
+          await refundPayment(purchase.asaasPaymentId, purchase.pricePaid, `Estorno do pacote ${purchase.packageService.name}`)
+        } catch (refundError: any) {
+          logger.error('Estorno Asaas do pacote falhou (seguindo com cancelamento local):', refundError.message)
+        }
       }
 
       await prisma.$transaction(async (tx) => {

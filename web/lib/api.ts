@@ -152,6 +152,8 @@ export interface Subscription {
     thisMonth: number
     byMonth?: Record<string, number>
   }
+  stripeSubscriptionId?: string | null
+  asaasSubscriptionId?: string | null
 }
 
 export interface AnamnesisForm {
@@ -702,7 +704,7 @@ export async function cancelAppointment(
   })
 }
 
-// Liberar reserva quando o cliente desiste do checkout do Stripe
+// Liberar reserva quando o cliente desiste do checkout
 // (idempotente: só cancela se ainda estiver aguardando pagamento)
 export async function releaseAppointmentHold(id: string): Promise<any> {
   return apiRequest(`/appointments/${id}/release-hold`, {
@@ -1186,12 +1188,19 @@ export async function getUpcomingBirthdays(): Promise<Birthday[]> {
 }
 
 // ============================================
-// STRIPE (Pagamentos)
+// PAGAMENTOS (Asaas)
 // ============================================
 
 export interface CheckoutSessionResponse {
+  paymentId?: string
   sessionId: string
-  url: string
+  url: string | null
+  invoiceUrl?: string | null
+  pixCopyPaste?: string | null
+  pixQrBase64?: string | null
+  expiresAt?: string | null
+  amount?: number
+  description?: string
 }
 
 export interface CustomerPortalResponse {
@@ -1227,7 +1236,7 @@ export async function createCheckoutSession(
   userId: string,
   planId: string
 ): Promise<CheckoutSessionResponse> {
-  return apiRequest('/stripe/create-checkout-session', {
+  return apiRequest('/payments/subscribe', {
     method: 'POST',
     body: JSON.stringify({ userId, planId })
   })
@@ -1242,7 +1251,7 @@ export async function createPaymentSession(
   customDescription?: string,
   packagePurchaseId?: string
 ): Promise<CheckoutSessionResponse> {
-  return apiRequest('/stripe/create-payment-session', {
+  return apiRequest('/payments/checkout', {
     method: 'POST',
     body: JSON.stringify({ 
       userId, 
@@ -1307,7 +1316,7 @@ export async function refundPackagePurchase(id: string): Promise<PackagePurchase
 export async function createCustomerPortalSession(
   userId: string
 ): Promise<CustomerPortalResponse> {
-  return apiRequest('/stripe/create-portal-session', {
+  return apiRequest('/payments/manage', {
     method: 'POST',
     body: JSON.stringify({ userId })
   })
@@ -1316,7 +1325,7 @@ export async function createCustomerPortalSession(
 // Buscar métodos de pagamento do usuário
 export async function getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
   try {
-    const methods = await apiRequest<PaymentMethod[]>(`/stripe/payment-methods/${userId}`)
+    const methods = await apiRequest<PaymentMethod[]>(`/payments/methods/${userId}`)
     return methods || []
   } catch (error) {
     console.error('Erro ao buscar métodos de pagamento:', error)
@@ -1327,7 +1336,7 @@ export async function getPaymentMethods(userId: string): Promise<PaymentMethod[]
 // Buscar histórico de pagamentos
 export async function getPaymentHistory(userId: string): Promise<PaymentHistory[]> {
   try {
-    const history = await apiRequest<PaymentHistory[]>(`/stripe/payment-history/${userId}`)
+    const history = await apiRequest<PaymentHistory[]>(`/payments/history/${userId}`)
     return history || []
   } catch (error) {
     console.error('Erro ao buscar histórico de pagamentos:', error)
@@ -1355,7 +1364,7 @@ export interface MonthlyRevenue {
 
 export async function getMonthlyRevenue(): Promise<MonthlyRevenue> {
   try {
-    const revenue = await apiRequest<MonthlyRevenue>('/stripe/monthly-revenue')
+    const revenue = await apiRequest<MonthlyRevenue>('/payments/monthly-revenue')
     return revenue
   } catch (error) {
     console.error('Erro ao buscar receita mensal:', error)

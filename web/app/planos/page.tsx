@@ -17,7 +17,6 @@ import {
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { getPlans, createCheckoutSession, changePlan, Plan } from '@/lib/api'
-import { redirectToCheckout } from '@/lib/stripe'
 import { useSubscription } from '@/lib/hooks/useSubscription'
 
 export default function PlanosPage() {
@@ -83,12 +82,11 @@ export default function PlanosPage() {
           throw new Error(response.error || 'Erro ao trocar plano')
         }
       } else {
-        // Se NÃO TEM assinatura, cria nova (via Stripe)
+        // Se NÃO TEM assinatura, cria nova (via Asaas)
         const response = await createCheckoutSession(user.id, planId)
-        
-        if (response.success && response.data.url) {
-          // Redireciona para checkout do Stripe
-          window.location.href = response.data.url
+        const checkoutUrl = (response as any).url || (response as any).invoiceUrl || (response as any).data?.url
+        if (checkoutUrl) {
+          window.location.href = checkoutUrl
         } else {
           throw new Error('Erro ao criar sessão de pagamento')
         }
@@ -197,7 +195,7 @@ export default function PlanosPage() {
             </div>
             <div className="flex items-center space-x-2">
               <CreditCard className="w-5 h-5 text-purple-600" />
-              <span>Powered by Stripe</span>
+              <span>Powered by Asaas</span>
             </div>
           </div>
         </div>
@@ -302,7 +300,7 @@ export default function PlanosPage() {
           </p>
           
           <p className="text-xs text-gray-500">
-            Pagamentos processados de forma segura pelo Stripe. Seus dados estão protegidos.
+            Pagamentos processados de forma segura pelo Asaas. Seus dados de cartão não passam pelo nosso servidor.
           </p>
 
           <div className="flex items-center justify-center space-x-4 text-xs text-gray-500">

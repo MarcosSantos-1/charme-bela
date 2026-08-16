@@ -315,8 +315,8 @@ export function BookingModal({
           undefined,
           purchase.id,
         )
-        if (cardData?.url) {
-          window.location.href = cardData.url
+        if (cardData?.url || cardData?.invoiceUrl) {
+          window.location.href = (cardData.url || cardData.invoiceUrl) as string
           return
         }
         throw new Error('Erro ao criar sessão de pagamento')
@@ -345,9 +345,9 @@ export function BookingModal({
         return
       }
 
-      // Se for pagamento AVULSO (ou voucher com desconto parcial) → Redireciona para Stripe
+      // Se for pagamento AVULSO (ou voucher com desconto parcial) → Redireciona para Asaas
       if (bookingType === 'SINGLE' || (bookingType === 'VOUCHER' && finalPrice > 0)) {
-        console.log(`💳 Pagamento ${finalPrice === service.price ? 'avulso' : 'com desconto'} - redirecionando para Stripe...`)
+        console.log(`Pagamento ${finalPrice === service.price ? 'avulso' : 'com desconto'} - redirecionando para Asaas...`)
         console.log(`💰 Preço original: R$ ${service.price} | Preço final: R$ ${finalPrice}`)
         
         // Preparar descrição customizada se houver desconto
@@ -357,7 +357,7 @@ export function BookingModal({
           customDesc = `Desconto de R$ ${discount.toFixed(2)} aplicado via voucher`
         }
         
-        // Cria sessão de pagamento no Stripe COM PREÇO FINAL
+        // Cria sessão de pagamento no Asaas COM PREÇO FINAL
         const cardData = await api.createPaymentSession(
           userId, 
           service.id, 
@@ -366,10 +366,9 @@ export function BookingModal({
           customDesc   // Descrição do desconto
         )
         
-        if (cardData && cardData.url) {
-          console.log('✅ Redirecionando para checkout:', cardData.url)
-          // Redireciona para checkout do Stripe
-          window.location.href = cardData.url
+        if (cardData && (cardData.url || cardData.invoiceUrl)) {
+          console.log('✅ Redirecionando para checkout Asaas:', cardData.url || cardData.invoiceUrl)
+          window.location.href = (cardData.url || cardData.invoiceUrl) as string
         } else {
           throw new Error('Erro ao criar sessão de pagamento')
         }
@@ -761,7 +760,7 @@ export function BookingModal({
                 <div className="rounded-xl border-2 border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
                   {activePurchase
                     ? `Sessão do pacote — sem nova cobrança. Restam ${activePurchase.remainingSessions} após este agendamento.`
-                    : `Pagamento à vista do pacote: R$ ${service.price.toFixed(2).replace('.', ',')} no Stripe. As sessões seguintes não cobram de novo.`}
+                    : `Pagamento à vista do pacote: R$ ${service.price.toFixed(2).replace('.', ',')} no Pix ou cartão. As sessões seguintes não cobram de novo.`}
                 </div>
               )}
               {selectedSlot && !isPackage && (

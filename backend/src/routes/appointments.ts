@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { hoursUntilStoredStart, wallClockNowAsStoredUtc, wallClockYearMonth } from '../utils/wallClock'
 import { newPaymentHoldExpiration, releaseExpiredPaymentHolds, countActivePaymentHolds, MAX_ACTIVE_PAYMENT_HOLDS_PER_USER, PAYMENT_HOLD_MINUTES } from '../utils/paymentHolds'
+import { cancelPaymentSilent, refundPayment } from '../lib/asaas'
 import { assertStartTimeOnSchedule } from '../utils/scheduleValidation'
 import {
   incrementMonthlyUsage,
@@ -62,7 +63,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
     }
   })
   
-  // PUT - Liberar reserva quando o cliente desiste do checkout (cancel_url do Stripe)
+  // PUT - Liberar reserva quando o cliente desiste do checkout
   // Idempotente: só cancela se o agendamento ainda é um hold não pago.
   app.put('/appointments/:id/release-hold', async (request, reply) => {
     const { id } = request.params as { id: string }
@@ -98,8 +99,15 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       }
       
       const cancelReason = 'Pagamento cancelado no checkout'
-
+      await cancelPaymentSilent(appointment.asaasPaymentId)
       if (appointment.packagePurchaseId) {
+        const purchase = await prisma.packagePurchase.findUnique({
+          where: { id: appointment.packagePurchaseId },
+          select: { asaasPaymentId: true },
+        })
+        if (purchase?.asaasPaymentId && purchase.asaasPaymentId !== appointment.asaasPaymentId) {
+          await cancelPaymentSilent(purchase.asaasPaymentId)
+        }
         await prisma.$transaction(async (tx) => {
           await cancelUnpaidPackagePurchase(tx, appointment.packagePurchaseId!, cancelReason)
         })
@@ -658,7 +666,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       }
       
       // 9. Status de pagamento efetivo + hold de checkout online.
-      // SINGLE e VOUCHER com valor restante pagam via Stripe: nascem PENDING com
+      // SINGLE e VOUCHER com valor restante pagam via Asaas: nascem PENDING com
       // paymentExpiresAt (hold que reserva o horário até o pagamento confirmar).
       // Voucher 100% já nasce PAID. Admin ("pagar na clínica") envia paymentStatus
       // explícito e NUNCA recebe hold.
@@ -1041,71 +1049,45 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           refundAmount = paidAmount
         }
         
-        // CASO 1: Antecedência OK, OU máquina especial tardia (estorno parcial) → Stripe refund
+        // CASO 1: Antecedência OK, OU máquina especial tardia (estorno parcial) → Asaas refund
         if (netRefund != null && netRefund > 0 && (!isLate || isMachineSpecial)) {
           try {
             logger.info(
-              `💰 Processando reembolso de R$ ${netRefund} para ${appointment.user.name}` +
+              `Processando reembolso de R$ ${netRefund} para ${appointment.user.name}` +
                 (feeAmount ? ` (multa R$ ${feeAmount})` : '')
             )
-            
-            const { stripe } = await import('../lib/stripe')
-            
-            const customer = await prisma.user.findUnique({
-              where: { id: appointment.userId },
-              select: { stripeCustomerId: true }
-            })
-            
-            if (customer?.stripeCustomerId) {
-              const paymentIntents = await stripe.paymentIntents.list({
-                customer: customer.stripeCustomerId,
-                limit: 100
-              })
-              
-              const paymentIntent = paymentIntents.data.find(pi => 
-                pi.metadata.appointmentId === appointment.id
+
+            if (appointment.asaasPaymentId) {
+              await refundPayment(
+                appointment.asaasPaymentId,
+                netRefund,
+                `Cancelamento de ${appointment.service.name}`,
               )
-              
-              if (paymentIntent && paymentIntent.status === 'succeeded') {
-                const refund = await stripe.refunds.create({
-                  payment_intent: paymentIntent.id,
-                  amount: Math.round(netRefund * 100),
-                  reason: 'requested_by_customer',
-                  metadata: {
-                    appointmentId: appointment.id,
-                    userId: appointment.userId,
-                    serviceName: appointment.service.name,
-                    feePercent: String(isLate && isMachineSpecial ? lateFeePercent : 0),
-                  }
-                })
-                
-                await prisma.appointment.update({
-                  where: { id: appointment.id },
-                  data: { paymentStatus: 'REFUNDED' }
-                })
-                
-                logger.success(`✅ Reembolso processado: ${refund.id} - R$ ${netRefund}`)
-                
-                const { createNotification } = await import('../utils/notifications')
-                const feeMsg =
-                  feeAmount && feeAmount > 0
-                    ? ` Foi aplicada multa de ${lateFeePercent}% (R$ ${feeAmount.toFixed(2).replace('.', ',')}).`
-                    : ''
-                await createNotification({
-                  userId: appointment.userId,
-                  type: 'PAYMENT_REFUNDED',
-                  title: 'Reembolso Processado',
-                  message: `Seu pagamento de R$ ${netRefund.toFixed(2).replace('.', ',')} foi reembolsado.${feeMsg} O valor será estornado em até 10 dias úteis.`,
-                  icon: 'CARD',
-                  priority: 'HIGH',
-                  actionUrl: '/cliente/pagamentos',
-                  actionLabel: 'Ver Pagamentos'
-                })
-              } else {
-                throw new Error('Payment intent não encontrado ou não pago')
-              }
+
+              await prisma.appointment.update({
+                where: { id: appointment.id },
+                data: { paymentStatus: 'REFUNDED' }
+              })
+
+              logger.success(`Reembolso Asaas processado: ${appointment.asaasPaymentId} - R$ ${netRefund}`)
+
+              const { createNotification } = await import('../utils/notifications')
+              const feeMsg =
+                feeAmount && feeAmount > 0
+                  ? ` Foi aplicada multa de ${lateFeePercent}% (R$ ${feeAmount.toFixed(2).replace('.', ',')}).`
+                  : ''
+              await createNotification({
+                userId: appointment.userId,
+                type: 'PAYMENT_REFUNDED',
+                title: 'Reembolso Processado',
+                message: `Seu pagamento de R$ ${netRefund.toFixed(2).replace('.', ',')} foi reembolsado.${feeMsg} Pix volta na hora; cartão pode levar até 10 dias úteis.`,
+                icon: 'CARD',
+                priority: 'HIGH',
+                actionUrl: '/cliente/pagamentos',
+                actionLabel: 'Ver Pagamentos'
+              })
             } else {
-              throw new Error('Cliente sem stripeCustomerId')
+              throw new Error('Agendamento sem cobrança Asaas')
             }
           } catch (refundError: any) {
             logger.error('❌ Erro ao processar reembolso:', refundError.message)

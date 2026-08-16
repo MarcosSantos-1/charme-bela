@@ -207,6 +207,7 @@ export async function markPackagePurchasePaid(
   tx: Tx,
   purchaseId: string,
   paidAmount: number,
+  paymentMethod: string = 'credit_card',
 ) {
   const purchase = await tx.packagePurchase.findUnique({
     where: { id: purchaseId },
@@ -232,7 +233,7 @@ export async function markPackagePurchasePaid(
       where: { id: appointment.id },
       data: {
         paymentStatus: 'PAID',
-        paymentMethod: 'credit_card',
+        paymentMethod,
         paymentAmount: appointment.packageSessionIndex === 1 ? paidAmount : 0,
         paymentExpiresAt: null,
       },

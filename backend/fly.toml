@@ -8,9 +8,10 @@ primary_region = 'gru'
   NODE_ENV = 'production'
 
 [deploy]
-  # --no-install evita o npx baixar Prisma 7 (quebra sem prisma.config.ts).
-  # Script usa o binary local e tira -pooler da URL (migrate no Neon precisa de conexão direta).
-  release_command = 'sh scripts/fly-migrate.sh'
+  # Caminho absoluto: o cwd do release_command no Fly não é o WORKDIR.
+  # O script troca -pooler por host direto (advisory lock do Prisma no Neon).
+  release_command = 'sh /app/scripts/fly-migrate.sh'
+  release_command_timeout = '5m'
 
 [http_service]
   internal_port = 8080

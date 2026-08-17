@@ -7,6 +7,7 @@ import {
   AsaasError,
   AsaasPayment,
   AsaasSubscription,
+  addressFromAnamnesisPersonalData,
   cancelPaymentSilent,
   cancelPendingByExternalReference,
   cancelSubscriptionSilent,
@@ -74,6 +75,14 @@ function resolveUserId(request: FastifyRequest, bodyUserId?: string) {
   return { error: null, userId }
 }
 
+async function loadAsaasAddress(userId: string) {
+  const form = await prisma.anamnesisForm.findUnique({
+    where: { userId },
+    select: { personalData: true },
+  })
+  return addressFromAnamnesisPersonalData(form?.personalData)
+}
+
 async function ensureAsaasCustomer(
   user: {
     id: string
@@ -84,13 +93,16 @@ async function ensureAsaasCustomer(
     asaasCustomerId: string | null
   },
   cpfCnpj: string,
+  address?: ReturnType<typeof addressFromAnamnesisPersonalData>,
 ) {
+  const resolvedAddress = address === undefined ? await loadAsaasAddress(user.id) : address
   if (user.asaasCustomerId) {
     await updateCustomer(user.asaasCustomerId, {
       name: user.name,
       email: user.email,
       phone: user.phone,
       cpfCnpj,
+      address: resolvedAddress,
     })
     if (user.cpf !== cpfCnpj) {
       await prisma.user.update({ where: { id: user.id }, data: { cpf: cpfCnpj } })
@@ -103,6 +115,7 @@ async function ensureAsaasCustomer(
     phone: user.phone,
     cpfCnpj,
     externalReference: user.id,
+    address: resolvedAddress,
   })
   await prisma.user.update({
     where: { id: user.id },
@@ -590,7 +603,8 @@ export async function paymentsRoutes(app: FastifyInstance) {
         })
       }
 
-      const customerId = await ensureAsaasCustomer(user, cpfCnpj)
+      const address = await loadAsaasAddress(user.id)
+      const customerId = await ensureAsaasCustomer(user, cpfCnpj, address)
       const externalReference = `sub_${user.id}_${plan.id}`
       await cancelOrphanUnpaidSubscriptions(customerId, user.subscription?.asaasSubscriptionId)
 
@@ -600,6 +614,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
           customerEmail: user.email,
           customerCpf: cpfCnpj,
           customerPhone: user.phone,
+          customerAddress: address,
           value: plan.price,
           name: plan.name,
           description: `Charme & Bela Club - ${plan.name}`,

@@ -9,6 +9,9 @@ interface RevealInputProps {
   placeholder?: string;
   multiline?: boolean;
   keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'email-address';
+  maxLength?: number;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  autoCorrect?: boolean;
 }
 
 export function RevealInput({
@@ -18,6 +21,9 @@ export function RevealInput({
   placeholder,
   multiline,
   keyboardType = 'default',
+  maxLength,
+  autoCapitalize,
+  autoCorrect,
 }: RevealInputProps) {
   return (
     <View style={styles.wrap}>
@@ -29,6 +35,9 @@ export function RevealInput({
         placeholderTextColor="rgba(138, 112, 120, 0.55)"
         multiline={multiline}
         keyboardType={keyboardType}
+        maxLength={maxLength}
+        autoCapitalize={autoCapitalize}
+        autoCorrect={autoCorrect}
         style={[styles.input, multiline && styles.multiline]}
         textAlignVertical={multiline ? 'top' : 'center'}
         returnKeyType={multiline ? 'default' : 'done'}

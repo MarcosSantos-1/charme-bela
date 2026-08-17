@@ -36,6 +36,7 @@ import { useAuth } from '../../contexts/AuthContext';
 type StepId =
   | 'welcome'
   | 'personal'
+  | 'address'
   | 'sex'
   | 'health_disease'
   | 'health_treatment'
@@ -72,6 +73,7 @@ function buildSteps(sex: SexValue | null): StepId[] {
   const base: StepId[] = [
     'welcome',
     'personal',
+    'address',
     'sex',
     'health_disease',
     'health_treatment',
@@ -103,6 +105,15 @@ function canContinue(step: StepId, state: AnamnesisFormState): boolean {
         state.fullName.trim() &&
           state.birthDate.trim().length >= 8 &&
           isValidCpf(state.cpf),
+      );
+    case 'address':
+      return Boolean(
+        state.cep.replace(/\D/g, '').length === 8 &&
+          state.street.trim() &&
+          state.number.trim() &&
+          state.neighborhood.trim() &&
+          state.city.trim() &&
+          state.state.trim().length === 2,
       );
     case 'sex':
       return state.sex != null;
@@ -185,6 +196,12 @@ function maskPhone(value: string) {
   if (digits.length <= 2) return digits.replace(/(\d{0,2})/, '($1');
   if (digits.length <= 7) return digits.replace(/(\d{2})(\d{0,5})/, '($1) $2');
   return digits.replace(/(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3');
+}
+
+function maskCep(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
 }
 
 function resolveResumeStepIndex(form: any | null | undefined, sex: SexValue | null): number {
@@ -348,6 +365,7 @@ export function AnamnesisFlow({ user, onComplete, initialForm }: AnamnesisFlowPr
 
 const SCROLLABLE_STEPS = new Set<StepId>([
   'personal',
+  'address',
   'health_treatment',
   'cosmetics',
   'special_meds',
@@ -377,6 +395,12 @@ const STEP_META: Record<
     emoji: '✨',
     title: 'Confirma seus dados pra gente?',
     subtitle: 'Assim sua ficha fica completa e o atendimento flui sem surpresas.',
+  },
+  address: {
+    badge: 'Endereço',
+    emoji: '📍',
+    title: 'Onde a gente te encontra?',
+    subtitle: 'CEP preenche o endereço sozinho — se não achar, é só completar na mão.',
   },
   sex: {
     badge: 'Sobre você',
@@ -477,6 +501,130 @@ const STEP_META: Record<
   },
 };
 
+function AddressStepFields({
+  state,
+  patch,
+}: {
+  state: AnamnesisFormState;
+  patch: (p: Partial<AnamnesisFormState>) => void;
+}) {
+  const lastFetchedCep = useRef('');
+  const patchRef = useRef(patch);
+  patchRef.current = patch;
+  const skipInitialFetch = useRef(
+    state.cep.replace(/\D/g, '').length === 8 && Boolean(state.street.trim() && state.city.trim()),
+  );
+  const [cepStatus, setCepStatus] = useState<'idle' | 'loading' | 'ok' | 'manual'>(
+    skipInitialFetch.current ? 'ok' : 'idle',
+  );
+
+  useEffect(() => {
+    const digits = state.cep.replace(/\D/g, '');
+    if (digits.length !== 8) {
+      lastFetchedCep.current = '';
+      skipInitialFetch.current = false;
+      setCepStatus('idle');
+      return;
+    }
+    if (digits === lastFetchedCep.current) return;
+    if (skipInitialFetch.current) {
+      skipInitialFetch.current = false;
+      lastFetchedCep.current = digits;
+      return;
+    }
+    let cancelled = false;
+    setCepStatus('loading');
+    void (async () => {
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+        const data = await response.json();
+        if (cancelled) return;
+        lastFetchedCep.current = digits;
+        if (data?.erro) {
+          setCepStatus('manual');
+          return;
+        }
+        patchRef.current({
+          street: data.logradouro || '',
+          neighborhood: data.bairro || '',
+          city: data.localidade || '',
+          state: (data.uf || '').toUpperCase(),
+        });
+        setCepStatus('ok');
+      } catch {
+        if (!cancelled) setCepStatus('manual');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state.cep]);
+
+  return (
+    <>
+      <RevealInput
+        label="CEP"
+        value={state.cep}
+        onChangeText={(cep) => patch({ cep: maskCep(cep) })}
+        placeholder="00000-000"
+        keyboardType="numeric"
+        maxLength={9}
+      />
+      <Text style={styles.cepHint}>
+        {cepStatus === 'loading'
+          ? 'Buscando endereço...'
+          : cepStatus === 'manual'
+            ? 'Não achamos esse CEP. Preenche o endereço na mão.'
+            : cepStatus === 'ok'
+              ? 'Endereço preenchido — confere e completa o número.'
+              : 'O endereço será preenchido automaticamente.'}
+      </Text>
+      <RevealInput
+        label="Logradouro"
+        value={state.street}
+        onChangeText={(street) => patch({ street })}
+        placeholder="Rua, Av..."
+      />
+      <RevealInput
+        label="Número"
+        value={state.number}
+        onChangeText={(number) => patch({ number })}
+        placeholder="123"
+        keyboardType="numeric"
+      />
+      <RevealInput
+        label="Complemento"
+        value={state.complement}
+        onChangeText={(complement) => patch({ complement })}
+        placeholder="Apto, bloco... (opcional)"
+      />
+      <RevealInput
+        label="Bairro"
+        value={state.neighborhood}
+        onChangeText={(neighborhood) => patch({ neighborhood })}
+        placeholder="Bairro"
+      />
+      <RevealInput
+        label="Cidade"
+        value={state.city}
+        onChangeText={(city) => patch({ city })}
+        placeholder="Cidade"
+      />
+      <RevealInput
+        label="Estado"
+        value={state.state}
+        onChangeText={(stateValue) =>
+          patch({ state: stateValue.replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() })
+        }
+        placeholder="SP"
+        maxLength={2}
+        autoCapitalize="characters"
+        autoCorrect={false}
+      />
+    </>
+  );
+}
+
 function QuestionLabel({ children }: { children: string }) {
   return <Text style={styles.question}>{children}</Text>;
 }
@@ -528,6 +676,9 @@ function renderStep(
           ) : null}
         </>
       );
+
+    case 'address':
+      return <AddressStepFields state={state} patch={patch} />;
 
     case 'sex':
       return (
@@ -1105,6 +1256,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: brand.ink,
     marginTop: 4,
+  },
+  cepHint: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(138, 112, 120, 0.9)',
+    marginTop: -4,
   },
   freqWrap: { gap: 10 },
   freqLabel: { fontSize: 14, fontWeight: '500', color: brand.ink },

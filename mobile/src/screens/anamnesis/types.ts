@@ -15,6 +15,13 @@ export interface AnamnesisFormState {
   phone: string;
   cpf: string;
   email: string;
+  cep: string;
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
 
   diagnosedDisease: YesNo | null;
   diagnosedDiseaseDetails: string;
@@ -94,6 +101,13 @@ export function createInitialState(prefill?: {
     phone: prefill?.phone || '',
     cpf: prefill?.cpf ? maskCpf(prefill.cpf) : '',
     email: prefill?.email?.endsWith('@phone.charmebela.local') ? '' : prefill?.email || '',
+    cep: '',
+    street: '',
+    number: '',
+    complement: '',
+    neighborhood: '',
+    city: '',
+    state: '',
 
     diagnosedDisease: null,
     diagnosedDiseaseDetails: '',
@@ -219,6 +233,15 @@ export function toBackendPayload(state: AnamnesisFormState) {
       phone: state.phone.trim(),
       cpf: cpfDigits(state.cpf),
       email: state.email.trim(),
+      address: {
+        cep: state.cep.trim(),
+        street: state.street.trim(),
+        number: state.number.trim(),
+        complement: state.complement.trim(),
+        neighborhood: state.neighborhood.trim(),
+        city: state.city.trim(),
+        state: state.state.trim().toUpperCase(),
+      },
     },
     healthData: {
       diagnosedDisease: state.diagnosedDisease,
@@ -303,6 +326,17 @@ export function fromBackendForm(
     phone: p.phone || base.phone,
     cpf: maskCpf(p.cpf || base.cpf),
     email: p.email && !String(p.email).endsWith('@phone.charmebela.local') ? p.email : base.email,
+    cep: (() => {
+      const digits = String(p.address?.cep || '').replace(/\D/g, '').slice(0, 8);
+      if (digits.length <= 5) return digits;
+      return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+    })(),
+    street: p.address?.street || '',
+    number: p.address?.number || '',
+    complement: p.address?.complement || '',
+    neighborhood: p.address?.neighborhood || '',
+    city: p.address?.city || '',
+    state: String(p.address?.state || '').toUpperCase(),
 
     diagnosedDisease: h.diagnosedDisease ?? null,
     diagnosedDiseaseDetails: h.diagnosedDiseaseDetails || '',

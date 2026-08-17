@@ -14,6 +14,16 @@ export type WaterIntake = 'low' | 'medium' | 'high'
 export type SkinType = 'oily' | 'dry' | 'combination' | 'sensitive' | 'unknown'
 export type PregnancyStatus = 'no' | 'yes' | 'suspect'
 
+export interface AnamnesisAddressV2 {
+  cep?: string
+  street?: string
+  number?: string
+  complement?: string
+  neighborhood?: string
+  city?: string
+  state?: string
+}
+
 export interface AnamnesisPersonalDataV2 {
   fullName?: string
   birthDate?: string
@@ -21,6 +31,7 @@ export interface AnamnesisPersonalDataV2 {
   phone?: string
   email?: string
   cpf?: string
+  address?: AnamnesisAddressV2
 }
 
 export interface AnamnesisHealthDataV2 {

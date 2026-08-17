@@ -259,6 +259,20 @@ function Step1Content({ data, setData }: any) {
       <h4 className="text-md font-semibold text-gray-900 mt-6 mb-3">Endereço</h4>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            CEP
+          </label>
+          <input
+            type="text"
+            value={data.address?.cep || ''}
+            onChange={(e) => updateAddress('cep', e.target.value)}
+            placeholder="00000-000"
+            maxLength={9}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
+          />
+        </div>
+
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Rua
@@ -279,6 +293,19 @@ function Step1Content({ data, setData }: any) {
             type="text"
             value={data.address?.number || ''}
             onChange={(e) => updateAddress('number', e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Complemento
+          </label>
+          <input
+            type="text"
+            value={data.address?.complement || ''}
+            onChange={(e) => updateAddress('complement', e.target.value)}
+            placeholder="Apto, bloco..."
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900"
           />
         </div>

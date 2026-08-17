@@ -165,6 +165,27 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
   const fullName = personal.fullName || personal.name || '—';
   const birthDate = personal.birthDate || '—';
   const cpf = personal.cpf ? maskCpf(String(personal.cpf)) : '—';
+  const address = personal.address as
+    | {
+        street?: string;
+        number?: string;
+        complement?: string;
+        neighborhood?: string;
+        city?: string;
+        state?: string;
+        cep?: string;
+      }
+    | undefined;
+  const addressLine = [address?.street, address?.number, address?.complement]
+    .filter(Boolean)
+    .join(', ');
+  const addressCity = [
+    address?.neighborhood,
+    address?.city && address?.state ? `${address.city}/${address.state}` : address?.city,
+    address?.cep,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   const detailSections: SectionMeta[] = data
     ? [
@@ -285,6 +306,18 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
                     <Text style={styles.personalLabel}>CPF</Text>
                     <Text style={styles.personalValue}>{String(cpf)}</Text>
                   </View>
+                  {addressLine ? (
+                    <>
+                      <View style={styles.personalDivider} />
+                      <View style={styles.personalRow}>
+                        <Text style={styles.personalLabel}>Endereço</Text>
+                        <Text style={styles.personalValue}>
+                          {addressLine}
+                          {addressCity ? `\n${addressCity}` : ''}
+                        </Text>
+                      </View>
+                    </>
+                  ) : null}
                 </View>
               </View>
 

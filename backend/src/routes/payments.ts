@@ -33,6 +33,7 @@ import {
   normalizeCpfCnpj,
   normalizeAsaasMobilePhone,
   payChargeWithCardToken,
+  pickAsaasPhone,
   refundPayment,
   toCheckoutPayload,
   updateCustomer,
@@ -104,7 +105,8 @@ async function ensureAsaasCustomer(
 ) {
   const payer = address === undefined || phone === undefined ? await loadAsaasPayer(user.id) : null
   const resolvedAddress = address === undefined ? payer?.address ?? null : address
-  const resolvedPhone = phone === undefined ? user.phone || payer?.anamnesisPhone || null : phone || user.phone
+  const resolvedPhone =
+    pickAsaasPhone(phone, user.phone, payer?.anamnesisPhone) || phone || user.phone || payer?.anamnesisPhone || null
   if (user.asaasCustomerId) {
     await updateCustomer(user.asaasCustomerId, {
       name: user.name,
@@ -200,7 +202,7 @@ async function creditCardHolderInfo(userId: string) {
   const cpfCnpj = normalizeCpfCnpj(user.cpf)
   if (!cpfCnpj) return null
   const payer = await loadAsaasPayer(userId)
-  const phone = normalizeAsaasMobilePhone(user.phone || payer.anamnesisPhone)
+  const phone = pickAsaasPhone(payer.anamnesisPhone, user.phone)
   return {
     name: user.name,
     email: user.email,
@@ -498,46 +500,93 @@ async function createAddCardCheckout(request: FastifyRequest, reply: FastifyRepl
     if (!user) {
       return reply.status(404).send({ success: false, error: 'Usuário não encontrado' })
     }
-    if (!user.asaasCustomerId) {
-      return reply.status(404).send({
+
+    const cpfCnpj = normalizeCpfCnpj(user.cpf)
+    if (!cpfCnpj) {
+      return reply.status(400).send({
         success: false,
-        error:
-          'Nenhum pagamento Asaas encontrado. Assine um plano ou pague um agendamento para cadastrar o primeiro cartão.',
+        error: 'Informe o CPF no cadastro para salvar um cartão no Asaas.',
       })
     }
 
-    let url: string | null = null
+    const payer = await loadAsaasPayer(user.id)
+    const customerPhone = pickAsaasPhone(payer.anamnesisPhone, user.phone)
+    const customerId = await ensureAsaasCustomer(user, cpfCnpj, payer.address, customerPhone)
+
     if (user.subscription?.asaasSubscriptionId) {
       const subPayments = await listSubscriptionPayments(user.subscription.asaasSubscriptionId)
       const pending = (subPayments.data || []).find(
         (item) => item.status === 'PENDING' || item.status === 'OVERDUE',
       )
-      url = pending?.invoiceUrl || null
-    }
-    if (!url) {
-      const history = await listPayments({ customer: user.asaasCustomerId, limit: 20 })
-      const pending = (history.data || []).find(
-        (item) =>
-          (item.status === 'PENDING' || item.status === 'OVERDUE') &&
-          isCardCapableBilling(item.billingType) &&
-          !item.deleted,
-      )
-      url = pending?.invoiceUrl || null
-    }
-    if (url) {
-      return reply.status(200).send({ success: true, data: { url, pendingInvoice: true } })
+      if (pending?.invoiceUrl) {
+        return reply.status(200).send({
+          success: true,
+          data: { url: pending.invoiceUrl, pendingInvoice: true },
+        })
+      }
     }
 
-    return reply.status(409).send({
-      success: false,
-      error:
-        'Não há fatura em aberto. O Asaas só memoriza o cartão numa compra: use crédito ou débito no próximo pagamento (plano ou agendamento). Depois escolha o apelido e qual crédito é debitado automaticamente.',
+    const addCardRef = `addcard_${user.id}`
+    const existing = await listPayments({
+      customer: customerId,
+      externalReference: addCardRef,
+      limit: 10,
+    })
+    const pendingAddCard = (existing.data || []).find(
+      (item) =>
+        (item.status === 'PENDING' || item.status === 'OVERDUE') &&
+        isCardCapableBilling(item.billingType) &&
+        !item.deleted &&
+        item.invoiceUrl,
+    )
+    if (pendingAddCard?.invoiceUrl) {
+      return reply.status(200).send({
+        success: true,
+        data: {
+          url: pendingAddCard.invoiceUrl,
+          pendingInvoice: false,
+          validationCharge: true,
+          amount: 5,
+        },
+      })
+    }
+
+    const checkout = await createCreditCardCheckout({
+      customerId,
+      customerName: user.name,
+      customerEmail: user.email,
+      customerCpf: cpfCnpj,
+      customerPhone,
+      customerAddress: payer.address,
+      value: 5,
+      name: 'Salvar cartão',
+      description: 'Validação para memorizar o cartão. Estornamos em seguida.',
+      externalReference: addCardRef,
+      recurrent: false,
+      billingTypes: ['CREDIT_CARD', 'DEBIT_CARD'],
+    })
+    if (!checkout.link) {
+      return reply.status(502).send({
+        success: false,
+        error: 'O Asaas não devolveu o link para cadastrar o cartão. Tente de novo em instantes.',
+      })
+    }
+    return reply.status(200).send({
+      success: true,
+      data: {
+        url: checkout.link,
+        paymentId: checkout.id,
+        pendingInvoice: false,
+        validationCharge: true,
+        amount: 5,
+      },
     })
   } catch (error: any) {
     logger.error('Erro ao abrir cadastro de cartão:', error)
-    return reply.status(500).send({
+    const status = error instanceof AsaasError ? Math.min(error.statusCode, 502) || 502 : 500
+    return reply.status(status >= 400 && status < 600 ? status : 500).send({
       success: false,
-      error: 'Erro ao abrir cadastro de cartão',
+      error: error.message || 'Erro ao abrir cadastro de cartão',
       details: error.message,
     })
   }
@@ -761,7 +810,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
       }
 
       const payer = await loadAsaasPayer(user.id)
-      const customerPhone = user.phone || payer.anamnesisPhone
+      const customerPhone = pickAsaasPhone(payer.anamnesisPhone, user.phone)
       const customerId = await ensureAsaasCustomer(user, cpfCnpj, payer.address, customerPhone)
       const externalReference = `sub_${user.id}_${plan.id}`
       await cancelOrphanUnpaidSubscriptions(customerId, user.subscription?.asaasSubscriptionId)

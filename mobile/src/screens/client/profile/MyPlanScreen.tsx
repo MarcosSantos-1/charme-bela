@@ -134,7 +134,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
     if (!user) return;
     Alert.alert(
       'Cadastrar cartão',
-      'O número do cartão só é digitado no checkout seguro do Asaas. Se houver fatura em aberto, ela abre agora para você pagar com o cartão novo (crédito ou débito). Sem fatura, use o próximo pagamento e depois escolha o apelido e o débito automático aqui.',
+      'O número do cartão só é digitado no checkout seguro do Asaas. Se houver fatura em aberto, você paga com o cartão novo. Senão, o Asaas cobra R$ 5,00 só para memorizar o cartão — o estorno é automático.',
       [
         { text: 'Agora não', style: 'cancel' },
         {

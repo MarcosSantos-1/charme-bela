@@ -178,18 +178,53 @@ export function normalizeCpfCnpj(value?: string | null): string | null {
 }
 
 /**
- * Celular BR para o Asaas: DDD (2 dígitos) + número, sem DDI 55.
+ * Celular/fixo BR para o Asaas: DDD + número, sem DDI 55.
  * `+5511999999999` / `5511999999999` → `11999999999`.
  * Não remove `55` de números com 10–11 dígitos (DDD 55 existe no RS).
  */
 export function normalizeAsaasMobilePhone(value?: string | null): string | null {
-  const digits = digitsOnly(value)
-  const local =
-    digits.startsWith('55') && (digits.length === 12 || digits.length === 13)
-      ? digits.slice(2)
-      : digits
-  if (local.length === 10 || local.length === 11) return local
+  let digits = digitsOnly(value)
+  while (digits.startsWith('0') && digits.length > 11) {
+    digits = digits.replace(/^0+/, '')
+  }
+  while (digits.startsWith('55') && digits.length >= 12) {
+    digits = digits.slice(2)
+  }
+  if (digits.length === 10 || digits.length === 11) return digits
   return null
+}
+
+/** Primeiro telefone que o Asaas aceita, entre cadastro Firebase e anamnese. */
+export function pickAsaasPhone(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    if (normalizeAsaasMobilePhone(value)) return value || null
+  }
+  return null
+}
+
+/**
+ * Asaas: `phone` é fixo (10 dígitos). `mobilePhone` é celular (11 dígitos).
+ * Mandar 11 dígitos em `phone` retorna "Telefone informado é inválido".
+ * No celular, também enviamos um fixo derivado (sem o 9) para sobrescrever
+ * um `phone` inválido já gravado no cliente Asaas.
+ */
+export function asaasPhonePayload(value?: string | null): { phone?: string; mobilePhone?: string } {
+  const local = normalizeAsaasMobilePhone(value)
+  if (!local) return {}
+  if (local.length === 11) {
+    return {
+      mobilePhone: local,
+      phone: `${local.slice(0, 2)}${local.slice(3)}`,
+    }
+  }
+  return { phone: local, mobilePhone: local }
+}
+
+function asaasCustomerEmail(email?: string | null) {
+  const value = (email || '').trim()
+  if (!value) return null
+  if (value.endsWith('@phone.charmebela.local')) return null
+  return value
 }
 
 export type AsaasCustomerAddress = {
@@ -276,14 +311,15 @@ export async function createCustomer(input: {
   externalReference: string
   address?: AsaasCustomerAddress | null
 }) {
-  const mobile = normalizeAsaasMobilePhone(input.phone)
+  const phones = asaasPhonePayload(input.phone)
+  const email = asaasCustomerEmail(input.email)
   return asaasFetch<AsaasCustomer>('/customers', {
     method: 'POST',
     body: JSON.stringify({
       name: input.name,
-      email: input.email,
+      ...(email ? { email } : {}),
       cpfCnpj: input.cpfCnpj,
-      ...(mobile ? { phone: mobile, mobilePhone: mobile } : {}),
+      ...phones,
       ...asaasAddressPayload(input.address),
       notificationDisabled: false,
       externalReference: input.externalReference,
@@ -301,14 +337,15 @@ export async function updateCustomer(
     address?: AsaasCustomerAddress | null
   },
 ) {
-  const mobile = normalizeAsaasMobilePhone(input.phone)
+  const phones = asaasPhonePayload(input.phone)
+  const email = asaasCustomerEmail(input.email)
   return asaasFetch<AsaasCustomer>(`/customers/${id}`, {
     method: 'PUT',
     body: JSON.stringify({
       ...(input.name ? { name: input.name } : {}),
-      ...(input.email ? { email: input.email } : {}),
+      ...(email ? { email } : {}),
       cpfCnpj: input.cpfCnpj,
-      ...(mobile ? { phone: mobile, mobilePhone: mobile } : {}),
+      ...phones,
       ...asaasAddressPayload(input.address),
     }),
   })
@@ -552,8 +589,7 @@ export async function updateSubscriptionCreditCard(
               ...(input.holder.addressComplement
                 ? { addressComplement: input.holder.addressComplement }
                 : {}),
-              ...(input.holder.phone ? { phone: input.holder.phone } : {}),
-              ...(input.holder.mobilePhone ? { mobilePhone: input.holder.mobilePhone } : {}),
+              ...asaasPhonePayload(input.holder.mobilePhone || input.holder.phone),
             },
           }
         : {}),
@@ -616,15 +652,16 @@ export async function createCreditCardCheckout(input: {
   billingTypes?: AsaasBillingType[]
 }) {
   const frontend = (process.env.FRONTEND_URL || 'https://localhost').replace(/\/$/, '')
-  const mobile = normalizeAsaasMobilePhone(input.customerPhone)
+  const phones = asaasPhonePayload(input.customerPhone)
+  const email = asaasCustomerEmail(input.customerEmail)
   const customerPayload = input.customerId
     ? { customer: input.customerId }
     : {
         customerData: {
           name: input.customerName,
           cpfCnpj: input.customerCpf,
-          email: input.customerEmail,
-          ...(mobile ? { phone: mobile, mobilePhone: mobile } : {}),
+          ...(email ? { email } : {}),
+          ...phones,
           ...asaasAddressPayload(input.customerAddress),
         },
       }

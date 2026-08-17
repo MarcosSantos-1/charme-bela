@@ -24,6 +24,7 @@ import { ScreenHeader } from '../../../components/ScreenHeader';
 import { CardNicknameModal } from '../../../components/CardNicknameModal';
 import { creditCard3dSource, logoSource } from '../../../assets/brandAssets';
 import {
+  cancelPendingPlanChange,
   cancelSubscription,
   changePlan,
   deleteSavedCard,
@@ -106,12 +107,14 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const openCheckout = async (plan: Plan) => {
+  const openCheckout = async (plan: Plan, upgrade = false) => {
     if (!user) return;
+    const difference = upgrade && subscription ? Math.max(0, plan.price - subscription.plan.price) : plan.price;
     navigation.navigate('Checkout', {
       planId: plan.id,
-      amount: plan.price,
-      description: `Assinatura ${plan.name}`,
+      amount: difference,
+      description: upgrade ? `Upgrade para ${plan.name}` : `Assinatura ${plan.name}`,
+      upgrade,
     });
   };
 
@@ -119,11 +122,52 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
     if (!user) return;
     if (!subscription || subscription.status === 'CANCELED') return void openCheckout(plan);
     if (subscription.planId === plan.id) return;
-    Alert.alert('Trocar plano', `Deseja mudar de ${subscription.plan.name} para ${plan.name}?`, [
-      { text: 'Agora não', style: 'cancel' },
+    const isUpgrade = plan.price > subscription.plan.price;
+    const nextDue = subscription.nextDueDate
+      ? new Date(subscription.nextDueDate).toLocaleDateString('pt-BR')
+      : 'a próxima cobrança';
+    if (isUpgrade && subscription.asaasSubscriptionId) {
+      const difference = plan.price - subscription.plan.price;
+      Alert.alert(
+        'Upgrade de plano',
+        `Vamos cobrar agora a diferença de ${money(difference)}. Se o pagamento for aprovado, seu plano passa a ser ${plan.name} na hora.`,
+        [
+          { text: 'Agora não', style: 'cancel' },
+          { text: 'Pagar diferença', onPress: () => void openCheckout(plan, true) },
+        ],
+      );
+      return;
+    }
+    Alert.alert(
+      'Trocar plano',
+      isUpgrade
+        ? `Deseja mudar de ${subscription.plan.name} para ${plan.name}?`
+        : `Você continua no ${subscription.plan.name} até ${nextDue}. A partir daí passa para ${plan.name}.`,
+      [
+        { text: 'Agora não', style: 'cancel' },
+        {
+          text: 'Confirmar troca',
+          onPress: () =>
+            void run(
+              plan.id,
+              () => changePlan(user.id, plan.id),
+              isUpgrade
+                ? `Seu plano agora é ${plan.name}.`
+                : `Troca agendada. Você continua no ${subscription.plan.name} até ${nextDue}.`,
+            ),
+        },
+      ],
+    );
+  };
+
+  const undoPendingChange = () => {
+    if (!user) return;
+    Alert.alert('Desfazer troca', 'Você permanece no plano atual.', [
+      { text: 'Manter agendado', style: 'cancel' },
       {
-        text: 'Confirmar troca',
-        onPress: () => void run(plan.id, () => changePlan(user.id, plan.id), `Seu plano agora é ${plan.name}.`),
+        text: 'Desfazer',
+        onPress: () =>
+          void run('undo-pending', () => cancelPendingPlanChange(user.id), 'Você permanece no plano atual.'),
       },
     ]);
   };
@@ -258,6 +302,10 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
                   <Text style={styles.accessUntil}>
                     Acesso até {new Date(subscription.endDate).toLocaleDateString('pt-BR')}
                   </Text>
+                ) : subscription.nextDueDate && subscription.status === 'ACTIVE' ? (
+                  <Text style={styles.accessUntil}>
+                    Próxima cobrança em {new Date(subscription.nextDueDate).toLocaleDateString('pt-BR')}
+                  </Text>
                 ) : null}
               </View>
             </View>
@@ -306,6 +354,26 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
           </LinearGradient>
         )}
 
+        {subscription?.pendingPlan ? (
+          <View style={styles.pendingCard}>
+            <Text style={styles.pendingTitle}>Downgrade agendado</Text>
+            <Text style={styles.pendingText}>
+              Você continua no {subscription.plan.name} até{' '}
+              {subscription.nextDueDate
+                ? new Date(subscription.nextDueDate).toLocaleDateString('pt-BR')
+                : 'a próxima cobrança'}
+              . Depois passa para {subscription.pendingPlan.name} ({money(subscription.pendingPlan.price)}/mês).
+            </Text>
+            <TouchableOpacity style={styles.pendingButton} onPress={undoPendingChange} disabled={busy === 'undo-pending'}>
+              {busy === 'undo-pending' ? (
+                <ActivityIndicator color={brand.roseDeep} />
+              ) : (
+                <Text style={styles.pendingButtonText}>Desfazer troca</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>{subscription ? 'Trocar ou conhecer' : 'Escolha seu plano'}</Text>
           <Text style={styles.sectionHint}>{plans.length} opções</Text>
@@ -317,6 +385,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
               key={plan.id}
               plan={plan}
               current={subscription?.planId === plan.id && subscription.status !== 'CANCELED'}
+              pending={subscription?.pendingPlanId === plan.id}
               hasActiveSub={Boolean(active)}
               loading={busy === plan.id}
               expanded={expandedPlanId === plan.id}
@@ -509,6 +578,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
 function PlanOption({
   plan,
   current,
+  pending,
   hasActiveSub,
   loading,
   expanded,
@@ -517,6 +587,7 @@ function PlanOption({
 }: {
   plan: Plan;
   current?: boolean;
+  pending?: boolean;
   hasActiveSub?: boolean;
   loading?: boolean;
   expanded: boolean;
@@ -539,6 +610,10 @@ function PlanOption({
                 {current ? (
                   <View style={styles.currentBadge}>
                     <Text style={styles.currentBadgeText}>Seu plano</Text>
+                  </View>
+                ) : pending ? (
+                  <View style={styles.currentBadge}>
+                    <Text style={styles.currentBadgeText}>Agendado</Text>
                   </View>
                 ) : null}
               </View>
@@ -606,7 +681,7 @@ function PlanOption({
               <ActivityIndicator color="white" />
             ) : (
               <Text style={styles.selectButtonText}>
-                {hasActiveSub ? 'Trocar para este plano' : 'Assinar este plano'}
+                {pending ? 'Já agendado' : hasActiveSub ? 'Trocar para este plano' : 'Assinar este plano'}
               </Text>
             )}
           </TouchableOpacity>
@@ -862,6 +937,25 @@ const styles = StyleSheet.create({
   },
   memberPerMonth: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.5)' },
   accessUntil: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 4 },
+  pendingCard: {
+    marginTop: 16,
+    backgroundColor: '#fff7ed',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#fdba74',
+  },
+  pendingTitle: { fontSize: 15, fontWeight: '800', color: '#9a3412' },
+  pendingText: { fontSize: 13, color: '#9a3412', marginTop: 6, lineHeight: 18 },
+  pendingButton: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#ffedd5',
+  },
+  pendingButtonText: { color: '#9a3412', fontWeight: '800', fontSize: 13 },
 
   sectionHead: {
     marginTop: 28,

@@ -40,6 +40,7 @@ export type ClientStackParamList = {
     customDescription?: string;
     description?: string;
     expiresAt?: string;
+    upgrade?: boolean;
   };
   PackageTimeline: { purchaseId: string };
   Plan: undefined;

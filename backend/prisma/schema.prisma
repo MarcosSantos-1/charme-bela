@@ -131,6 +131,7 @@ model SubscriptionPlan {
   // Relacionamentos
   services                Service[]           @relation("ServicesOnPlans")
   subscriptions           Subscription[]
+  pendingChanges          Subscription[]      @relation("PendingPlanChange")
   
   isActive                Boolean             @default(true)
   createdAt               DateTime            @default(now())
@@ -149,6 +150,10 @@ model Subscription {
   
   stripeSubscriptionId  String?             @unique // legado Stripe
   asaasSubscriptionId   String?             @unique
+
+  pendingPlanId         String?
+  pendingPlan           SubscriptionPlan?   @relation("PendingPlanChange", fields: [pendingPlanId], references: [id])
+  pendingChangeAt       DateTime?
   
   // Status e datas
   status                SubscriptionStatus  @default(ACTIVE)
@@ -165,6 +170,7 @@ model Subscription {
 
   @@index([userId])
   @@index([status])
+  @@index([pendingPlanId])
 }
 
 // ============================================

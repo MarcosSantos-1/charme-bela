@@ -49,6 +49,14 @@ import {
   notifySubscriptionCanceled,
   createNotification,
 } from '../utils/notifications'
+import {
+  applyPlanChange,
+  clubSubscriptionReference,
+  hasPaidClubSubscription,
+  parseExternalReference,
+  syncAsaasSubscriptionPlan,
+  upgradeReference,
+} from '../utils/planChange'
 
 type CheckoutBody = {
   userId?: string
@@ -709,6 +717,12 @@ export async function paymentsRoutes(app: FastifyInstance) {
       if (!plan) {
         return reply.status(404).send({ success: false, error: 'Plano não encontrado' })
       }
+      if (hasPaidClubSubscription(user.subscription)) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Você já tem um plano ativo. Use a troca de plano para upgrade ou downgrade.',
+        })
+      }
 
       const cpfCnpj = normalizeCpfCnpj(body.cpf) || normalizeCpfCnpj(user.cpf)
       if (!cpfCnpj) {
@@ -724,7 +738,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
       const payer = await loadAsaasPayer(user.id)
       const customerPhone = pickAsaasPhone(payer.anamnesisPhone, user.phone)
       const customerId = await ensureAsaasCustomer(user, cpfCnpj, payer.address, customerPhone)
-      const externalReference = `sub_${user.id}_${plan.id}`
+      const externalReference = clubSubscriptionReference(user.id, plan.id)
       await cancelOrphanUnpaidSubscriptions(customerId, user.subscription?.asaasSubscriptionId)
 
       try {
@@ -740,6 +754,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
           description: `Charme & Bela Club - ${plan.name}`,
           externalReference,
           recurrent: true,
+          successQuery: 'success=true&plan=1',
         })
 
         logger.success(`Checkout de assinatura Asaas criado: ${checkoutSession.id}`)
@@ -799,6 +814,136 @@ export async function paymentsRoutes(app: FastifyInstance) {
       return reply.status(500).send({
         success: false,
         error: 'Erro ao criar sessão de pagamento',
+        details: error.message,
+      })
+    }
+  })
+
+  app.post('/payments/upgrade', async (request, reply) => {
+    logger.route('POST', '/payments/upgrade')
+    try {
+      if (!isAsaasConfigured()) {
+        return reply.status(503).send({ success: false, error: 'Asaas não configurado (ASAAS_API_KEY)' })
+      }
+
+      const body = request.body as { userId?: string; planId: string; cpf?: string }
+      const resolved = resolveUserId(request, body.userId)
+      if (resolved.error === 'forbidden') {
+        return reply.status(403).send({ success: false, error: 'Você só pode trocar o próprio plano' })
+      }
+      if (!resolved.userId) {
+        return reply.status(400).send({ success: false, error: 'Usuário não autenticado' })
+      }
+      if (!body.planId) {
+        return reply.status(400).send({ success: false, error: 'planId é obrigatório' })
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: resolved.userId },
+        include: { subscription: { include: { plan: true } } },
+      })
+      if (!user) {
+        return reply.status(404).send({ success: false, error: 'Usuário não encontrado' })
+      }
+      if (!hasPaidClubSubscription(user.subscription) || !user.subscription) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Upgrade só vale para quem já tem um plano pago ativo',
+        })
+      }
+      const newPlan = await prisma.subscriptionPlan.findUnique({ where: { id: body.planId } })
+      if (!newPlan) {
+        return reply.status(404).send({ success: false, error: 'Plano não encontrado' })
+      }
+      if (newPlan.price <= user.subscription.plan.price) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Este plano não é um upgrade. Use a troca de plano para reduzir o valor.',
+        })
+      }
+
+      const difference = Number((newPlan.price - user.subscription.plan.price).toFixed(2))
+      const cpfCnpj = normalizeCpfCnpj(body.cpf) || normalizeCpfCnpj(user.cpf)
+      if (!cpfCnpj) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Informe o CPF para emitir a cobrança. O Asaas exige o documento do pagador.',
+        })
+      }
+      if (!asaasCustomerEmail(user.email)) {
+        return reply.status(400).send({ success: false, error: ASAAS_EMAIL_REQUIRED })
+      }
+
+      const payer = await loadAsaasPayer(user.id)
+      const customerPhone = pickAsaasPhone(payer.anamnesisPhone, user.phone)
+      const customerId = await ensureAsaasCustomer(user, cpfCnpj, payer.address, customerPhone)
+      const externalReference = upgradeReference(user.id, newPlan.id)
+      const description = `Upgrade Charme & Bela Club - ${user.subscription.plan.name} → ${newPlan.name}`
+      await cancelPendingByExternalReference(externalReference)
+
+      const charge = await ensureCardInvoice({
+        customerId,
+        value: difference,
+        description,
+        externalReference,
+      })
+
+      try {
+        const checkoutSession = await createCreditCardCheckout({
+          customerId,
+          customerName: user.name,
+          customerEmail: user.email,
+          customerCpf: cpfCnpj,
+          customerPhone,
+          customerAddress: payer.address,
+          value: difference,
+          name: `Upgrade ${newPlan.name}`.slice(0, 30),
+          description,
+          externalReference,
+          recurrent: false,
+          successQuery: 'success=true&plan=1&upgrade=1',
+        })
+        logger.success(`Checkout de upgrade Asaas criado: ${checkoutSession.id}`)
+        return reply.status(200).send({
+          success: true,
+          data: {
+            paymentId: checkoutSession.id,
+            sessionId: checkoutSession.id,
+            url: checkoutSession.link || charge.invoiceUrl || null,
+            invoiceUrl: checkoutSession.link || charge.invoiceUrl || null,
+            pixCopyPaste: null,
+            pixQrBase64: null,
+            expiresAt: null,
+            amount: difference,
+            description,
+            upgrade: true,
+            newPlanId: newPlan.id,
+            newPlanName: newPlan.name,
+          },
+        })
+      } catch (checkoutError: any) {
+        logger.warning(`Checkout de upgrade indisponível, usando fatura: ${checkoutError.message}`)
+      }
+
+      const checkout = await toCheckoutPayload(charge, {
+        description,
+        invoiceUrl: charge.invoiceUrl || null,
+      })
+      return reply.status(200).send({
+        success: true,
+        data: {
+          ...checkout,
+          amount: difference,
+          upgrade: true,
+          newPlanId: newPlan.id,
+          newPlanName: newPlan.name,
+        },
+      })
+    } catch (error: any) {
+      logger.error('Erro ao criar checkout de upgrade:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao criar sessão de pagamento do upgrade',
         details: error.message,
       })
     }
@@ -929,6 +1074,10 @@ export async function paymentsRoutes(app: FastifyInstance) {
             if (paidSibling.creditCardToken || paidSibling.creditCard) {
               await persistSavedCard(paidSibling)
             }
+            const paidRef = parseExternalReference(paidSibling.externalReference || checkout.externalReference)
+            if (paidRef.kind === 'upgrade') {
+              await handlePaymentPaid(paidSibling)
+            }
           }
         }
         return reply.status(200).send({
@@ -947,6 +1096,12 @@ export async function paymentsRoutes(app: FastifyInstance) {
       }
       const payment = await getPayment(paymentId)
       const paidInfo = await checkoutPaidStatus(payment)
+      if (paidInfo.paid) {
+        const ref = parseExternalReference(payment.externalReference)
+        if (ref.kind === 'upgrade') {
+          await handlePaymentPaid(payment)
+        }
+      }
       const pix =
         paidInfo.paid || payment.billingType === 'CREDIT_CARD' || payment.billingType === 'DEBIT_CARD'
           ? null
@@ -1175,6 +1330,12 @@ export async function paymentsRoutes(app: FastifyInstance) {
       const remoteIp = clientIp(request)
 
       if (body.planId) {
+        if (hasPaidClubSubscription(user.subscription)) {
+          return reply.status(400).send({
+            success: false,
+            error: 'Você já tem um plano ativo. Use a troca de plano para upgrade ou downgrade.',
+          })
+        }
         const plan = await prisma.subscriptionPlan.findUnique({ where: { id: body.planId } })
         if (!plan) {
           return reply.status(404).send({ success: false, error: 'Plano não encontrado' })
@@ -1191,7 +1352,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
           customer: user.asaasCustomerId,
           value: plan.price,
           description: `Charme & Bela Club - ${plan.name}`,
-          externalReference: `sub_${user.id}_${plan.id}`,
+          externalReference: clubSubscriptionReference(user.id, plan.id),
           billingType: 'CREDIT_CARD',
           creditCardToken: savedCard.asaasToken,
           remoteIp,
@@ -1218,7 +1379,72 @@ export async function paymentsRoutes(app: FastifyInstance) {
 
       let paymentId = body.paymentId || null
       if (paymentId && isCheckoutSessionId(paymentId)) {
-        paymentId = null
+        try {
+          const checkout = await getCheckout(paymentId)
+          const ref = checkout.externalReference || null
+          if (ref) {
+            const siblings = await listPayments({ externalReference: ref, limit: 20 })
+            const paidSibling = (siblings.data || []).find((item) => isAsaasPaidStatus(item.status))
+            if (paidSibling) {
+              await handlePaymentPaid(paidSibling)
+              return reply.status(200).send({
+                success: true,
+                data: {
+                  paid: true,
+                  paymentId: paidSibling.id,
+                  status: paidSibling.status,
+                  brand: savedCard.brand,
+                  last4: savedCard.last4,
+                },
+              })
+            }
+            const pending = (siblings.data || []).find(
+              (item) => (item.status === 'PENDING' || item.status === 'OVERDUE') && !item.deleted,
+            )
+            paymentId = pending?.id || null
+            if (!paymentId && parseExternalReference(ref).kind === 'upgrade') {
+              const parsed = parseExternalReference(ref)
+              if (parsed.id === user.id && parsed.extra) {
+                const newPlan = await prisma.subscriptionPlan.findUnique({ where: { id: parsed.extra } })
+                const currentPrice = user.subscription
+                  ? (await prisma.subscription.findUnique({
+                      where: { userId: user.id },
+                      include: { plan: true },
+                    }))?.plan.price
+                  : 0
+                if (newPlan && currentPrice != null && newPlan.price > currentPrice) {
+                  const charged = await createPaymentWithCardToken({
+                    customer: user.asaasCustomerId,
+                    value: Number((newPlan.price - currentPrice).toFixed(2)),
+                    description: `Upgrade Charme & Bela Club - ${newPlan.name}`,
+                    externalReference: ref,
+                    creditCardToken: savedCard.asaasToken,
+                    remoteIp,
+                  })
+                  await persistSavedCard(charged)
+                  if (isAsaasPaidStatus(charged.status)) {
+                    await handlePaymentPaid(charged)
+                  }
+                  return reply.status(200).send({
+                    success: true,
+                    data: {
+                      paid: isAsaasPaidStatus(charged.status),
+                      paymentId: charged.id,
+                      status: charged.status,
+                      brand: savedCard.brand,
+                      last4: savedCard.last4,
+                    },
+                  })
+                }
+              }
+            }
+          } else {
+            paymentId = null
+          }
+        } catch (checkoutError: any) {
+          logger.warning(`Checkout ${paymentId} não resolvido: ${checkoutError.message}`)
+          paymentId = null
+        }
       }
       if (!paymentId && body.packagePurchaseId) {
         const purchase = await prisma.packagePurchase.findUnique({
@@ -1542,18 +1768,6 @@ function emptyRevenue() {
   }
 }
 
-function parseExternalReference(ref?: string | null) {
-  if (!ref) return { kind: null as string | null, id: null as string | null, extra: null as string | null }
-  if (ref.startsWith('pkg_')) return { kind: 'package', id: ref.slice(4), extra: null }
-  if (ref.startsWith('apt_')) return { kind: 'appointment', id: ref.slice(4), extra: null }
-  if (ref.startsWith('sub_')) {
-    const rest = ref.slice(4)
-    const split = rest.split('_')
-    return { kind: 'subscription', id: split[0] || null, extra: split.slice(1).join('_') || null }
-  }
-  return { kind: null, id: null, extra: null }
-}
-
 async function handlePaymentPaid(payment: AsaasPayment) {
   if (!isAsaasPaidStatus(payment.status)) return
 
@@ -1566,8 +1780,9 @@ async function handlePaymentPaid(payment: AsaasPayment) {
     }
     return
   }
+  const ref = parseExternalReference(payment.externalReference)
   await cancelPendingByExternalReference(payment.externalReference, payment.id)
-  if (payment.customer) {
+  if (payment.customer && ref.kind !== 'upgrade') {
     await cancelOrphanUnpaidSubscriptions(payment.customer, payment.subscription || null)
   }
 
@@ -1576,9 +1791,28 @@ async function handlePaymentPaid(payment: AsaasPayment) {
     return
   }
 
-  const ref = parseExternalReference(payment.externalReference)
   const method = mapAsaasBillingType(payment.billingType)
   const paidAmount = payment.value
+
+  if (ref.kind === 'upgrade' && ref.id && ref.extra) {
+    try {
+      const result = await applyPlanChange(ref.id, ref.extra)
+      await createNotification({
+        userId: null,
+        type: 'PAYMENT_SUCCEEDED',
+        title: 'Pagamento Recebido',
+        message: `Upgrade para ${result.newPlan.name} - R$ ${payment.value.toFixed(2).replace('.', ',')}`,
+        icon: 'CARD',
+        priority: 'NORMAL',
+        actionUrl: '/admin/atividades',
+        actionLabel: 'Ver Atividades',
+        metadata: { userId: ref.id, amount: payment.value, paymentId: payment.id, kind: 'upgrade' },
+      })
+    } catch (error: any) {
+      logger.error(`Falha ao aplicar upgrade ${ref.id} → ${ref.extra}:`, error.message)
+    }
+    return
+  }
 
   if (ref.kind === 'subscription') {
     await handleSubscriptionInvoicePaid(payment)
@@ -1813,7 +2047,6 @@ async function handleSubscriptionInvoicePaid(payment: AsaasPayment) {
     include: { subscription: { include: { plan: true } } },
   })
 
-  let planId = ref.extra || user?.subscription?.planId
   if (ref.kind === 'subscription' && ref.id) {
     user = (await prisma.user.findUnique({
       where: { id: ref.id },
@@ -1824,15 +2057,40 @@ async function handleSubscriptionInvoicePaid(payment: AsaasPayment) {
     logger.error(`Pagamento de assinatura sem usuário: ${payment.id}`)
     return
   }
+
+  const existing = await prisma.subscription.findUnique({
+    where: { userId: user.id },
+  })
+  const pendingPlanId = existing?.pendingPlanId || null
+  const planId = pendingPlanId || existing?.planId || ref.extra || null
   if (!planId) {
     logger.error(`Pagamento de assinatura sem planId: ${payment.id}`)
     return
   }
 
+  if (pendingPlanId) {
+    try {
+      await applyPlanChange(user.id, pendingPlanId)
+    } catch (error: any) {
+      logger.error(`Falha ao aplicar downgrade pendente ${user.id}:`, error.message)
+    }
+    await createNotification({
+      userId: null,
+      type: 'PAYMENT_SUCCEEDED',
+      title: 'Pagamento Recebido',
+      message: `${user.name} - R$ ${payment.value.toFixed(2).replace('.', ',')} (Assinatura)`,
+      icon: 'CARD',
+      priority: 'NORMAL',
+      actionUrl: '/admin/atividades',
+      actionLabel: 'Ver Atividades',
+      metadata: { userId: user.id, amount: payment.value, paymentId: payment.id },
+    })
+    return
+  }
+
   const plan = await prisma.subscriptionPlan.findUnique({ where: { id: planId } })
-  const existing = await prisma.subscription.findUnique({ where: { userId: user.id } })
   const asaasSubscriptionId = payment.subscription || existing?.asaasSubscriptionId || null
-  const isNew = !existing || existing.status !== 'ACTIVE' || existing.planId !== planId
+  const isNew = !existing || existing.status !== 'ACTIVE'
 
   await prisma.subscription.upsert({
     where: { userId: user.id },
@@ -1854,6 +2112,19 @@ async function handleSubscriptionInvoicePaid(payment: AsaasPayment) {
       startDate: new Date(),
     },
   })
+
+  if (plan && asaasSubscriptionId) {
+    try {
+      await syncAsaasSubscriptionPlan({
+        asaasSubscriptionId,
+        userId: user.id,
+        plan: { id: plan.id, name: plan.name, price: plan.price },
+        updatePendingPayments: false,
+      })
+    } catch (error: any) {
+      logger.warning(`Não sincronizou descrição Asaas na renovação: ${error.message}`)
+    }
+  }
 
   if (isNew && plan) {
     await notifySubscriptionActivated(user.id, {
@@ -1928,6 +2199,9 @@ async function handleSubscriptionUpdated(subscription: AsaasSubscription) {
     where: { asaasSubscriptionId: subscription.id },
   })
   if (!db) return
+  if (db.status === 'CANCELED' && db.endDate && db.endDate > new Date()) {
+    return
+  }
   let status: 'ACTIVE' | 'CANCELED' | 'PAST_DUE' | 'PAUSED' = 'ACTIVE'
   if (subscription.status === 'INACTIVE' || subscription.status === 'EXPIRED') status = 'CANCELED'
   else if (subscription.status === 'OVERDUE') status = 'PAST_DUE'
@@ -1943,10 +2217,17 @@ async function handleSubscriptionCanceled(subscription: AsaasSubscription) {
     include: { plan: true },
   })
   if (!db) return
-  const endDate = new Date()
+  if (db.status === 'CANCELED') {
+    return
+  }
+  const endDate = db.endDate && db.endDate > new Date() ? db.endDate : new Date()
   await prisma.subscription.update({
     where: { id: db.id },
-    data: { status: 'CANCELED', canceledAt: new Date(), endDate },
+    data: {
+      status: 'CANCELED',
+      canceledAt: db.canceledAt || new Date(),
+      endDate,
+    },
   })
   await notifySubscriptionCanceled(db.userId, {
     planName: db.plan.name,

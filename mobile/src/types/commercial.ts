@@ -134,6 +134,10 @@ export interface Subscription {
   status: SubscriptionStatus;
   startDate: string;
   endDate?: string | null;
+  nextDueDate?: string | null;
+  pendingPlanId?: string | null;
+  pendingPlan?: Plan | null;
+  pendingChangeAt?: string | null;
   minimumCommitmentEnd?: string | null;
   canceledAt?: string | null;
   currentMonthUsage: { totalTreatments: number };
@@ -141,6 +145,12 @@ export interface Subscription {
   remaining: { thisMonth: number; byMonth?: Record<string, number> };
   stripeSubscriptionId?: string | null;
   asaasSubscriptionId?: string | null;
+  scheduled?: boolean;
+  isUpgrade?: boolean;
+  effectiveAt?: string;
+  oldPlan?: string;
+  newPlan?: string;
+  message?: string;
 }
 
 export interface AvailableSlots {

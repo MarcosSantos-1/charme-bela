@@ -580,14 +580,28 @@ export async function listSubscriptionPayments(subscriptionId: string) {
   return asaasFetch<AsaasList<AsaasPayment>>(`/subscriptions/${subscriptionId}/payments`)
 }
 
-export async function updateSubscriptionValue(id: string, value: number) {
+export async function updateSubscription(
+  id: string,
+  input: {
+    value?: number
+    description?: string
+    externalReference?: string
+    updatePendingPayments?: boolean
+  },
+) {
   return asaasFetch<AsaasSubscription>(`/subscriptions/${id}`, {
     method: 'PUT',
     body: JSON.stringify({
-      value: Number(value.toFixed(2)),
-      updatePendingPayments: true,
+      ...(input.value != null ? { value: Number(input.value.toFixed(2)) } : {}),
+      ...(input.description ? { description: input.description.slice(0, 500) } : {}),
+      ...(input.externalReference ? { externalReference: input.externalReference.slice(0, 100) } : {}),
+      updatePendingPayments: input.updatePendingPayments !== false,
     }),
   })
+}
+
+export async function updateSubscriptionValue(id: string, value: number, updatePendingPayments = true) {
+  return updateSubscription(id, { value, updatePendingPayments })
 }
 
 export type AsaasCreditCardHolderInfo = {
@@ -694,6 +708,7 @@ export async function createCreditCardCheckout(input: {
   externalReference: string
   recurrent?: boolean
   billingTypes?: AsaasBillingType[]
+  successQuery?: string
 }) {
   const frontend = (process.env.FRONTEND_URL || 'https://localhost').replace(/\/$/, '')
   const email = asaasCustomerEmail(input.customerEmail)
@@ -715,7 +730,7 @@ export async function createCreditCardCheckout(input: {
         minutesToExpire: 60,
         externalReference: input.externalReference.slice(0, 200),
         callback: {
-          successUrl: `${frontend}/cliente/checkout?success=true`,
+          successUrl: `${frontend}/cliente/checkout?${input.successQuery || 'success=true'}`,
           cancelUrl: `${frontend}/cliente/checkout?canceled=true`,
           expiredUrl: `${frontend}/cliente/checkout?canceled=true`,
         },

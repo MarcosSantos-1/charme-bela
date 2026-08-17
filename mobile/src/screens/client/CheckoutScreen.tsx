@@ -25,6 +25,7 @@ import {
   chargeSavedCard,
   createCheckoutSession,
   createPaymentSession,
+  createUpgradeCheckout,
   getPaymentMethods,
   getPaymentStatus,
   updateSavedCard,
@@ -60,6 +61,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
   const { refresh } = useCommercial();
   const params = route.params;
   const isPlan = Boolean(params.planId);
+  const isUpgrade = Boolean(params.upgrade);
   const [phase, setPhase] = useState<Phase>(() =>
     isValidCpf(user?.cpf) ? 'loading' : 'need_cpf',
   );
@@ -107,7 +109,9 @@ export function CheckoutScreen({ route, navigation }: Props) {
     setPhase('loading');
     setError(null);
     try {
-      const checkout = params.planId
+      const checkout = params.upgrade && params.planId
+        ? await createUpgradeCheckout(user.id, params.planId, document)
+        : params.planId
         ? await createCheckoutSession(user.id, params.planId, document)
         : await createPaymentSession(
             user.id,
@@ -138,7 +142,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       setError(getApiErrorMessage(requestError, 'Não foi possível abrir o pagamento'));
       setPhase('error');
     }
-  }, [params.amount, params.appointmentId, params.customDescription, params.packagePurchaseId, params.planId, params.serviceId, user?.id]);
+  }, [params.amount, params.appointmentId, params.customDescription, params.packagePurchaseId, params.planId, params.serviceId, params.upgrade, user?.id]);
 
   useEffect(() => {
     if (!user) return;
@@ -281,7 +285,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
         appointmentId: params.appointmentId,
         packagePurchaseId: params.packagePurchaseId,
         savedCardId: card.id,
-        planId: params.planId,
+        planId: isUpgrade ? undefined : params.planId,
       });
       if (result.paid) {
         setPhase('paid');
@@ -383,7 +387,9 @@ export function CheckoutScreen({ route, navigation }: Props) {
           </View>
           <Text style={styles.successTitle}>Pagamento confirmado</Text>
           <Text style={styles.muted}>
-            {isPlan
+            {isUpgrade
+              ? 'Seu plano foi atualizado. Os novos tratamentos já podem ser agendados.'
+              : isPlan
               ? 'Sua assinatura está ativa. Os tratamentos do plano já podem ser agendados.'
               : 'Seu horário está reservado. A clínica confirma em seguida.'}
           </Text>
@@ -391,10 +397,11 @@ export function CheckoutScreen({ route, navigation }: Props) {
             style={styles.primaryButton}
             onPress={() => {
               setNicknameCard(null);
-              navigation.navigate('ClientTabs', { screen: 'Agenda' });
+              if (isPlan || isUpgrade) navigation.navigate('Plan');
+              else navigation.navigate('ClientTabs', { screen: 'Agenda' });
             }}
           >
-            <Text style={styles.primaryButtonText}>Ver agenda</Text>
+            <Text style={styles.primaryButtonText}>{isPlan || isUpgrade ? 'Ver meu plano' : 'Ver agenda'}</Text>
           </TouchableOpacity>
         </View>
       ) : null}

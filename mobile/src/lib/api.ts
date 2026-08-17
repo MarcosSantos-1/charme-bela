@@ -285,6 +285,24 @@ export async function createCheckoutSession(userId: string, planId: string, cpf?
   }>(response.data);
 }
 
+export async function createUpgradeCheckout(userId: string, planId: string, cpf?: string) {
+  const response = await api.post('/payments/upgrade', { userId, planId, cpf });
+  return unwrap<{
+    paymentId: string;
+    sessionId: string;
+    url: string | null;
+    invoiceUrl: string | null;
+    pixCopyPaste: string | null;
+    pixQrBase64: string | null;
+    expiresAt?: string | null;
+    amount: number;
+    description: string;
+    upgrade?: boolean;
+    newPlanId?: string;
+    newPlanName?: string;
+  }>(response.data);
+}
+
 export async function createPaymentSession(
   userId: string,
   serviceId: string,
@@ -356,6 +374,11 @@ export async function schedulePackageSessions(
 
 export async function changePlan(userId: string, newPlanId: string): Promise<Subscription> {
   const response = await api.put(`/subscriptions/${userId}/change-plan`, { newPlanId });
+  return unwrap<Subscription>(response.data);
+}
+
+export async function cancelPendingPlanChange(userId: string): Promise<Subscription> {
+  const response = await api.delete(`/subscriptions/${userId}/pending-plan`);
   return unwrap<Subscription>(response.data);
 }
 

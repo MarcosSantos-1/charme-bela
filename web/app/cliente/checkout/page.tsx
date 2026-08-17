@@ -35,10 +35,12 @@ function PayCheckout({
   paymentId,
   appointmentId,
   cardOnly,
+  isUpgrade,
 }: {
   paymentId: string
   appointmentId: string | null
   cardOnly: boolean
+  isUpgrade?: boolean
 }) {
   const router = useRouter()
   const { user } = useAuth()
@@ -94,8 +96,10 @@ function PayCheckout({
                 setNicknameDraft('')
                 return
               }
+              toast.success(isUpgrade ? 'Plano atualizado com sucesso!' : cardOnly ? 'Assinatura ativada!' : 'Pagamento confirmado')
               setTimeout(() => router.push(cardOnly ? '/cliente/plano' : '/cliente'), 1800)
             }).catch(() => {
+              toast.success(isUpgrade ? 'Plano atualizado com sucesso!' : cardOnly ? 'Assinatura ativada!' : 'Pagamento confirmado')
               setTimeout(() => router.push(cardOnly ? '/cliente/plano' : '/cliente'), 1800)
             })
           } else {
@@ -115,7 +119,7 @@ function PayCheckout({
       cancelled = true
       clearInterval(id)
     }
-  }, [cardOnly, paymentId, router, paid, user?.id])
+  }, [cardOnly, isUpgrade, paymentId, router, paid, user?.id])
 
   const payWithSaved = async (card: api.PaymentMethod) => {
     if (!user || chargingSavedId) return
@@ -129,7 +133,7 @@ function PayCheckout({
       })
       if (result.paid) {
         setPaid(true)
-        toast.success('Cartão cobrado')
+        toast.success(isUpgrade ? 'Plano atualizado com sucesso!' : 'Cartão cobrado')
         try {
           const methods = await api.getPaymentMethods(user.id)
           const unnamed = methods
@@ -172,7 +176,9 @@ function PayCheckout({
           <Check className="w-10 h-10 text-green-600" />
         </div>
         <h2 className="text-2xl font-bold text-gray-900">Pagamento confirmado</h2>
-        <p className="text-gray-600">{cardOnly ? 'Sua assinatura está ativa.' : 'Seu horário está reservado.'}</p>
+        <p className="text-gray-600">
+          {isUpgrade ? 'Seu plano foi atualizado. Redirecionando para Meu plano…' : cardOnly ? 'Sua assinatura está ativa.' : 'Seu horário está reservado.'}
+        </p>
         {nicknameCard ? (
           <div className="text-left rounded-2xl border border-pink-100 bg-pink-50 p-4 space-y-3">
             <p className="font-semibold text-gray-900">Apelido do cartão</p>
@@ -225,7 +231,9 @@ function PayCheckout({
           {amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
         </p>
         <p className="text-sm text-pink-100 mt-2">
-          {cardOnly
+          {isUpgrade
+            ? 'Upgrade no cartão de crédito. A diferença é cobrada agora e o plano troca na hora.'
+            : cardOnly
             ? 'Assinatura no cartão de crédito. Débito não renova o plano.'
             : 'Pague com Pix nesta tela ou crédito/débito no checkout seguro.'}
         </p>
@@ -335,6 +343,7 @@ function CheckoutContent() {
   const paymentId = searchParams.get('paymentId')
   const appointmentId = searchParams.get('appointmentId')
   const cardOnly = searchParams.get('plan') === '1'
+  const isUpgrade = searchParams.get('upgrade') === '1'
   const success = searchParams.get('success')
   const canceled = searchParams.get('canceled')
 
@@ -355,7 +364,7 @@ function CheckoutContent() {
       <ProtectedRoute requiredRole="CLIENT">
         <ClientLayout title="Pagamento">
           <div className="max-w-lg mx-auto px-4 py-6">
-            <PayCheckout paymentId={paymentId} appointmentId={appointmentId} cardOnly={cardOnly} />
+            <PayCheckout paymentId={paymentId} appointmentId={appointmentId} cardOnly={cardOnly} isUpgrade={isUpgrade} />
           </div>
         </ClientLayout>
       </ProtectedRoute>
@@ -387,11 +396,13 @@ function CheckoutContent() {
               <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
                 <Check className="w-10 h-10 text-green-600" />
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Pagamento confirmado</h2>
-              <p className="text-gray-600 mb-6">Agora você pode acompanhar seus agendamentos.</p>
-              <Button variant="primary" className="w-full" onClick={() => router.push('/cliente')}>
-                Ir para a área do cliente
-              </Button>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Pagamento confirmado</h2>
+                  <p className="text-gray-600 mb-6">
+                    {isUpgrade ? 'Seu plano foi atualizado.' : 'Agora você pode acompanhar seus agendamentos.'}
+                  </p>
+                  <Button variant="primary" className="w-full" onClick={() => router.push('/cliente/plano')}>
+                    Ir para Meu plano
+                  </Button>
             </div>
           </div>
         </ClientLayout>

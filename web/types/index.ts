@@ -61,6 +61,10 @@ export interface Subscription {
   status: 'ACTIVE' | 'CANCELED' | 'PAST_DUE' | 'PAUSED'
   startDate: string
   endDate?: string
+  nextDueDate?: string | null
+  pendingPlanId?: string | null
+  pendingPlan?: Plan | null
+  pendingChangeAt?: string | null
   minimumCommitmentEnd?: string
   currentMonthUsage?: {
     totalTreatments: number
@@ -73,6 +77,14 @@ export interface Subscription {
     thisMonth: number
     byMonth?: Record<string, number>
   }
+  stripeSubscriptionId?: string | null
+  asaasSubscriptionId?: string | null
+  scheduled?: boolean
+  isUpgrade?: boolean
+  effectiveAt?: string
+  oldPlan?: string
+  newPlan?: string
+  message?: string
 }
 
 export interface Appointment {

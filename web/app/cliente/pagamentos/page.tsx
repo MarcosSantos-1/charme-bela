@@ -174,6 +174,13 @@ function PagamentosContent() {
   }
 
   const getNextBillingDate = () => {
+    if (subscription?.nextDueDate) {
+      return new Date(subscription.nextDueDate).toLocaleDateString('pt-BR', { 
+        day: 'numeric', 
+        month: 'long', 
+        year: 'numeric' 
+      })
+    }
     if (!subscription?.startDate) return 'Não definido'
     
     const start = new Date(subscription.startDate)

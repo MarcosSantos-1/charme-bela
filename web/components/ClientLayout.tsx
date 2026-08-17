@@ -58,9 +58,12 @@ export function ClientLayout({ children, title }: ClientLayoutProps) {
   const getNextBillingDate = () => {
     if (!subscription?.startDate) return '-'
     
-    // Se for mês grátis, mostrar data de expiração
     if (isFreeMonth && subscription.endDate) {
       return new Date(subscription.endDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+    }
+
+    if (subscription.nextDueDate) {
+      return new Date(subscription.nextDueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
     }
     
     const start = new Date(subscription.startDate)

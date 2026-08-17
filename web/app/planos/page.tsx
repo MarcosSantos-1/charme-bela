@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
-import { getPlans, createCheckoutSession, changePlan, Plan } from '@/lib/api'
+import { getPlans, createCheckoutSession, createUpgradeCheckout, changePlan, Plan } from '@/lib/api'
 import { useSubscription } from '@/lib/hooks/useSubscription'
 
 export default function PlanosPage() {
@@ -61,26 +61,36 @@ export default function PlanosPage() {
     try {
       // Se JÁ TEM assinatura, troca de plano
       if (hasSubscription && subscription) {
-        // Verifica se é o mesmo plano
         if (subscription.planId === planId) {
           toast('Você já está neste plano! 😊', { icon: '✨' })
           return
         }
 
-        // Troca de plano
-        const response = await changePlan(user.id, planId)
-        
-        if (response.success) {
-          const { isUpgrade, newPlan } = response
-          toast.success(`Plano ${isUpgrade ? 'atualizado' : 'alterado'} para ${newPlan}! 🎉`)
-          
-          // Redireciona para página do plano
-          setTimeout(() => {
-            router.push('/cliente/plano')
-          }, 1500)
-        } else {
-          throw new Error(response.error || 'Erro ao trocar plano')
+        const target = plans.find((plan) => plan.id === planId)
+        const isUpgrade = (target?.price || 0) > subscription.plan.price
+        if (isUpgrade && subscription.asaasSubscriptionId) {
+          const payerCpf = window.prompt('Digite o CPF do titular do cartão (obrigatório pelo Asaas):')
+          const cpfDigits = (payerCpf || '').replace(/\D/g, '')
+          if (cpfDigits.length !== 11) {
+            toast.error('Informe um CPF válido com 11 dígitos')
+            return
+          }
+          const response = await createUpgradeCheckout(user.id, planId, cpfDigits)
+          const paymentId = (response as any).paymentId || (response as any).sessionId
+          if (paymentId) {
+            router.push(`/cliente/checkout?paymentId=${encodeURIComponent(paymentId)}&plan=1&upgrade=1`)
+            return
+          }
+          throw new Error('Erro ao criar sessão de pagamento')
         }
+
+        const response = await changePlan(user.id, planId)
+        toast.success(response.message || (response.scheduled
+          ? `Você continua no ${subscription.plan.name} até a próxima cobrança.`
+          : `Plano alterado para ${response.newPlan}!`))
+        setTimeout(() => {
+          router.push('/cliente/plano')
+        }, 1500)
       } else {
         // Se NÃO TEM assinatura, cria nova (via Asaas)
         const payerCpf = window.prompt('Digite o CPF do titular do cartão (obrigatório pelo Asaas):')

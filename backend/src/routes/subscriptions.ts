@@ -2,7 +2,14 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { buildRemainingByMonth } from '../utils/planUsage'
-import { cancelSubscription as cancelAsaasSubscription, getSubscription as getAsaasSubscription, updateSubscriptionValue } from '../lib/asaas'
+import { cancelSubscription as cancelAsaasSubscription, getSubscription as getAsaasSubscription } from '../lib/asaas'
+import {
+  applyPlanChange,
+  cancelScheduledPlanChange,
+  hasPaidClubSubscription,
+  resolveNextDueDate,
+  scheduleDowngrade,
+} from '../utils/planChange'
 
 /** Fim do ciclo já pago a partir do dia de aniversário da assinatura (fallback sem gateway). */
 function computeAccessUntilFromStartDate(startDate: Date, now: Date = new Date()): Date {
@@ -78,7 +85,8 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
             include: {
               services: true
             }
-          }
+          },
+          pendingPlan: true,
         }
       })
       
@@ -91,12 +99,14 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
       }
       
       const remaining = await buildRemainingByMonth(userId, subscription.plan.maxTreatmentsPerMonth)
+      const nextDueDate = await resolveNextDueDate(subscription)
       
       logger.success(`Assinatura encontrada: ${subscription.id}`)
       return reply.status(200).send({
         success: true,
         data: {
           ...subscription,
+          nextDueDate: nextDueDate.toISOString(),
           currentMonthUsage: {
             totalTreatments: subscription.plan.maxTreatmentsPerMonth - remaining.thisMonth
           },
@@ -280,7 +290,9 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           canceledAt: now,
           cancelReason,
           endDate: accessUntil,
-          minimumCommitmentEnd: null
+          minimumCommitmentEnd: null,
+          pendingPlanId: null,
+          pendingChangeAt: null,
         },
         include: {
           user: true,
@@ -406,13 +418,27 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
     }
   })
 
-  // PUT - Trocar de plano (upgrade/downgrade)
+  // PUT - Trocar de plano (upgrade exige checkout; downgrade é agendado)
   app.put('/subscriptions/:userId/change-plan', async (request, reply) => {
     const { userId } = request.params as { userId: string }
     logger.route('PUT', `/subscriptions/${userId}/change-plan`)
     
     try {
-      const { newPlanId } = request.body as { newPlanId: string }
+      const { newPlanId, cancelPending } = request.body as { newPlanId?: string; cancelPending?: boolean }
+
+      if (cancelPending) {
+        const updated = await cancelScheduledPlanChange(userId)
+        return reply.status(200).send({
+          success: true,
+          data: {
+            ...updated,
+            scheduled: false,
+            isUpgrade: false,
+            message: 'Troca de plano cancelada. Você permanece no plano atual.',
+          },
+          message: 'Troca de plano cancelada. Você permanece no plano atual.',
+        })
+      }
       
       if (!newPlanId) {
         return reply.status(400).send({
@@ -421,10 +447,9 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         })
       }
       
-      // Busca assinatura atual
       const subscription = await prisma.subscription.findUnique({
         where: { userId },
-        include: { plan: true }
+        include: { plan: true, pendingPlan: true }
       })
       
       if (!subscription) {
@@ -441,15 +466,13 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         })
       }
       
-      // Verifica se é o mesmo plano
-      if (subscription.planId === newPlanId) {
+      if (subscription.planId === newPlanId && !subscription.pendingPlanId) {
         return reply.status(400).send({
           success: false,
           error: 'Este já é o plano atual'
         })
       }
       
-      // Busca novo plano
       const newPlan = await prisma.subscriptionPlan.findUnique({
         where: { id: newPlanId }
       })
@@ -461,44 +484,95 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         })
       }
 
-      if (subscription.asaasSubscriptionId) {
-        try {
-          await updateSubscriptionValue(subscription.asaasSubscriptionId, newPlan.price)
-        } catch (asaasError: any) {
-          logger.error('Erro ao atualizar valor da assinatura Asaas:', asaasError.message)
-        }
-      }
-      
-      // Atualiza assinatura
-      const updatedSubscription = await prisma.subscription.update({
-        where: { userId },
-        data: {
-          planId: newPlanId
-        },
-        include: {
-          user: true,
-          plan: true
-        }
-      })
-      
+      const isFreeMonth = !hasPaidClubSubscription(subscription)
       const isUpgrade = newPlan.price > subscription.plan.price
-      
-      logger.success(`Plano ${isUpgrade ? 'upgraded' : 'downgraded'}: ${subscription.plan.name} → ${newPlan.name}`)
-      
+      const isDowngrade = newPlan.price < subscription.plan.price
+
+      if (isFreeMonth || (!isUpgrade && !isDowngrade && subscription.planId !== newPlanId)) {
+        const applied = await applyPlanChange(userId, newPlanId)
+        return reply.status(200).send({
+          success: true,
+          data: {
+            ...applied.subscription,
+            scheduled: false,
+            isUpgrade: applied.isUpgrade,
+            oldPlan: applied.oldPlan.name,
+            newPlan: applied.newPlan.name,
+            message: `Plano alterado para ${applied.newPlan.name} com sucesso!`,
+          },
+          isUpgrade: applied.isUpgrade,
+          oldPlan: applied.oldPlan.name,
+          newPlan: applied.newPlan.name,
+          message: `Plano alterado para ${applied.newPlan.name} com sucesso!`,
+        })
+      }
+
+      if (isUpgrade) {
+        const difference = Number((newPlan.price - subscription.plan.price).toFixed(2))
+        return reply.status(400).send({
+          success: false,
+          error: 'Upgrade exige pagamento da diferença no checkout',
+          requiresCheckout: true,
+          difference,
+          newPlanId: newPlan.id,
+          newPlanName: newPlan.name,
+        })
+      }
+
+      const scheduled = await scheduleDowngrade(userId, newPlanId)
+      const effectiveAt = scheduled.effectiveAt.toISOString()
       return reply.status(200).send({
         success: true,
-        data: updatedSubscription,
-        message: `Plano alterado para ${newPlan.name} com sucesso!`,
-        isUpgrade,
+        data: {
+          ...scheduled.subscription,
+          scheduled: true,
+          isUpgrade: false,
+          effectiveAt,
+          nextDueDate: effectiveAt,
+          pendingPlan: scheduled.pendingPlan,
+          oldPlan: subscription.plan.name,
+          newPlan: scheduled.pendingPlan.name,
+          message: `Você continua no ${subscription.plan.name} até ${scheduled.effectiveAt.toLocaleDateString('pt-BR')}. Depois passa para ${scheduled.pendingPlan.name}.`,
+        },
+        scheduled: true,
+        isUpgrade: false,
+        effectiveAt,
         oldPlan: subscription.plan.name,
-        newPlan: newPlan.name
+        newPlan: scheduled.pendingPlan.name,
+        message: `Você continua no ${subscription.plan.name} até ${scheduled.effectiveAt.toLocaleDateString('pt-BR')}. Depois passa para ${scheduled.pendingPlan.name}.`,
       })
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Erro ao trocar plano:', error)
-      return reply.status(500).send({
+      const message = error?.message || 'Erro ao trocar plano'
+      const status =
+        /não encontrada/i.test(message) ? 404 :
+        /obrigatório|ativas|já é o plano|Downgrade|agendada/i.test(message) ? 400 :
+        500
+      return reply.status(status).send({
         success: false,
-        error: 'Erro ao trocar plano'
+        error: message
       })
+    }
+  })
+
+  app.delete('/subscriptions/:userId/pending-plan', async (request, reply) => {
+    const { userId } = request.params as { userId: string }
+    logger.route('DELETE', `/subscriptions/${userId}/pending-plan`)
+    try {
+      const updated = await cancelScheduledPlanChange(userId)
+      return reply.status(200).send({
+        success: true,
+        data: {
+          ...updated,
+          scheduled: false,
+          message: 'Troca de plano cancelada. Você permanece no plano atual.',
+        },
+        message: 'Troca de plano cancelada. Você permanece no plano atual.',
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Erro ao cancelar troca de plano'
+      const status = /não encontrada/i.test(message) ? 404 : /agendada/i.test(message) ? 400 : 500
+      return reply.status(status).send({ success: false, error: message })
     }
   })
   

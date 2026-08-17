@@ -140,6 +140,11 @@ export interface Subscription {
   plan: Plan
   status: 'ACTIVE' | 'CANCELED' | 'PAST_DUE' | 'PAUSED'
   startDate: string
+  endDate?: string
+  nextDueDate?: string | null
+  pendingPlanId?: string | null
+  pendingPlan?: Plan | null
+  pendingChangeAt?: string | null
   minimumCommitmentEnd?: string
   currentMonthUsage?: {
     totalTreatments: number
@@ -154,6 +159,12 @@ export interface Subscription {
   }
   stripeSubscriptionId?: string | null
   asaasSubscriptionId?: string | null
+  scheduled?: boolean
+  isUpgrade?: boolean
+  effectiveAt?: string
+  oldPlan?: string
+  newPlan?: string
+  message?: string
 }
 
 export interface AnamnesisForm {
@@ -1201,6 +1212,9 @@ export interface CheckoutSessionResponse {
   expiresAt?: string | null
   amount?: number
   description?: string
+  upgrade?: boolean
+  newPlanId?: string
+  newPlanName?: string
 }
 
 export interface CustomerPortalResponse {
@@ -1399,11 +1413,28 @@ export async function getPaymentHistory(userId: string): Promise<PaymentHistory[
   }
 }
 
+export async function createUpgradeCheckout(
+  userId: string,
+  planId: string,
+  cpf?: string
+): Promise<CheckoutSessionResponse> {
+  return apiRequest('/payments/upgrade', {
+    method: 'POST',
+    body: JSON.stringify({ userId, planId, cpf })
+  })
+}
+
 // Trocar de plano (upgrade/downgrade)
 export async function changePlan(userId: string, newPlanId: string): Promise<any> {
   return apiRequest(`/subscriptions/${userId}/change-plan`, {
     method: 'PUT',
     body: JSON.stringify({ newPlanId })
+  })
+}
+
+export async function cancelPendingPlanChange(userId: string): Promise<any> {
+  return apiRequest(`/subscriptions/${userId}/pending-plan`, {
+    method: 'DELETE',
   })
 }
 

@@ -15,7 +15,7 @@ import toast from 'react-hot-toast'
 export default function PlanoPage() {
   const router = useRouter()
   const { user } = useAuth()
-  const { subscription, hasSubscription, remainingTreatments, cancelSubscription, loading: subLoading } = useSubscription(user?.id)
+  const { subscription, hasSubscription, remainingTreatments, cancelSubscription, loading: subLoading, refetch } = useSubscription(user?.id)
   
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,42 +64,55 @@ export default function PlanoPage() {
   
   // Cancelamento livre: cliente usa o plano até o fim do período já pago
   
+  const handleCancelPending = async () => {
+    if (!user) return
+    try {
+      await api.cancelPendingPlanChange(user.id)
+      toast.success('Troca cancelada. Você permanece no plano atual.')
+      await refetch()
+    } catch (error: any) {
+      toast.error(error.message || 'Não foi possível cancelar a troca')
+    }
+  }
+
   const handleUpgrade = async (planId: string) => {
     if (!user) return
     
     setProcessingPlanId(planId)
     
     try {
-      console.log('📊 Estado atual:', { 
-        hasSubscription, 
-        subscriptionId: subscription?.id,
-        planId 
-      })
-      
-      // Se JÁ TEM assinatura → Troca de plano
+      const target = plans.find((plan) => plan.id === planId)
       if (hasSubscription && subscription) {
-        console.log('🔄 Trocando plano...', { userId: user.id, planId })
+        const isUpgrade = (target?.price || 0) > subscription.plan.price
+        if (isUpgrade && subscription.asaasSubscriptionId) {
+          const payerCpf = window.prompt('Digite o CPF do titular do cartão (obrigatório pelo Asaas):')
+          const cpfDigits = (payerCpf || '').replace(/\D/g, '')
+          if (cpfDigits.length !== 11) {
+            toast.error('Informe um CPF válido com 11 dígitos')
+            return
+          }
+          const checkoutData = await api.createUpgradeCheckout(user.id, planId, cpfDigits)
+          const paymentId = checkoutData?.paymentId || checkoutData?.sessionId
+          if (paymentId) {
+            setSelectedPlanForUpgrade(null)
+            router.push(`/cliente/checkout?paymentId=${encodeURIComponent(paymentId)}&plan=1&upgrade=1`)
+            return
+          }
+          throw new Error('URL do checkout não encontrada')
+        }
+
         const response = await api.changePlan(user.id, planId)
-        
-        console.log('🔄 Resposta do backend:', response)
-        
-        // changePlan retorna direto o data (por causa do apiRequest)
         if (response) {
-          const { isUpgrade, newPlan } = response
-          toast.success(`Plano ${isUpgrade ? 'atualizado' : 'alterado'} para ${newPlan}! 🎉`)
+          toast.success(response.message || (response.scheduled
+            ? `Você continua no ${subscription.plan.name} até a próxima cobrança.`
+            : `Plano alterado para ${response.newPlan || target?.name}!`))
           setSelectedPlanForUpgrade(null)
-          
-          // Recarrega página
-          setTimeout(() => {
-            window.location.reload()
-          }, 1500)
+          await refetch()
         } else {
           throw new Error('Erro ao trocar plano')
         }
       } 
-      // Se NÃO TEM assinatura → Cria nova via Asaas
       else {
-        console.log('🔵 Criando checkout session...', { userId: user.id, planId })
         const payerCpf = window.prompt('Digite o CPF do titular do cartão (obrigatório pelo Asaas):')
         const cpfDigits = (payerCpf || '').replace(/\D/g, '')
         if (cpfDigits.length !== 11) {
@@ -108,20 +121,16 @@ export default function PlanoPage() {
         }
         const checkoutData = await api.createCheckoutSession(user.id, planId, cpfDigits)
         
-        console.log('🔵 Dados do checkout:', checkoutData)
-        
         if (checkoutData?.paymentId || checkoutData?.sessionId) {
           router.push(`/cliente/checkout?paymentId=${encodeURIComponent(checkoutData.paymentId || checkoutData.sessionId)}&plan=1`)
         } else if (checkoutData?.url || checkoutData?.invoiceUrl) {
           window.location.href = checkoutData.url || checkoutData.invoiceUrl || ''
         } else {
-          console.error('❌ Dados inválidos:', checkoutData)
           throw new Error('URL do checkout não encontrada')
         }
       }
     } catch (error: any) {
-      console.error('❌ Erro ao processar plano:', error)
-      console.error('❌ Detalhes:', error.response || error.message)
+      console.error('Erro ao processar plano:', error)
       toast.error(error.message || 'Erro ao processar. Tente novamente.')
     } finally {
       setProcessingPlanId(null)
@@ -131,15 +140,19 @@ export default function PlanoPage() {
   // Verificar se é mês grátis (sem gateway)
   const isFreeMonth = subscription && !subscription.stripeSubscriptionId && !subscription.asaasSubscriptionId
   
-  // Formatar data de próxima cobrança
+  const formatPlanDate = (value?: string | null) => {
+    if (!value) return '-'
+    return new Date(value).toLocaleDateString('pt-BR')
+  }
+
   const getNextBillingDate = () => {
-    if (!subscription?.startDate) return '-'
-    
-    // Se for mês grátis, mostrar data de expiração ao invés de cobrança
-    if (isFreeMonth && subscription.endDate) {
-      return `Válido até ${new Date(subscription.endDate).toLocaleDateString('pt-BR')}`
+    if (isFreeMonth && subscription?.endDate) {
+      return `Válido até ${formatPlanDate(subscription.endDate)}`
     }
-    
+    if (subscription?.nextDueDate) {
+      return formatPlanDate(subscription.nextDueDate)
+    }
+    if (!subscription?.startDate) return '-'
     const start = new Date(subscription.startDate)
     const next = new Date(start)
     next.setMonth(next.getMonth() + 1)
@@ -204,6 +217,24 @@ export default function PlanoPage() {
                   </div>
                 )}
               </div>
+
+              {subscription.pendingPlan ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                  <p className="font-semibold text-amber-900">
+                    Downgrade agendado para {subscription.pendingPlan.name}
+                  </p>
+                  <p className="text-sm text-amber-800 mt-1">
+                    Você continua no {subscription.plan.name} até {getNextBillingDate()}. A partir da próxima cobrança o valor passa a ser R$ {subscription.pendingPlan.price.toFixed(2)}/mês.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void handleCancelPending()}
+                    className="mt-3 text-sm font-semibold text-amber-900 underline"
+                  >
+                    Desfazer troca
+                  </button>
+                </div>
+              ) : null}
 
               {/* Plan Benefits - Serviços Inclusos */}
               <div className="bg-white rounded-2xl p-6">
@@ -421,7 +452,11 @@ export default function PlanoPage() {
                   }`} />
                 </div>
                 <h2 className="text-xl font-bold text-gray-900 mb-2">
-                  {hasSubscription ? 'Alterar para' : 'Assinar'} {selectedPlanForUpgrade.name}
+                  {hasSubscription
+                    ? selectedPlanForUpgrade.price > (subscription?.plan.price || 0)
+                      ? `Fazer upgrade para ${selectedPlanForUpgrade.name}`
+                      : `Mudar para ${selectedPlanForUpgrade.name}`
+                    : `Assinar ${selectedPlanForUpgrade.name}`}
                 </h2>
                 <p className="text-gray-600 mb-4">
                   Acesso a {selectedPlanForUpgrade.services.length} tratamentos e {selectedPlanForUpgrade.maxTreatmentsPerMonth} sessões por mês!
@@ -442,8 +477,8 @@ export default function PlanoPage() {
                   {hasSubscription && subscription && (
                     <div className="text-xs text-gray-500 mt-1">
                       {selectedPlanForUpgrade.price > subscription.plan.price 
-                        ? `Diferença de +R$ ${(selectedPlanForUpgrade.price - subscription.plan.price).toFixed(2)}/mês`
-                        : `Economia de R$ ${(subscription.plan.price - selectedPlanForUpgrade.price).toFixed(2)}/mês`
+                        ? `Cobra agora a diferença de R$ ${(selectedPlanForUpgrade.price - subscription.plan.price).toFixed(2)}. O plano troca na hora.`
+                        : `Você continua no ${subscription.plan.name} até ${getNextBillingDate()}. Depois passa para ${selectedPlanForUpgrade.name}.`
                       }
                     </div>
                   )}
@@ -463,7 +498,11 @@ export default function PlanoPage() {
                       Processando...
                     </>
                   ) : (
-                    hasSubscription ? 'Confirmar Alteração' : 'Confirmar Assinatura'
+                    hasSubscription
+                      ? selectedPlanForUpgrade.price > (subscription?.plan.price || 0)
+                        ? 'Pagar diferença e atualizar'
+                        : 'Agendar troca'
+                      : 'Confirmar Assinatura'
                   )}
                 </Button>
                 <Button

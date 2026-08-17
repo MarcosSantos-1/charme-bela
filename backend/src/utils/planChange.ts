@@ -41,6 +41,40 @@ export function hasPaidClubSubscription(sub?: {
   return Boolean(sub && sub.status === 'ACTIVE' && sub.asaasSubscriptionId)
 }
 
+export function isCancelInProgress(sub?: {
+  status?: string | null
+  endDate?: Date | string | null
+} | null) {
+  if (!sub || sub.status !== 'CANCELED' || !sub.endDate) return false
+  return new Date(sub.endDate).getTime() > Date.now()
+}
+
+export function formatPlanDatePtBr(value: Date | string) {
+  return new Date(value).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+}
+
+/** Dia seguinte ao último dia pago — volta a ser o nextDueDate da recorrência. */
+export function nextDueIsoAfterAccessUntil(endDate: Date | string) {
+  const iso = new Date(endDate).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+  const [year, month, day] = iso.split('-').map(Number)
+  const next = new Date(Date.UTC(year, month - 1, day + 1))
+  return next.toISOString().slice(0, 10)
+}
+
+export function clubAlreadyCoveredError(sub?: {
+  status?: string | null
+  asaasSubscriptionId?: string | null
+  endDate?: Date | string | null
+} | null) {
+  if (isCancelInProgress(sub) && sub?.endDate) {
+    return `Você tem um cancelamento em andamento e o plano vale até ${formatPlanDatePtBr(sub.endDate)}. Desfaça o cancelamento em Meu plano — não é preciso pagar de novo.`
+  }
+  if (hasPaidClubSubscription(sub)) {
+    return 'Você já tem um plano ativo. Use a troca de plano para upgrade ou downgrade.'
+  }
+  return null
+}
+
 export function computeNextBillingDate(startDate: Date, now: Date = new Date()): Date {
   const dayOfMonth = startDate.getDate()
   const next = new Date(now)

@@ -497,8 +497,8 @@ export async function notifySubscriptionCanceled(
   return createNotification({
     userId,
     type: 'SUBSCRIPTION_CANCELED',
-    title: 'Assinatura Cancelada',
-    message: `Sua assinatura ${subscriptionData.planName} foi cancelada e terminará em ${endDate}. Sentiremos sua falta! 💔`,
+    title: 'Cancelamento em andamento',
+    message: `Não se preocupe: você tem até o dia ${endDate} para aproveitar seu plano. Se mudar de ideia, desfaça o cancelamento em Meu plano — sem pagar de novo.`,
     icon: 'ALERT',
     priority: 'HIGH',
     actionUrl: '/cliente/plano',

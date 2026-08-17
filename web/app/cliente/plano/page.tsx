@@ -15,11 +15,14 @@ import toast from 'react-hot-toast'
 export default function PlanoPage() {
   const router = useRouter()
   const { user } = useAuth()
-  const { subscription, hasSubscription, remainingTreatments, cancelSubscription, loading: subLoading, refetch } = useSubscription(user?.id)
+  const { subscription, hasSubscription, cancelInProgress, remainingTreatments, cancelSubscription, reactivateSubscription, loading: subLoading, refetch } = useSubscription(user?.id)
   
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
   const [showCancelModal, setShowCancelModal] = useState(false)
+  const [showCancelResultModal, setShowCancelResultModal] = useState(false)
+  const [cancelUntilLabel, setCancelUntilLabel] = useState<string | null>(null)
+  const [undoingCancel, setUndoingCancel] = useState(false)
   const [selectedPlanForUpgrade, setSelectedPlanForUpgrade] = useState<Plan | null>(null)
   const [processingPlanId, setProcessingPlanId] = useState<string | null>(null)
 
@@ -45,20 +48,23 @@ export default function PlanoPage() {
     try {
       const result = await cancelSubscription('Cliente solicitou cancelamento')
       setShowCancelModal(false)
-      
-      // Mostra mensagem sobre acesso restante
-      toast.success(
-        `Plano cancelado. Você pode usar até ${subscription.endDate ? new Date(subscription.endDate).toLocaleDateString('pt-BR') : 'o fim do ciclo'}`,
-        { duration: 6000 }
-      )
-      
-      // Aguarda um pouco para o usuário ler a mensagem
-      setTimeout(() => {
-        router.push('/cliente')
-      }, 1000)
+      const until = result?.endDate ? formatPlanDate(result.endDate) : null
+      setCancelUntilLabel(until)
+      setShowCancelResultModal(true)
     } catch (error: any) {
-      // Erro já tratado no hook
       console.error('Erro ao cancelar:', error)
+    }
+  }
+
+  const handleUndoCancel = async () => {
+    setUndoingCancel(true)
+    try {
+      await reactivateSubscription()
+      setShowCancelResultModal(false)
+    } catch {
+      // toast no hook
+    } finally {
+      setUndoingCancel(false)
     }
   }
   
@@ -83,6 +89,10 @@ export default function PlanoPage() {
     try {
       const target = plans.find((plan) => plan.id === planId)
       if (hasSubscription && subscription) {
+        if (cancelInProgress) {
+          toast.error('Desfaça o cancelamento em Meu plano para trocar de plano. Você não precisa pagar de novo.')
+          return
+        }
         const isUpgrade = (target?.price || 0) > subscription.plan.price
         if (isUpgrade && subscription.asaasSubscriptionId) {
           const payerCpf = window.prompt('Digite o CPF do titular do cartão (obrigatório pelo Asaas):')
@@ -174,9 +184,9 @@ export default function PlanoPage() {
                 <div className="flex items-center justify-between mb-4">
                   <Sparkles className="w-8 h-8" />
                   <span className={`px-3 py-1 backdrop-blur-sm rounded-full text-xs font-medium ${
-                    subscription.status === 'ACTIVE' ? 'bg-green-500/30' : 'bg-red-500/30'
+                    cancelInProgress ? 'bg-amber-500/30' : subscription.status === 'ACTIVE' ? 'bg-green-500/30' : 'bg-red-500/30'
                   }`}>
-                    {subscription.status === 'ACTIVE' ? 'Ativo' : subscription.status}
+                    {cancelInProgress ? 'Em cancelamento' : subscription.status === 'ACTIVE' ? 'Ativo' : subscription.status}
                   </span>
                 </div>
                 <h2 className="text-2xl font-bold mb-1">{subscription.plan.name}</h2>
@@ -209,6 +219,11 @@ export default function PlanoPage() {
                       <span className="text-green-100 font-medium">🎁 Mês Grátis</span>
                       <span className="font-semibold text-white">{getNextBillingDate()}</span>
                     </div>
+                  </div>
+                ) : cancelInProgress && subscription.endDate ? (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-pink-100">Acesso até</span>
+                    <span className="font-semibold">{formatPlanDate(subscription.endDate)}</span>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between text-sm">
@@ -369,7 +384,29 @@ export default function PlanoPage() {
           </div>
 
           {/* Danger Zone - Só aparece se tiver assinatura */}
-          {hasSubscription && subscription && (
+          {hasSubscription && subscription && cancelInProgress ? (
+            <div className="bg-amber-50 rounded-2xl p-6 border-2 border-amber-200">
+              <div className="flex items-start space-x-3 mb-4">
+                <AlertCircle className="w-5 h-5 text-amber-700 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-gray-900">Sobre o cancelamento da assinatura</h3>
+                  <p className="text-sm text-gray-700 mt-1">
+                    Não se preocupe, você tem até o dia{' '}
+                    <strong>{subscription.endDate ? formatPlanDate(subscription.endDate) : getNextBillingDate()}</strong>{' '}
+                    para aproveitar seu plano. Se mudar de ideia, desfaça o cancelamento — sem pagar de novo. A próxima cobrança volta só na data da recorrência.
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="primary"
+                className="w-full"
+                onClick={() => void handleUndoCancel()}
+                disabled={undoingCancel}
+              >
+                {undoingCancel ? 'Retomando…' : 'Desfazer cancelamento'}
+              </Button>
+            </div>
+          ) : hasSubscription && subscription ? (
             <div className="bg-white rounded-2xl p-6 border-2 border-red-200">
               <div className="flex items-start space-x-3 mb-4">
                 <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
@@ -389,7 +426,7 @@ export default function PlanoPage() {
                 Cancelar Plano
               </Button>
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Cancel Modal */}
@@ -429,6 +466,42 @@ export default function PlanoPage() {
                   onClick={() => setShowCancelModal(false)}
                 >
                   Manter meu plano
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showCancelResultModal && subscription && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center">
+            <div className="bg-white w-full md:max-w-lg md:rounded-2xl rounded-t-2xl p-6">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-8 h-8 text-amber-700" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900 mb-2">Sobre o cancelamento da assinatura</h2>
+                <p className="text-gray-700">
+                  Não se preocupe, você tem até o dia{' '}
+                  <strong>
+                    {cancelUntilLabel || (subscription.endDate ? formatPlanDate(subscription.endDate) : getNextBillingDate())}
+                  </strong>{' '}
+                  para aproveitar seu plano.
+                </p>
+                <p className="text-sm text-gray-500 mt-3">
+                  Se mudar de ideia, desfaça o cancelamento. Você não precisa pagar de novo — a próxima cobrança volta só na data da recorrência.
+                </p>
+              </div>
+              <div className="space-y-3">
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  onClick={() => void handleUndoCancel()}
+                  disabled={undoingCancel}
+                >
+                  {undoingCancel ? 'Retomando…' : 'Desfazer cancelamento'}
+                </Button>
+                <Button variant="outline" className="w-full" onClick={() => setShowCancelResultModal(false)}>
+                  Entendi
                 </Button>
               </div>
             </div>

@@ -22,7 +22,7 @@ import { useSubscription } from '@/lib/hooks/useSubscription'
 export default function PlanosPage() {
   const router = useRouter()
   const { user } = useAuth()
-  const { subscription, hasSubscription } = useSubscription(user?.id)
+  const { subscription, hasSubscription, cancelInProgress } = useSubscription(user?.id)
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
   const [processingPlanId, setProcessingPlanId] = useState<string | null>(null)
@@ -59,6 +59,11 @@ export default function PlanosPage() {
     setProcessingPlanId(planId)
 
     try {
+      if (cancelInProgress) {
+        toast('Você tem um cancelamento em andamento. Desfaça em Meu plano — não é preciso pagar de novo.')
+        router.push('/cliente/plano')
+        return
+      }
       // Se JÁ TEM assinatura, troca de plano
       if (hasSubscription && subscription) {
         if (subscription.planId === planId) {

@@ -51,6 +51,7 @@ import {
 } from '../utils/notifications'
 import {
   applyPlanChange,
+  clubAlreadyCoveredError,
   clubSubscriptionReference,
   hasPaidClubSubscription,
   isLikelyUpgradeHistoryPayment,
@@ -751,10 +752,11 @@ export async function paymentsRoutes(app: FastifyInstance) {
       if (!plan) {
         return reply.status(404).send({ success: false, error: 'Plano não encontrado' })
       }
-      if (hasPaidClubSubscription(user.subscription)) {
+      const covered = clubAlreadyCoveredError(user.subscription)
+      if (covered) {
         return reply.status(400).send({
           success: false,
-          error: 'Você já tem um plano ativo. Use a troca de plano para upgrade ou downgrade.',
+          error: covered,
         })
       }
 
@@ -1332,10 +1334,11 @@ export async function paymentsRoutes(app: FastifyInstance) {
       const remoteIp = clientIp(request)
 
       if (body.planId) {
-        if (hasPaidClubSubscription(user.subscription)) {
+        const covered = clubAlreadyCoveredError(user.subscription)
+        if (covered) {
           return reply.status(400).send({
             success: false,
-            error: 'Você já tem um plano ativo. Use a troca de plano para upgrade ou downgrade.',
+            error: covered,
           })
         }
         const plan = await prisma.subscriptionPlan.findUnique({ where: { id: body.planId } })

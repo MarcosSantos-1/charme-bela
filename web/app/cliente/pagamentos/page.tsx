@@ -85,7 +85,7 @@ function PaymentAlerts() {
 
 function PagamentosContent() {
   const { user } = useAuth()
-  const { subscription, hasSubscription, loading: subLoading } = useSubscription(user?.id)
+  const { subscription, hasSubscription, cancelInProgress, loading: subLoading } = useSubscription(user?.id)
   
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([])
@@ -341,13 +341,16 @@ function PagamentosContent() {
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Status</span>
                     <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      subscription.status === 'ACTIVE' 
+                      cancelInProgress
+                        ? 'bg-amber-100 text-amber-800'
+                        : subscription.status === 'ACTIVE' 
                         ? 'bg-green-100 text-green-700'
                         : subscription.status === 'CANCELED'
                         ? 'bg-red-100 text-red-700'
                         : 'bg-yellow-100 text-yellow-700'
                     }`}>
-                      {subscription.status === 'ACTIVE' ? 'Ativo' : 
+                      {cancelInProgress ? 'Em cancelamento' :
+                       subscription.status === 'ACTIVE' ? 'Ativo' : 
                        subscription.status === 'CANCELED' ? 'Cancelado' : 
                        subscription.status === 'PAST_DUE' ? 'Em atraso' : subscription.status}
                     </span>

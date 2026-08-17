@@ -554,6 +554,7 @@ export async function createSubscription(input: {
   billingType?: AsaasBillingType
   creditCardToken?: string
   remoteIp?: string
+  nextDueDate?: string
 }) {
   return asaasFetch<AsaasSubscription>('/subscriptions', {
     method: 'POST',
@@ -561,7 +562,7 @@ export async function createSubscription(input: {
       customer: input.customer,
       billingType: input.billingType || 'CREDIT_CARD',
       value: Number(input.value.toFixed(2)),
-      nextDueDate: todaySaoPauloISODate(),
+      nextDueDate: input.nextDueDate || todaySaoPauloISODate(),
       cycle: input.cycle || 'MONTHLY',
       description: input.description.slice(0, 500),
       externalReference: input.externalReference.slice(0, 100),
@@ -587,6 +588,8 @@ export async function updateSubscription(
     description?: string
     externalReference?: string
     updatePendingPayments?: boolean
+    status?: 'ACTIVE' | 'INACTIVE'
+    nextDueDate?: string
   },
 ) {
   return asaasFetch<AsaasSubscription>(`/subscriptions/${id}`, {
@@ -595,9 +598,24 @@ export async function updateSubscription(
       ...(input.value != null ? { value: Number(input.value.toFixed(2)) } : {}),
       ...(input.description ? { description: input.description.slice(0, 500) } : {}),
       ...(input.externalReference ? { externalReference: input.externalReference.slice(0, 100) } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.nextDueDate ? { nextDueDate: input.nextDueDate } : {}),
       updatePendingPayments: input.updatePendingPayments !== false,
     }),
   })
+}
+
+export async function cancelPendingSubscriptionPayments(subscriptionId: string) {
+  try {
+    const listed = await listSubscriptionPayments(subscriptionId)
+    for (const item of listed.data || []) {
+      if (item.status === 'PENDING' || item.status === 'OVERDUE') {
+        await cancelPaymentSilent(item.id)
+      }
+    }
+  } catch (error: any) {
+    logger.warning(`Não foi possível limpar cobranças pendentes de ${subscriptionId}: ${error.message}`)
+  }
 }
 
 export async function updateSubscriptionValue(id: string, value: number, updatePendingPayments = true) {

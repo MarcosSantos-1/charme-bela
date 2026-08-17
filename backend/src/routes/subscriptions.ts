@@ -2,11 +2,21 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { buildRemainingByMonth } from '../utils/planUsage'
-import { cancelSubscription as cancelAsaasSubscription, getSubscription as getAsaasSubscription } from '../lib/asaas'
+import {
+  cancelPendingSubscriptionPayments,
+  cancelSubscription as cancelAsaasSubscription,
+  createSubscription as createAsaasSubscription,
+  getSubscription as getAsaasSubscription,
+  updateSubscription as updateAsaasSubscription,
+} from '../lib/asaas'
 import {
   applyPlanChange,
   cancelScheduledPlanChange,
+  clubSubscriptionReference,
+  formatPlanDatePtBr,
   hasPaidClubSubscription,
+  isCancelInProgress,
+  nextDueIsoAfterAccessUntil,
   recoverMissedUpgrade,
   resolveNextDueDate,
   scheduleDowngrade,
@@ -101,13 +111,18 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
       }
       
       const remaining = await buildRemainingByMonth(userId, subscription.plan.maxTreatmentsPerMonth)
-      const nextDueDate = await resolveNextDueDate(subscription)
+      const cancelInProgress = isCancelInProgress(subscription)
+      const nextDueDate =
+        cancelInProgress && subscription.endDate
+          ? new Date(`${nextDueIsoAfterAccessUntil(subscription.endDate)}T12:00:00.000-03:00`)
+          : await resolveNextDueDate(subscription)
       
       logger.success(`Assinatura encontrada: ${subscription.id}`)
       return reply.status(200).send({
         success: true,
         data: {
           ...subscription,
+          cancelInProgress,
           nextDueDate: nextDueDate.toISOString(),
           currentMonthUsage: {
             totalTreatments: subscription.plan.maxTreatmentsPerMonth - remaining.thisMonth
@@ -253,6 +268,15 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
       }
       
       if (subscription.status === 'CANCELED') {
+        if (isCancelInProgress(subscription) && subscription.endDate) {
+          const until = formatPlanDatePtBr(subscription.endDate)
+          return reply.status(200).send({
+            success: true,
+            data: { ...subscription, cancelInProgress: true },
+            accessUntil: subscription.endDate,
+            message: `O cancelamento já está em andamento. Você tem até ${until} para aproveitar seu plano.`,
+          })
+        }
         return reply.status(400).send({
           success: false,
           error: 'Assinatura já está cancelada'
@@ -274,17 +298,17 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           } else {
             accessUntil = computeAccessUntilFromStartDate(subscription.startDate, now)
           }
-          await cancelAsaasSubscription(subscription.asaasSubscriptionId)
-          logger.info(`Asaas: assinatura inativada; acesso até ${accessUntil.toISOString()}`)
         } catch (asaasError: any) {
-          logger.error('Erro ao cancelar no Asaas (seguindo com cálculo local):', asaasError.message)
+          logger.error('Erro ao ler assinatura Asaas (seguindo com cálculo local):', asaasError.message)
           accessUntil = computeAccessUntilFromStartDate(subscription.startDate, now)
         }
       } else {
         accessUntil = computeAccessUntilFromStartDate(subscription.startDate, now)
       }
-      
-      // Cancela a assinatura mas mantém acesso até o fim do período pago
+
+      const untilLabel = formatPlanDatePtBr(accessUntil)
+      const cancelMessage = `Não se preocupe, você tem até o dia ${untilLabel} para aproveitar seu plano.`
+
       const updatedSubscription = await prisma.subscription.update({
         where: { userId },
         data: {
@@ -301,15 +325,45 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           plan: true
         }
       })
+
+      if (subscription.asaasSubscriptionId) {
+        try {
+          await updateAsaasSubscription(subscription.asaasSubscriptionId, {
+            status: 'INACTIVE',
+            updatePendingPayments: false,
+          })
+          await cancelPendingSubscriptionPayments(subscription.asaasSubscriptionId)
+          logger.info(`Asaas: recorrência suspensa; acesso até ${accessUntil.toISOString()}`)
+        } catch (asaasError: any) {
+          logger.warning(`Não foi possível pausar no Asaas, tentando inativar: ${asaasError.message}`)
+          try {
+            await cancelAsaasSubscription(subscription.asaasSubscriptionId)
+            await cancelPendingSubscriptionPayments(subscription.asaasSubscriptionId)
+          } catch (deleteError: any) {
+            logger.error('Erro ao cancelar no Asaas (seguindo com cancelamento local):', deleteError.message)
+          }
+        }
+      }
+
+      try {
+        const { notifySubscriptionCanceled } = await import('../utils/notifications')
+        await notifySubscriptionCanceled(userId, {
+          planName: updatedSubscription.plan.name,
+          endDate: accessUntil,
+        })
+      } catch (notifyError: any) {
+        logger.warning(`Não foi possível notificar cancelamento: ${notifyError.message}`)
+      }
       
-      logger.info(`Assinatura cancelada. Acesso mantido até: ${accessUntil.toISOString()}`)
-      
-      logger.success(`Assinatura cancelada: ${userId}`)
+      logger.success(`Cancelamento registrado: ${userId} (acesso até ${accessUntil.toISOString()})`)
       return reply.status(200).send({
         success: true,
-        data: updatedSubscription,
+        data: {
+          ...updatedSubscription,
+          cancelInProgress: true,
+        },
         accessUntil: accessUntil,
-        message: `Assinatura cancelada. Você ainda pode usar seus benefícios até ${accessUntil.toLocaleDateString('pt-BR')}. Não haverá novas cobranças.`
+        message: cancelMessage,
       })
     } catch (error) {
       logger.error('Erro ao cancelar assinatura:', error)
@@ -377,7 +431,11 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
     
     try {
       const subscription = await prisma.subscription.findUnique({
-        where: { userId }
+        where: { userId },
+        include: {
+          plan: true,
+          user: { select: { id: true, asaasCustomerId: true } },
+        },
       })
       
       if (!subscription) {
@@ -386,30 +444,89 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           error: 'Assinatura não encontrada'
         })
       }
-      
-      if (subscription.status !== 'PAUSED') {
-        return reply.status(400).send({
-          success: false,
-          error: 'Apenas assinaturas pausadas podem ser reativadas'
+
+      if (subscription.status === 'PAUSED') {
+        const updatedSubscription = await prisma.subscription.update({
+          where: { userId },
+          data: { status: 'ACTIVE' },
+          include: { user: true, plan: true },
+        })
+        logger.success(`Assinatura reativada: ${userId}`)
+        return reply.status(200).send({
+          success: true,
+          data: updatedSubscription,
+          message: 'Assinatura reativada com sucesso',
         })
       }
-      
+
+      if (!isCancelInProgress(subscription) || !subscription.endDate) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Só é possível desfazer o cancelamento enquanto o período já pago ainda está valendo.',
+        })
+      }
+
+      const nextDueIso = nextDueIsoAfterAccessUntil(subscription.endDate)
+      if (subscription.asaasSubscriptionId) {
+        try {
+          await updateAsaasSubscription(subscription.asaasSubscriptionId, {
+            status: 'ACTIVE',
+            nextDueDate: nextDueIso,
+            updatePendingPayments: false,
+          })
+        } catch (asaasError: any) {
+          logger.warning(`Não foi possível reativar a recorrência Asaas: ${asaasError.message}`)
+          const savedCard = await prisma.savedCard.findFirst({
+            where: { userId, kind: 'credit' },
+            orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+          })
+          if (!subscription.user.asaasCustomerId || !savedCard) {
+            return reply.status(502).send({
+              success: false,
+              error:
+                'Não foi possível retomar a recorrência automaticamente. Fale com a clínica — você não precisa pagar de novo agora.',
+            })
+          }
+          const recreated = await createAsaasSubscription({
+            customer: subscription.user.asaasCustomerId,
+            value: subscription.plan.price,
+            description: `Charme & Bela Club - ${subscription.plan.name}`,
+            externalReference: clubSubscriptionReference(userId, subscription.planId),
+            creditCardToken: savedCard.asaasToken,
+            remoteIp: '127.0.0.1',
+            nextDueDate: nextDueIso,
+          })
+          await prisma.subscription.update({
+            where: { userId },
+            data: { asaasSubscriptionId: recreated.id },
+          })
+        }
+      }
+
       const updatedSubscription = await prisma.subscription.update({
         where: { userId },
         data: {
-          status: 'ACTIVE'
+          status: 'ACTIVE',
+          canceledAt: null,
+          cancelReason: null,
+          endDate: null,
         },
         include: {
           user: true,
-          plan: true
-        }
+          plan: true,
+        },
       })
-      
-      logger.success(`Assinatura reativada: ${userId}`)
+
+      logger.success(`Cancelamento desfeito: ${userId} (próxima cobrança ${nextDueIso})`)
       return reply.status(200).send({
         success: true,
-        data: updatedSubscription,
-        message: 'Assinatura reativada com sucesso'
+        data: {
+          ...updatedSubscription,
+          cancelInProgress: false,
+          nextDueDate: new Date(`${nextDueIso}T12:00:00.000-03:00`).toISOString(),
+          message: `Cancelamento desfeito. Você continua no ${updatedSubscription.plan.name} e a próxima cobrança será em ${formatPlanDatePtBr(new Date(`${nextDueIso}T12:00:00.000-03:00`))}.`,
+        },
+        message: `Cancelamento desfeito. Você continua no ${updatedSubscription.plan.name} e a próxima cobrança será em ${formatPlanDatePtBr(new Date(`${nextDueIso}T12:00:00.000-03:00`))}.`,
       })
     } catch (error) {
       logger.error('Erro ao reativar assinatura:', error)
@@ -458,6 +575,13 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         return reply.status(404).send({
           success: false,
           error: 'Assinatura não encontrada'
+        })
+      }
+
+      if (isCancelInProgress(subscription)) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Desfaça o cancelamento em Meu plano para trocar de plano. Você não precisa pagar de novo.',
         })
       }
       

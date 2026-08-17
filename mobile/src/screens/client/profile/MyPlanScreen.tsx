@@ -46,6 +46,17 @@ import {
 import { brand } from '../../../theme/brand';
 import type { ClientStackParamList } from '../../../navigation/ClientNavigator';
 
+function isCancelInProgress(sub?: { status?: string; endDate?: string | null; cancelInProgress?: boolean } | null) {
+  if (!sub) return false;
+  if (sub.cancelInProgress) return true;
+  return sub.status === 'CANCELED' && Boolean(sub.endDate && new Date(sub.endDate) > new Date());
+}
+
+function accessUntilLabel(endDate?: string | null) {
+  if (!endDate) return 'o fim do período pago';
+  return new Date(endDate).toLocaleDateString('pt-BR');
+}
+
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -86,12 +97,13 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
   }, [loadPayments, subscription?.id]);
 
   const orderedPlans = useMemo(() => {
-    const currentId = subscription?.status !== 'CANCELED' ? subscription?.planId : undefined;
+    const cancelPending = isCancelInProgress(subscription);
+    const currentId = subscription && (subscription.status !== 'CANCELED' || cancelPending) ? subscription.planId : undefined;
     if (!currentId) return plans;
     const current = plans.find((plan) => plan.id === currentId);
     const rest = plans.filter((plan) => plan.id !== currentId);
     return current ? [current, ...rest] : plans;
-  }, [plans, subscription?.planId, subscription?.status]);
+  }, [plans, subscription?.planId, subscription?.status, subscription?.endDate, subscription?.cancelInProgress]);
 
   const run = async (key: string, action: () => Promise<any>, success: string) => {
     setBusy(key);
@@ -120,7 +132,16 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
 
   const selectPlan = (plan: Plan) => {
     if (!user) return;
-    if (!subscription || subscription.status === 'CANCELED') return void openCheckout(plan);
+    if (!subscription || (subscription.status === 'CANCELED' && !isCancelInProgress(subscription))) {
+      return void openCheckout(plan);
+    }
+    if (isCancelInProgress(subscription)) {
+      Alert.alert(
+        'Cancelamento em andamento',
+        'Desfaça o cancelamento para trocar de plano. Você não precisa pagar de novo.',
+      );
+      return;
+    }
     if (subscription.planId === plan.id) return;
     const isUpgrade = plan.price > subscription.plan.price;
     const nextDue = subscription.nextDueDate
@@ -212,15 +233,49 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
 
   const requestCancel = () => {
     if (!user) return;
-    Alert.alert('Cancelar plano', 'Seu acesso permanece até o fim do período já pago. Deseja continuar?', [
+    Alert.alert('Cancelar plano', 'Seu acesso permanece até o fim do período já pago. Depois você pode desfazer sem pagar de novo.', [
       { text: 'Manter plano', style: 'cancel' },
       {
         text: 'Cancelar assinatura',
         style: 'destructive',
-        onPress: () =>
-          void run('cancel', () => cancelSubscription(user.id, 'Cancelado pelo aplicativo'), 'Seu cancelamento foi registrado.'),
+        onPress: async () => {
+          setBusy('cancel');
+          try {
+            const updated = await cancelSubscription(user.id, 'Cancelado pelo aplicativo');
+            await refresh();
+            await loadPayments();
+            Alert.alert(
+              'Sobre o cancelamento da assinatura',
+              `Não se preocupe, você tem até o dia ${accessUntilLabel(updated.endDate || subscription?.endDate)} para aproveitar seu plano.`,
+            );
+          } catch (error) {
+            Alert.alert('Não foi possível concluir', getApiErrorMessage(error));
+          } finally {
+            setBusy(null);
+          }
+        },
       },
     ]);
+  };
+
+  const undoCancel = () => {
+    if (!user) return;
+    Alert.alert(
+      'Desfazer cancelamento',
+      'Você continua no plano atual. A próxima cobrança será na data da recorrência — sem pagar agora.',
+      [
+        { text: 'Manter cancelamento', style: 'cancel' },
+        {
+          text: 'Desfazer',
+          onPress: () =>
+            void run(
+              'reactivate',
+              () => reactivateSubscription(user.id),
+              'Cancelamento desfeito. A próxima cobrança segue na data da recorrência, sem pagar agora.',
+            ),
+        },
+      ],
+    );
   };
 
   const togglePlan = (planId: string) => {
@@ -228,7 +283,8 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
     setExpandedPlanId((id) => (id === planId ? null : planId));
   };
 
-  const active = subscription && subscription.status !== 'CANCELED';
+  const cancelPending = isCancelInProgress(subscription);
+  const active = Boolean(subscription && (subscription.status === 'ACTIVE' || cancelPending));
   const used = subscription?.currentMonthUsage.totalTreatments ?? 0;
   const max = subscription?.plan.maxTreatmentsPerMonth ?? 1;
   const usagePct = subscription ? Math.min(100, (used / max) * 100) : 0;
@@ -272,7 +328,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
               >
                 <View style={[styles.statusDot, { backgroundColor: active ? brand.rose : '#c4a8b2' }]} />
                 <Text style={[styles.statusPillText, { color: active ? '#ffb6d9' : '#c4a8b2' }]}>
-                  {statusLabel(subscription.status)}
+                  {statusLabel(subscription.status, cancelPending)}
                 </Text>
               </View>
             </View>
@@ -384,7 +440,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
             <PlanOption
               key={plan.id}
               plan={plan}
-              current={subscription?.planId === plan.id && subscription.status !== 'CANCELED'}
+              current={subscription?.planId === plan.id && Boolean(active)}
               pending={subscription?.pendingPlanId === plan.id}
               hasActiveSub={Boolean(active)}
               loading={busy === plan.id}
@@ -399,7 +455,16 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
           <>
             <Text style={styles.sectionTitleSpaced}>Assinatura</Text>
             <View style={styles.actionCard}>
-              {subscription.status === 'PAUSED' ? (
+              {cancelPending ? (
+                <Action
+                  icon="refresh-circle-outline"
+                  title="Desfazer cancelamento"
+                  subtitle="Continuar no plano sem pagar de novo"
+                  onPress={undoCancel}
+                  loading={busy === 'reactivate'}
+                />
+              ) : null}
+              {subscription.status === 'PAUSED' && !cancelPending ? (
                 <Action
                   icon="play-circle-outline"
                   title="Reativar plano"
@@ -410,7 +475,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
                   loading={busy === 'reactivate'}
                 />
               ) : null}
-              {subscription.status === 'CANCELED' ? (
+              {subscription.status === 'CANCELED' && !cancelPending ? (
                 <Action
                   icon="refresh-circle-outline"
                   title="Assinar novamente"
@@ -731,7 +796,8 @@ function money(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function statusLabel(status: string) {
+function statusLabel(status: string, cancelPending = false) {
+  if (cancelPending) return 'Em cancelamento';
   return (
     (
       {

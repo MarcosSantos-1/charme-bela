@@ -142,6 +142,7 @@ export interface Subscription {
   startDate: string
   endDate?: string
   nextDueDate?: string | null
+  cancelInProgress?: boolean
   pendingPlanId?: string | null
   pendingPlan?: Plan | null
   pendingChangeAt?: string | null

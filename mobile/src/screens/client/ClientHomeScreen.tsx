@@ -471,7 +471,7 @@ function ActivePlanCard({ plan, embedded }: { plan: any; embedded?: boolean }) {
           </View>
           <View style={styles.statusBadge}>
             <View style={styles.statusDot} />
-            <Text style={styles.statusText}>{plan.status === 'CANCELED' ? 'CANCELADO' : plan.status === 'PAUSED' ? 'PAUSADO' : plan.status === 'PAST_DUE' ? 'PENDENTE' : 'ATIVO'}</Text>
+            <Text style={styles.statusText}>{plan.status === 'CANCELED' ? (plan.nextPayment ? 'EM CANCELAMENTO' : 'CANCELADO') : plan.status === 'PAUSED' ? 'PAUSADO' : plan.status === 'PAST_DUE' ? 'PENDENTE' : 'ATIVO'}</Text>
           </View>
         </View>
 

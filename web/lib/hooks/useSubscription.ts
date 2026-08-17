@@ -59,9 +59,9 @@ export function useSubscription(userId?: string) {
     if (!userId) throw new Error('User ID não fornecido')
 
     try {
-      await api.cancelSubscription(userId, reason)
-      toast.success('Assinatura cancelada')
+      const updated = await api.cancelSubscription(userId, reason)
       await fetchSubscription()
+      return updated
     } catch (err: any) {
       console.error('Erro ao cancelar assinatura:', err)
       toast.error(err.message || 'Erro ao cancelar assinatura')
@@ -87,17 +87,28 @@ export function useSubscription(userId?: string) {
     if (!userId) throw new Error('User ID não fornecido')
 
     try {
-      await api.reactivateSubscription(userId)
-      toast.success('Assinatura reativada!')
+      const updated = await api.reactivateSubscription(userId)
+      toast.success(
+        (updated as { message?: string } | null)?.message ||
+          'Cancelamento desfeito. A próxima cobrança segue na data da recorrência.',
+      )
       await fetchSubscription()
+      return updated
     } catch (err: any) {
       console.error('Erro ao reativar assinatura:', err)
-      toast.error(err.message || 'Erro ao reativar assinatura')
+      toast.error(err.message || 'Erro ao desfazer o cancelamento')
       throw err
     }
   }
 
-  const hasSubscription = !!subscription && subscription.status === 'ACTIVE'
+  const cancelInProgress = Boolean(
+    subscription?.cancelInProgress ||
+      (subscription?.status === 'CANCELED' &&
+        subscription.endDate &&
+        new Date(subscription.endDate) > new Date()),
+  )
+
+  const hasSubscription = !!subscription && (subscription.status === 'ACTIVE' || cancelInProgress)
   
   const remainingTreatments = subscription?.remaining?.thisMonth || 0
   
@@ -108,6 +119,7 @@ export function useSubscription(userId?: string) {
     loading,
     error,
     hasSubscription,
+    cancelInProgress,
     remainingTreatments,
     canSchedule,
     createSubscription,

@@ -203,21 +203,27 @@ export function pickAsaasPhone(...values: Array<string | null | undefined>) {
 }
 
 /**
- * Asaas: `phone` é fixo (10 dígitos). `mobilePhone` é celular (11 dígitos).
- * Mandar 11 dígitos em `phone` retorna "Telefone informado é inválido".
- * No celular, também enviamos um fixo derivado (sem o 9) para sobrescrever
- * um `phone` inválido já gravado no cliente Asaas.
+ * Asaas: no cadastro do cliente, `phone` é fixo (10 dígitos, não pode começar com 9 após o DDD)
+ * e `mobilePhone` é celular. Checkout hospedado usa um único `customerData.phone` (10 ou 11 dígitos).
  */
 export function asaasPhonePayload(value?: string | null): { phone?: string; mobilePhone?: string } {
   const local = normalizeAsaasMobilePhone(value)
   if (!local) return {}
-  if (local.length === 11) {
-    return {
-      mobilePhone: local,
-      phone: `${local.slice(0, 2)}${local.slice(3)}`,
-    }
+  const subscriber = local.slice(2)
+  if (local.length === 11 || subscriber.startsWith('9')) {
+    return { mobilePhone: local }
   }
-  return { phone: local, mobilePhone: local }
+  return { phone: local }
+}
+
+/** Campo único do checkout hospedado — aceita celular 11 dígitos (`47988887777`). */
+export function asaasCheckoutPhone(value?: string | null): string | null {
+  return normalizeAsaasMobilePhone(value)
+}
+
+export function isAsaasPhoneError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '')
+  return /telefone informado é inválido/i.test(message) || /invalid phone/i.test(message)
 }
 
 function asaasCustomerEmail(email?: string | null) {
@@ -311,20 +317,28 @@ export async function createCustomer(input: {
   externalReference: string
   address?: AsaasCustomerAddress | null
 }) {
-  const phones = asaasPhonePayload(input.phone)
   const email = asaasCustomerEmail(input.email)
-  return asaasFetch<AsaasCustomer>('/customers', {
-    method: 'POST',
-    body: JSON.stringify({
-      name: input.name,
-      ...(email ? { email } : {}),
-      cpfCnpj: input.cpfCnpj,
-      ...phones,
-      ...asaasAddressPayload(input.address),
-      notificationDisabled: false,
-      externalReference: input.externalReference,
-    }),
-  })
+  const body = {
+    name: input.name,
+    ...(email ? { email } : {}),
+    cpfCnpj: input.cpfCnpj,
+    ...asaasAddressPayload(input.address),
+    notificationDisabled: false,
+    externalReference: input.externalReference,
+  }
+  try {
+    return await asaasFetch<AsaasCustomer>('/customers', {
+      method: 'POST',
+      body: JSON.stringify({ ...body, ...asaasPhonePayload(input.phone) }),
+    })
+  } catch (error) {
+    if (!isAsaasPhoneError(error)) throw error
+    logger.warning('Asaas recusou o telefone na criação do cliente; repetindo sem phone/mobilePhone')
+    return asaasFetch<AsaasCustomer>('/customers', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+  }
 }
 
 export async function updateCustomer(
@@ -337,18 +351,26 @@ export async function updateCustomer(
     address?: AsaasCustomerAddress | null
   },
 ) {
-  const phones = asaasPhonePayload(input.phone)
   const email = asaasCustomerEmail(input.email)
-  return asaasFetch<AsaasCustomer>(`/customers/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify({
-      ...(input.name ? { name: input.name } : {}),
-      ...(email ? { email } : {}),
-      cpfCnpj: input.cpfCnpj,
-      ...phones,
-      ...asaasAddressPayload(input.address),
-    }),
-  })
+  const body = {
+    ...(input.name ? { name: input.name } : {}),
+    ...(email ? { email } : {}),
+    cpfCnpj: input.cpfCnpj,
+    ...asaasAddressPayload(input.address),
+  }
+  try {
+    return await asaasFetch<AsaasCustomer>(`/customers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...body, ...asaasPhonePayload(input.phone) }),
+    })
+  } catch (error) {
+    if (!isAsaasPhoneError(error)) throw error
+    logger.warning(`Asaas recusou o telefone ao atualizar ${id}; repetindo sem phone/mobilePhone`)
+    return asaasFetch<AsaasCustomer>(`/customers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    })
+  }
 }
 
 export async function createPayment(input: {
@@ -652,55 +674,92 @@ export async function createCreditCardCheckout(input: {
   billingTypes?: AsaasBillingType[]
 }) {
   const frontend = (process.env.FRONTEND_URL || 'https://localhost').replace(/\/$/, '')
-  const phones = asaasPhonePayload(input.customerPhone)
   const email = asaasCustomerEmail(input.customerEmail)
-  const customerPayload = input.customerId
-    ? { customer: input.customerId }
-    : {
+  const checkoutPhone = asaasCheckoutPhone(input.customerPhone)
+  const customerData = {
+    name: input.customerName,
+    cpfCnpj: input.customerCpf,
+    ...(email ? { email } : {}),
+    ...(checkoutPhone ? { phone: checkoutPhone } : {}),
+    ...asaasAddressPayload(input.customerAddress),
+  }
+
+  const postCheckout = (customerPayload: { customer: string } | { customerData: typeof customerData }) =>
+    asaasFetch<AsaasCheckout>('/checkouts', {
+      method: 'POST',
+      body: JSON.stringify({
+        billingTypes: input.billingTypes?.length
+          ? input.billingTypes
+          : input.recurrent
+            ? ['CREDIT_CARD']
+            : ['CREDIT_CARD', 'DEBIT_CARD'],
+        chargeTypes: input.recurrent ? ['RECURRENT'] : ['DETACHED'],
+        minutesToExpire: 60,
+        externalReference: input.externalReference.slice(0, 200),
+        callback: {
+          successUrl: `${frontend}/cliente/checkout?success=true`,
+          cancelUrl: `${frontend}/cliente/checkout?canceled=true`,
+          expiredUrl: `${frontend}/cliente/checkout?canceled=true`,
+        },
+        items: [
+          {
+            name: input.name.slice(0, 30),
+            description: input.description.slice(0, 150),
+            quantity: 1,
+            value: Number(input.value.toFixed(2)),
+            imageBase64: CHECKOUT_ITEM_IMAGE,
+          },
+        ],
+        ...customerPayload,
+        ...(input.recurrent
+          ? {
+              subscription: {
+                cycle: 'MONTHLY',
+                nextDueDate: todaySaoPauloISODate(),
+              },
+            }
+          : {}),
+      }),
+    })
+
+  if (!input.customerId) {
+    try {
+      return await postCheckout({ customerData })
+    } catch (error) {
+      if (!isAsaasPhoneError(error) || !checkoutPhone) throw error
+      logger.warning('Checkout Asaas recusou customerData.phone; gerando sem telefone para o cliente preencher')
+      return postCheckout({
         customerData: {
           name: input.customerName,
           cpfCnpj: input.customerCpf,
           ...(email ? { email } : {}),
-          ...phones,
           ...asaasAddressPayload(input.customerAddress),
         },
-      }
-  return asaasFetch<AsaasCheckout>('/checkouts', {
-    method: 'POST',
-    body: JSON.stringify({
-      billingTypes: input.billingTypes?.length
-        ? input.billingTypes
-        : input.recurrent
-          ? ['CREDIT_CARD']
-          : ['CREDIT_CARD', 'DEBIT_CARD'],
-      chargeTypes: input.recurrent ? ['RECURRENT'] : ['DETACHED'],
-      minutesToExpire: 60,
-      externalReference: input.externalReference.slice(0, 200),
-      callback: {
-        successUrl: `${frontend}/cliente/checkout?success=true`,
-        cancelUrl: `${frontend}/cliente/checkout?canceled=true`,
-        expiredUrl: `${frontend}/cliente/checkout?canceled=true`,
-      },
-      items: [
-        {
-          name: input.name.slice(0, 30),
-          description: input.description.slice(0, 150),
-          quantity: 1,
-          value: Number(input.value.toFixed(2)),
-          imageBase64: CHECKOUT_ITEM_IMAGE,
+      })
+    }
+  }
+  try {
+    return await postCheckout({ customer: input.customerId })
+  } catch (error) {
+    if (!isAsaasPhoneError(error)) throw error
+    logger.warning(
+      `Checkout Asaas recusou o telefone do cliente ${input.customerId}; tentando customerData`,
+    )
+    try {
+      return await postCheckout({ customerData })
+    } catch (second) {
+      if (!isAsaasPhoneError(second)) throw second
+      logger.warning('Checkout Asaas recusou customerData.phone; gerando sem telefone para o cliente preencher')
+      return postCheckout({
+        customerData: {
+          name: input.customerName,
+          cpfCnpj: input.customerCpf,
+          ...(email ? { email } : {}),
+          ...asaasAddressPayload(input.customerAddress),
         },
-      ],
-      ...customerPayload,
-      ...(input.recurrent
-        ? {
-            subscription: {
-              cycle: 'MONTHLY',
-              nextDueDate: todaySaoPauloISODate(),
-            },
-          }
-        : {}),
-    }),
-  })
+      })
+    }
+  }
 }
 
 export async function getCheckout(id: string) {

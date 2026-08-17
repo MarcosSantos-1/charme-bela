@@ -51,6 +51,7 @@ export type AsaasCustomer = {
 export type AsaasCreditCardSummary = {
   creditCardNumber?: string
   creditCardBrand?: string
+  creditCardToken?: string
 }
 
 export type AsaasPayment = {
@@ -87,6 +88,14 @@ export type AsaasSubscription = {
   description?: string
   status: string
   nextDueDate?: string
+  externalReference?: string | null
+  creditCard?: AsaasCreditCardSummary | null
+}
+
+export type AsaasCheckout = {
+  id: string
+  link?: string | null
+  status?: string
   externalReference?: string | null
 }
 
@@ -409,6 +418,103 @@ export async function updateSubscriptionValue(id: string, value: number) {
       updatePendingPayments: true,
     }),
   })
+}
+
+export function extractCardToken(payment: {
+  creditCardToken?: string | null
+  creditCard?: AsaasCreditCardSummary | null
+}) {
+  return payment.creditCardToken || payment.creditCard?.creditCardToken || null
+}
+
+export function isCheckoutSessionId(id?: string | null) {
+  return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+}
+
+export async function cancelSubscriptionSilent(subscriptionId: string | null | undefined) {
+  if (!subscriptionId) return
+  try {
+    await cancelSubscription(subscriptionId)
+    logger.info(`Assinatura Asaas cancelada: ${subscriptionId}`)
+  } catch (error: any) {
+    logger.warning(`Não foi possível cancelar assinatura Asaas ${subscriptionId}: ${error.message}`)
+  }
+}
+
+export async function listSubscriptions(params: {
+  customer?: string
+  externalReference?: string
+  status?: string
+  offset?: number
+  limit?: number
+}) {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null || value === '') continue
+    search.set(key, String(value))
+  }
+  const qs = search.toString()
+  return asaasFetch<AsaasList<AsaasSubscription>>(`/subscriptions${qs ? `?${qs}` : ''}`)
+}
+
+const CHECKOUT_ITEM_IMAGE =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
+
+export async function createCreditCardCheckout(input: {
+  customerName: string
+  customerEmail: string
+  customerCpf: string
+  customerPhone?: string | null
+  value: number
+  name: string
+  description: string
+  externalReference: string
+  recurrent?: boolean
+}) {
+  const frontend = (process.env.FRONTEND_URL || 'https://localhost').replace(/\/$/, '')
+  return asaasFetch<AsaasCheckout>('/checkouts', {
+    method: 'POST',
+    body: JSON.stringify({
+      billingTypes: ['CREDIT_CARD'],
+      chargeTypes: input.recurrent ? ['RECURRENT'] : ['DETACHED'],
+      minutesToExpire: 60,
+      externalReference: input.externalReference.slice(0, 200),
+      callback: {
+        successUrl: `${frontend}/cliente/checkout?success=true`,
+        cancelUrl: `${frontend}/cliente/checkout?canceled=true`,
+        expiredUrl: `${frontend}/cliente/checkout?canceled=true`,
+      },
+      items: [
+        {
+          name: input.name.slice(0, 30),
+          description: input.description.slice(0, 150),
+          quantity: 1,
+          value: Number(input.value.toFixed(2)),
+          imageBase64: CHECKOUT_ITEM_IMAGE,
+        },
+      ],
+      customerData: {
+        name: input.customerName,
+        cpfCnpj: input.customerCpf,
+        email: input.customerEmail,
+        ...(digitsOnly(input.customerPhone).length >= 10
+          ? { phone: digitsOnly(input.customerPhone) }
+          : {}),
+      },
+      ...(input.recurrent
+        ? {
+            subscription: {
+              cycle: 'MONTHLY',
+              nextDueDate: todaySaoPauloISODate(),
+            },
+          }
+        : {}),
+    }),
+  })
+}
+
+export async function getCheckout(id: string) {
+  return asaasFetch<AsaasCheckout>(`/checkouts/${id}`)
 }
 
 export async function cancelSubscription(id: string) {

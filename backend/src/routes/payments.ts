@@ -9,15 +9,22 @@ import {
   AsaasSubscription,
   cancelPaymentSilent,
   cancelPendingByExternalReference,
+  cancelSubscriptionSilent,
+  createCreditCardCheckout,
   createCustomer,
   createPayment,
   createPaymentWithCardToken,
   createSubscription,
+  extractCardToken,
+  getCheckout,
   getPayment,
   getPixQrCode,
+  getSubscription,
   isAsaasConfigured,
   isAsaasPaidStatus,
+  isCheckoutSessionId,
   listPayments,
+  listSubscriptions,
   listSubscriptionPayments,
   mapAsaasBillingType,
   normalizeCpfCnpj,
@@ -236,29 +243,54 @@ async function listCardMethods(userId: string) {
 }
 
 async function persistSavedCard(payment: AsaasPayment) {
-  let full = payment
-  if (!full.creditCardToken) {
+  let token = extractCardToken(payment)
+  let last4 = last4FromAsaas(payment.creditCard?.creditCardNumber)
+  let brand = (payment.creditCard?.creditCardBrand || '').toLowerCase() || null
+
+  if (!token) {
     try {
-      full = await getPayment(payment.id)
+      const full = await getPayment(payment.id)
+      token = extractCardToken(full)
+      last4 = last4FromAsaas(full.creditCard?.creditCardNumber) || last4
+      brand = (full.creditCard?.creditCardBrand || '').toLowerCase() || brand
     } catch {
-      return
+      // segue para a assinatura
     }
   }
-  if (!full.creditCardToken || !full.customer) return
+
+  if (!token && payment.subscription) {
+    try {
+      const subscription = await getSubscription(payment.subscription)
+      token = extractCardToken(subscription)
+      last4 = last4FromAsaas(subscription.creditCard?.creditCardNumber) || last4
+      brand = (subscription.creditCard?.creditCardBrand || '').toLowerCase() || brand
+    } catch {
+      // tokenização pode estar desligada
+    }
+  }
+
+  if (!token || !payment.customer) {
+    if (payment.billingType === 'CREDIT_CARD' || payment.creditCard) {
+      logger.warning(
+        `Pagamento ${payment.id} sem token de cartão. No sandbox a tokenização já vem ligada; em produção o gerente Asaas precisa liberar.`,
+      )
+    }
+    return
+  }
+
   const user = await prisma.user.findFirst({
-    where: { asaasCustomerId: full.customer },
+    where: { asaasCustomerId: payment.customer },
     select: { id: true },
   })
   if (!user) return
 
-  const last4 = last4FromAsaas(full.creditCard?.creditCardNumber) || '****'
-  const brand = (full.creditCard?.creditCardBrand || '').toLowerCase() || null
+  const digits = last4 || '****'
   const existing = await prisma.savedCard.findFirst({
     where: {
       userId: user.id,
       OR: [
-        { asaasToken: full.creditCardToken },
-        ...(last4 !== '****' && brand ? [{ last4, brand }] : []),
+        { asaasToken: token },
+        ...(digits !== '****' && brand ? [{ last4: digits, brand }] : []),
       ],
     },
   })
@@ -272,9 +304,9 @@ async function persistSavedCard(payment: AsaasPayment) {
       await tx.savedCard.update({
         where: { id: existing.id },
         data: {
-          asaasToken: full.creditCardToken!,
+          asaasToken: token!,
           brand,
-          last4,
+          last4: digits,
           isDefault: true,
         },
       })
@@ -283,13 +315,62 @@ async function persistSavedCard(payment: AsaasPayment) {
     await tx.savedCard.create({
       data: {
         userId: user.id,
-        asaasToken: full.creditCardToken!,
+        asaasToken: token!,
         brand,
-        last4,
+        last4: digits,
         isDefault: true,
       },
     })
   })
+}
+
+async function cancelOrphanUnpaidSubscriptions(customerId: string, keepId?: string | null) {
+  try {
+    const listed = await listSubscriptions({ customer: customerId, limit: 50 })
+    for (const subscription of listed.data || []) {
+      if (keepId && subscription.id === keepId) continue
+      const payments = await listSubscriptionPayments(subscription.id)
+      const rows = payments.data || []
+      if (rows.some((item) => isAsaasPaidStatus(item.status))) continue
+      await cancelSubscriptionSilent(subscription.id)
+      for (const item of rows) {
+        if (item.status === 'PENDING' || item.status === 'OVERDUE') {
+          await cancelPaymentSilent(item.id)
+        }
+      }
+    }
+  } catch (error: any) {
+    logger.warning(`Não foi possível limpar assinaturas órfãs de ${customerId}: ${error.message}`)
+  }
+}
+
+function toHistoryItem(payment: AsaasPayment) {
+  return {
+    id: payment.id,
+    type: payment.subscription ? ('subscription' as const) : ('single' as const),
+    amount: payment.value,
+    totalAmount: payment.value,
+    currency: 'brl',
+    status: isAsaasPaidStatus(payment.status)
+      ? payment.subscription
+        ? 'paid'
+        : 'succeeded'
+      : payment.status === 'REFUNDED' || payment.status === 'REFUND_REQUESTED'
+        ? 'refunded'
+        : payment.status.toLowerCase(),
+    description: payment.description || (payment.subscription ? 'Assinatura Charme & Bela Club' : 'Tratamento avulso'),
+    paidAt: payment.paymentDate || payment.confirmedDate || null,
+    createdAt: payment.dueDate || new Date().toISOString(),
+    invoicePdf: null,
+    hostedInvoiceUrl: payment.invoiceUrl || null,
+    receiptUrl: payment.invoiceUrl || null,
+  }
+}
+
+function isVisibleHistoryStatus(status?: string | null) {
+  if (!status) return false
+  if (status === 'PENDING' || status === 'OVERDUE' || status === 'DELETED') return false
+  return true
 }
 
 async function checkoutPaidStatus(payment: AsaasPayment) {
@@ -489,7 +570,10 @@ export async function paymentsRoutes(app: FastifyInstance) {
         return reply.status(400).send({ success: false, error: 'planId é obrigatório' })
       }
 
-      const user = await prisma.user.findUnique({ where: { id: resolved.userId } })
+      const user = await prisma.user.findUnique({
+        where: { id: resolved.userId },
+        include: { subscription: true },
+      })
       if (!user) {
         return reply.status(404).send({ success: false, error: 'Usuário não encontrado' })
       }
@@ -508,6 +592,41 @@ export async function paymentsRoutes(app: FastifyInstance) {
 
       const customerId = await ensureAsaasCustomer(user, cpfCnpj)
       const externalReference = `sub_${user.id}_${plan.id}`
+      await cancelOrphanUnpaidSubscriptions(customerId, user.subscription?.asaasSubscriptionId)
+
+      try {
+        const checkoutSession = await createCreditCardCheckout({
+          customerName: user.name,
+          customerEmail: user.email,
+          customerCpf: cpfCnpj,
+          customerPhone: user.phone,
+          value: plan.price,
+          name: plan.name,
+          description: `Charme & Bela Club - ${plan.name}`,
+          externalReference,
+          recurrent: true,
+        })
+
+        logger.success(`Checkout de assinatura Asaas criado: ${checkoutSession.id}`)
+        return reply.status(200).send({
+          success: true,
+          data: {
+            paymentId: checkoutSession.id,
+            sessionId: checkoutSession.id,
+            url: checkoutSession.link || null,
+            invoiceUrl: checkoutSession.link || null,
+            pixCopyPaste: null,
+            pixQrBase64: null,
+            expiresAt: null,
+            amount: plan.price,
+            description: `Assinatura ${plan.name}`,
+            asaasSubscriptionId: null,
+          },
+        })
+      } catch (checkoutError: any) {
+        logger.warning(`Checkout Asaas indisponível, usando fatura de crédito: ${checkoutError.message}`)
+      }
+
       const subscription = await createSubscription({
         customer: customerId,
         value: plan.price,
@@ -515,7 +634,6 @@ export async function paymentsRoutes(app: FastifyInstance) {
         externalReference,
         billingType: 'CREDIT_CARD',
       })
-
       const payments = await listSubscriptionPayments(subscription.id)
       const first = payments.data?.[0]
       const checkout = first
@@ -534,8 +652,6 @@ export async function paymentsRoutes(app: FastifyInstance) {
             amount: plan.price,
             description: `Assinatura ${plan.name}`,
           }
-
-      logger.success(`Assinatura Asaas criada: ${subscription.id}`)
       return reply.status(200).send({
         success: true,
         data: {
@@ -703,6 +819,40 @@ export async function paymentsRoutes(app: FastifyInstance) {
       if (!isAsaasConfigured()) {
         return reply.status(503).send({ success: false, error: 'Asaas não configurado' })
       }
+      if (isCheckoutSessionId(paymentId)) {
+        const checkout = await getCheckout(paymentId)
+        const paidCheckout = checkout.status === 'PAID'
+        let paidByRef = false
+        let value = 0
+        let invoiceUrl = checkout.link || null
+        if (checkout.externalReference) {
+          const siblings = await listPayments({
+            externalReference: checkout.externalReference,
+            limit: 20,
+          })
+          const paidSibling = (siblings.data || []).find((item) => isAsaasPaidStatus(item.status))
+          if (paidSibling) {
+            paidByRef = true
+            value = paidSibling.value
+            if (paidSibling.creditCardToken || paidSibling.creditCard) {
+              await persistSavedCard(paidSibling)
+            }
+          }
+        }
+        return reply.status(200).send({
+          success: true,
+          data: {
+            paymentId: checkout.id,
+            status: paidCheckout || paidByRef ? 'CONFIRMED' : checkout.status || 'PENDING',
+            paid: paidCheckout || paidByRef,
+            billingType: 'credit_card',
+            value,
+            invoiceUrl,
+            pixCopyPaste: null,
+            pixQrBase64: null,
+          },
+        })
+      }
       const payment = await getPayment(paymentId)
       const paidInfo = await checkoutPaidStatus(payment)
       const pix =
@@ -811,7 +961,54 @@ export async function paymentsRoutes(app: FastifyInstance) {
         })
       }
 
+      const remoteIp = clientIp(request)
+
+      if (body.planId) {
+        const plan = await prisma.subscriptionPlan.findUnique({ where: { id: body.planId } })
+        if (!plan) {
+          return reply.status(404).send({ success: false, error: 'Plano não encontrado' })
+        }
+        const cpfCnpj = normalizeCpfCnpj(user.cpf)
+        if (!cpfCnpj) {
+          return reply.status(400).send({
+            success: false,
+            error: 'Informe o CPF para emitir a cobrança. O Asaas exige o documento do pagador.',
+          })
+        }
+        await cancelOrphanUnpaidSubscriptions(user.asaasCustomerId, user.subscription?.asaasSubscriptionId)
+        const subscription = await createSubscription({
+          customer: user.asaasCustomerId,
+          value: plan.price,
+          description: `Charme & Bela Club - ${plan.name}`,
+          externalReference: `sub_${user.id}_${plan.id}`,
+          billingType: 'CREDIT_CARD',
+          creditCardToken: savedCard.asaasToken,
+          remoteIp,
+        })
+        const subPayments = await listSubscriptionPayments(subscription.id)
+        const first = subPayments.data?.[0] || null
+        if (first) {
+          await persistSavedCard(first)
+          if (isAsaasPaidStatus(first.status)) {
+            await handlePaymentPaid(first)
+          }
+        }
+        return reply.status(200).send({
+          success: true,
+          data: {
+            paid: Boolean(first && isAsaasPaidStatus(first.status)),
+            paymentId: first?.id || subscription.id,
+            status: first?.status || subscription.status,
+            brand: savedCard.brand,
+            last4: savedCard.last4,
+          },
+        })
+      }
+
       let paymentId = body.paymentId || null
+      if (paymentId && isCheckoutSessionId(paymentId)) {
+        paymentId = null
+      }
       if (!paymentId && body.packagePurchaseId) {
         const purchase = await prisma.packagePurchase.findUnique({
           where: { id: body.packagePurchaseId },
@@ -832,10 +1029,6 @@ export async function paymentsRoutes(app: FastifyInstance) {
         }
         paymentId = appointment?.asaasPaymentId || null
       }
-      if (!paymentId && body.planId && user.subscription?.asaasSubscriptionId) {
-        const subPayments = await listSubscriptionPayments(user.subscription.asaasSubscriptionId)
-        paymentId = subPayments.data?.find((item) => item.status === 'PENDING' || item.status === 'OVERDUE')?.id || null
-      }
       if (!paymentId) {
         return reply.status(400).send({ success: false, error: 'Cobrança não encontrada para cobrar o cartão salvo' })
       }
@@ -851,7 +1044,6 @@ export async function paymentsRoutes(app: FastifyInstance) {
         })
       }
 
-      const remoteIp = clientIp(request)
       let charged: AsaasPayment | null = null
       const tryPay = async (id: string) => {
         charged = await payChargeWithCardToken(id, savedCard.asaasToken, remoteIp)
@@ -924,29 +1116,18 @@ export async function paymentsRoutes(app: FastifyInstance) {
       if (!resolved.userId) {
         return reply.status(400).send({ success: false, error: 'Usuário não autenticado' })
       }
-      const user = await prisma.user.findUnique({ where: { id: resolved.userId } })
+      const user = await prisma.user.findUnique({
+        where: { id: resolved.userId },
+        include: { subscription: true },
+      })
       if (!user?.asaasCustomerId) {
         return reply.status(200).send({ success: true, data: [] })
       }
+      await cancelOrphanUnpaidSubscriptions(user.asaasCustomerId, user.subscription?.asaasSubscriptionId)
       const payments = await listPayments({ customer: user.asaasCustomerId, limit: 50 })
-      const history = (payments.data || []).map((payment) => ({
-        id: payment.id,
-        type: payment.subscription ? ('subscription' as const) : ('single' as const),
-        amount: payment.value,
-        totalAmount: payment.value,
-        currency: 'brl',
-        status: isAsaasPaidStatus(payment.status)
-          ? payment.subscription
-            ? 'paid'
-            : 'succeeded'
-          : payment.status.toLowerCase(),
-        description: payment.description || (payment.subscription ? 'Assinatura Charme & Bela Club' : 'Tratamento avulso'),
-        paidAt: payment.paymentDate || payment.confirmedDate || null,
-        createdAt: payment.dueDate || new Date().toISOString(),
-        invoicePdf: null,
-        hostedInvoiceUrl: payment.invoiceUrl || null,
-        receiptUrl: payment.invoiceUrl || null,
-      }))
+      const history = (payments.data || [])
+        .filter((payment) => isVisibleHistoryStatus(payment.status) && !payment.deleted)
+        .map(toHistoryItem)
       return reply.status(200).send({ success: true, data: history })
     } catch (error: any) {
       logger.error('Erro ao buscar histórico Asaas:', error)
@@ -964,30 +1145,19 @@ export async function paymentsRoutes(app: FastifyInstance) {
     if (!resolved.userId) {
       return reply.status(400).send({ success: false, error: 'Usuário não autenticado' })
     }
-    const user = await prisma.user.findUnique({ where: { id: resolved.userId || userId } })
+    const user = await prisma.user.findUnique({
+      where: { id: resolved.userId || userId },
+      include: { subscription: true },
+    })
     if (!user?.asaasCustomerId) {
       return reply.status(200).send({ success: true, data: [] })
     }
     try {
+      await cancelOrphanUnpaidSubscriptions(user.asaasCustomerId, user.subscription?.asaasSubscriptionId)
       const payments = await listPayments({ customer: user.asaasCustomerId, limit: 50 })
-      const history = (payments.data || []).map((payment) => ({
-        id: payment.id,
-        type: payment.subscription ? ('subscription' as const) : ('single' as const),
-        amount: payment.value,
-        totalAmount: payment.value,
-        currency: 'brl',
-        status: isAsaasPaidStatus(payment.status)
-          ? payment.subscription
-            ? 'paid'
-            : 'succeeded'
-          : payment.status.toLowerCase(),
-        description: payment.description || (payment.subscription ? 'Assinatura Charme & Bela Club' : 'Tratamento avulso'),
-        paidAt: payment.paymentDate || payment.confirmedDate || null,
-        createdAt: payment.dueDate || new Date().toISOString(),
-        invoicePdf: null,
-        hostedInvoiceUrl: payment.invoiceUrl || null,
-        receiptUrl: payment.invoiceUrl || null,
-      }))
+      const history = (payments.data || [])
+        .filter((payment) => isVisibleHistoryStatus(payment.status) && !payment.deleted)
+        .map(toHistoryItem)
       return reply.status(200).send({ success: true, data: history })
     } catch {
       return reply.status(200).send({ success: true, data: [] })
@@ -1168,6 +1338,9 @@ async function handlePaymentPaid(payment: AsaasPayment) {
 
   await persistSavedCard(payment)
   await cancelPendingByExternalReference(payment.externalReference, payment.id)
+  if (payment.customer) {
+    await cancelOrphanUnpaidSubscriptions(payment.customer, payment.subscription || null)
+  }
 
   if (payment.subscription) {
     await handleSubscriptionInvoicePaid(payment)

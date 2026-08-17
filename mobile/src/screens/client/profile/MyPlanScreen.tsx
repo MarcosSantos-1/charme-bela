@@ -357,7 +357,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
             <View style={styles.paymentMethod}>
               <Image source={creditCard3dSource} style={styles.card3dIcon} resizeMode="contain" />
               <Text style={[styles.emptyText, { flex: 1, textAlign: 'left', paddingVertical: 0 }]}>
-                Nenhum cartão salvo ainda. O cartão fica só no Asaas — o app não armazena os dados.
+                Nenhum cartão salvo ainda. Depois do primeiro pagamento no crédito, ele aparece aqui para um toque.
               </Text>
             </View>
           )}

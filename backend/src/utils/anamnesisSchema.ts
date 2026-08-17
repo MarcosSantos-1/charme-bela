@@ -22,6 +22,7 @@ export interface AnamnesisAddressV2 {
   neighborhood?: string
   city?: string
   state?: string
+  ibge?: string
 }
 
 export interface AnamnesisPersonalDataV2 {

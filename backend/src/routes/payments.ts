@@ -8,6 +8,8 @@ import {
   AsaasPayment,
   AsaasSubscription,
   addressFromAnamnesisPersonalData,
+  enrichAsaasAddress,
+  phoneFromAnamnesisPersonalData,
   cancelPaymentSilent,
   cancelPendingByExternalReference,
   cancelSubscriptionSilent,
@@ -75,12 +77,14 @@ function resolveUserId(request: FastifyRequest, bodyUserId?: string) {
   return { error: null, userId }
 }
 
-async function loadAsaasAddress(userId: string) {
+async function loadAsaasPayer(userId: string) {
   const form = await prisma.anamnesisForm.findUnique({
     where: { userId },
     select: { personalData: true },
   })
-  return addressFromAnamnesisPersonalData(form?.personalData)
+  const address = await enrichAsaasAddress(addressFromAnamnesisPersonalData(form?.personalData))
+  const anamnesisPhone = phoneFromAnamnesisPersonalData(form?.personalData)
+  return { address, anamnesisPhone }
 }
 
 async function ensureAsaasCustomer(
@@ -94,13 +98,16 @@ async function ensureAsaasCustomer(
   },
   cpfCnpj: string,
   address?: ReturnType<typeof addressFromAnamnesisPersonalData>,
+  phone?: string | null,
 ) {
-  const resolvedAddress = address === undefined ? await loadAsaasAddress(user.id) : address
+  const payer = address === undefined || phone === undefined ? await loadAsaasPayer(user.id) : null
+  const resolvedAddress = address === undefined ? payer?.address ?? null : address
+  const resolvedPhone = phone === undefined ? user.phone || payer?.anamnesisPhone || null : phone || user.phone
   if (user.asaasCustomerId) {
     await updateCustomer(user.asaasCustomerId, {
       name: user.name,
       email: user.email,
-      phone: user.phone,
+      phone: resolvedPhone,
       cpfCnpj,
       address: resolvedAddress,
     })
@@ -112,7 +119,7 @@ async function ensureAsaasCustomer(
   const customer = await createCustomer({
     name: user.name,
     email: user.email,
-    phone: user.phone,
+    phone: resolvedPhone,
     cpfCnpj,
     externalReference: user.id,
     address: resolvedAddress,
@@ -603,8 +610,9 @@ export async function paymentsRoutes(app: FastifyInstance) {
         })
       }
 
-      const address = await loadAsaasAddress(user.id)
-      const customerId = await ensureAsaasCustomer(user, cpfCnpj, address)
+      const payer = await loadAsaasPayer(user.id)
+      const customerPhone = user.phone || payer.anamnesisPhone
+      const customerId = await ensureAsaasCustomer(user, cpfCnpj, payer.address, customerPhone)
       const externalReference = `sub_${user.id}_${plan.id}`
       await cancelOrphanUnpaidSubscriptions(customerId, user.subscription?.asaasSubscriptionId)
 
@@ -613,8 +621,8 @@ export async function paymentsRoutes(app: FastifyInstance) {
           customerName: user.name,
           customerEmail: user.email,
           customerCpf: cpfCnpj,
-          customerPhone: user.phone,
-          customerAddress: address,
+          customerPhone,
+          customerAddress: payer.address,
           value: plan.price,
           name: plan.name,
           description: `Charme & Bela Club - ${plan.name}`,

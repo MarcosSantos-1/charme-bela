@@ -197,7 +197,8 @@ export type AsaasCustomerAddress = {
   addressNumber?: string
   complement?: string
   province?: string
-  city?: string
+  /** Código IBGE da cidade (Asaas exige integer em `city`, não o nome). */
+  cityIbge?: string
 }
 
 export function addressFromAnamnesisPersonalData(personalData: unknown): AsaasCustomerAddress | null {
@@ -209,7 +210,7 @@ export function addressFromAnamnesisPersonalData(personalData: unknown): AsaasCu
   const addressNumber = String(addr.number ?? '').trim()
   const complement = String(addr.complement ?? '').trim()
   const province = String(addr.neighborhood ?? '').trim()
-  const city = String(addr.city ?? '').trim()
+  const cityIbge = digitsOnly(String(addr.ibge ?? ''))
   if (!postalCode && !street) return null
   return {
     ...(postalCode ? { postalCode } : {}),
@@ -217,20 +218,52 @@ export function addressFromAnamnesisPersonalData(personalData: unknown): AsaasCu
     ...(addressNumber ? { addressNumber } : {}),
     ...(complement ? { complement } : {}),
     ...(province ? { province } : {}),
-    ...(city ? { city } : {}),
+    ...(cityIbge ? { cityIbge } : {}),
+  }
+}
+
+export function phoneFromAnamnesisPersonalData(personalData: unknown): string | null {
+  if (!personalData || typeof personalData !== 'object') return null
+  const phone = (personalData as { phone?: unknown }).phone
+  return normalizeAsaasMobilePhone(phone == null ? null : String(phone))
+}
+
+/** Completa o IBGE pelo CEP quando a ficha ainda não gravou o código. */
+export async function enrichAsaasAddress(
+  address?: AsaasCustomerAddress | null,
+): Promise<AsaasCustomerAddress | null> {
+  if (!address) return null
+  if (digitsOnly(address.cityIbge).length >= 6) return address
+  const cep = digitsOnly(address.postalCode)
+  if (cep.length !== 8) return address
+  try {
+    const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`)
+    const data = (await response.json()) as { erro?: boolean; ibge?: string; bairro?: string }
+    if (data?.erro || !data?.ibge) return address
+    return {
+      ...address,
+      cityIbge: digitsOnly(data.ibge),
+      ...(!address.province && data.bairro ? { province: String(data.bairro).trim() } : {}),
+    }
+  } catch {
+    return address
   }
 }
 
 function asaasAddressPayload(address?: AsaasCustomerAddress | null) {
   if (!address) return {}
   const postalCode = digitsOnly(address.postalCode)
+  const cityIbge = digitsOnly(address.cityIbge)
+  const rawNumber = address.addressNumber?.trim() || ''
   return {
     ...(postalCode.length === 8 ? { postalCode } : {}),
     ...(address.address?.trim() ? { address: address.address.trim() } : {}),
-    ...(address.addressNumber?.trim() ? { addressNumber: address.addressNumber.trim() } : {}),
+    ...(rawNumber
+      ? { addressNumber: /^\d+$/.test(rawNumber) ? Number(rawNumber) : rawNumber }
+      : {}),
     ...(address.complement?.trim() ? { complement: address.complement.trim() } : {}),
     ...(address.province?.trim() ? { province: address.province.trim() } : {}),
-    ...(address.city?.trim() ? { city: address.city.trim() } : {}),
+    ...(cityIbge.length >= 6 ? { city: Number(cityIbge) } : {}),
   }
 }
 
@@ -249,7 +282,7 @@ export async function createCustomer(input: {
       name: input.name,
       email: input.email,
       cpfCnpj: input.cpfCnpj,
-      ...(mobile ? { mobilePhone: mobile } : {}),
+      ...(mobile ? { phone: mobile, mobilePhone: mobile } : {}),
       ...asaasAddressPayload(input.address),
       notificationDisabled: false,
       externalReference: input.externalReference,
@@ -274,7 +307,7 @@ export async function updateCustomer(
       ...(input.name ? { name: input.name } : {}),
       ...(input.email ? { email: input.email } : {}),
       cpfCnpj: input.cpfCnpj,
-      ...(mobile ? { mobilePhone: mobile } : {}),
+      ...(mobile ? { phone: mobile, mobilePhone: mobile } : {}),
       ...asaasAddressPayload(input.address),
     }),
   })
@@ -561,7 +594,7 @@ export async function createCreditCardCheckout(input: {
         name: input.customerName,
         cpfCnpj: input.customerCpf,
         email: input.customerEmail,
-        ...(mobile ? { mobilePhone: mobile } : {}),
+        ...(mobile ? { phone: mobile, mobilePhone: mobile } : {}),
         ...asaasAddressPayload(input.customerAddress),
       },
       ...(input.recurrent

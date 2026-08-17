@@ -549,6 +549,7 @@ function AddressStepFields({
           neighborhood: data.bairro || '',
           city: data.localidade || '',
           state: (data.uf || '').toUpperCase(),
+          ibge: String(data.ibge || '').replace(/\D/g, ''),
         });
         setCepStatus('ok');
       } catch {

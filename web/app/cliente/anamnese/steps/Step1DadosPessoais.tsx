@@ -25,6 +25,7 @@ export default function Step1DadosPessoais({ data, onNext }: Props) {
     state: data.state || '',
     number: data.number || '',
     complement: data.complement || '',
+    ibge: data.ibge || '',
     howKnew: data.howKnew || ''
   })
 
@@ -44,6 +45,7 @@ export default function Step1DadosPessoais({ data, onNext }: Props) {
         state: data.state || '',
         number: data.number || '',
         complement: data.complement || '',
+        ibge: data.ibge || '',
         howKnew: data.howKnew || ''
       })
     }
@@ -64,7 +66,8 @@ export default function Step1DadosPessoais({ data, onNext }: Props) {
             street: data.logradouro,
             neighborhood: data.bairro,
             city: data.localidade,
-            state: data.uf
+            state: data.uf,
+            ibge: data.ibge || '',
           })
         }
       } catch (error) {

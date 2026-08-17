@@ -22,6 +22,7 @@ export interface AnamnesisFormState {
   neighborhood: string;
   city: string;
   state: string;
+  ibge: string;
 
   diagnosedDisease: YesNo | null;
   diagnosedDiseaseDetails: string;
@@ -108,6 +109,7 @@ export function createInitialState(prefill?: {
     neighborhood: '',
     city: '',
     state: '',
+    ibge: '',
 
     diagnosedDisease: null,
     diagnosedDiseaseDetails: '',
@@ -241,6 +243,7 @@ export function toBackendPayload(state: AnamnesisFormState) {
         neighborhood: state.neighborhood.trim(),
         city: state.city.trim(),
         state: state.state.trim().toUpperCase(),
+        ibge: state.ibge.trim(),
       },
     },
     healthData: {
@@ -337,6 +340,7 @@ export function fromBackendForm(
     neighborhood: p.address?.neighborhood || '',
     city: p.address?.city || '',
     state: String(p.address?.state || '').toUpperCase(),
+    ibge: String(p.address?.ibge || '').replace(/\D/g, ''),
 
     diagnosedDisease: h.diagnosedDisease ?? null,
     diagnosedDiseaseDetails: h.diagnosedDiseaseDetails || '',

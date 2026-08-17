@@ -50,6 +50,89 @@ function formatCountdown(ms: number) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+const ASAAS_WEBVIEW_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1';
+
+function asaasCallbackKind(url?: string | null): 'success' | 'cancel' | 'expired' | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.searchParams.get('success') === 'true') return 'success';
+    if (parsed.searchParams.get('expired') === 'true') return 'expired';
+    if (parsed.searchParams.get('canceled') === 'true') return 'cancel';
+  } catch {
+    if (url.includes('success=true')) return 'success';
+    if (url.includes('expired=true')) return 'expired';
+    if (url.includes('canceled=true')) return 'cancel';
+  }
+  return null;
+}
+
+function AsaasCheckoutWebView({
+  uri,
+  onSuccess,
+  onDismissed,
+}: {
+  uri: string;
+  onSuccess: () => void;
+  onDismissed: (reason: 'cancel' | 'expired') => void;
+}) {
+  const [popupUrl, setPopupUrl] = useState<string | null>(null);
+  const handled = useRef(false);
+
+  const consume = (url?: string) => {
+    if (!url || handled.current) return false;
+    const kind = asaasCallbackKind(url);
+    if (!kind) return false;
+    handled.current = true;
+    if (kind === 'success') onSuccess();
+    else onDismissed(kind);
+    return true;
+  };
+
+  const webViewProps = {
+    javaScriptEnabled: true,
+    domStorageEnabled: true,
+    sharedCookiesEnabled: true,
+    thirdPartyCookiesEnabled: true,
+    javaScriptCanOpenWindowsAutomatically: true,
+    setSupportMultipleWindows: true,
+    originWhitelist: ['*'] as string[],
+    mixedContentMode: 'always' as const,
+    userAgent: ASAAS_WEBVIEW_UA,
+    startInLoadingState: true,
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      <WebView
+        {...webViewProps}
+        source={{ uri }}
+        onOpenWindow={(event) => {
+          const targetUrl = event.nativeEvent.targetUrl;
+          if (targetUrl) setPopupUrl(targetUrl);
+        }}
+        onShouldStartLoadWithRequest={(request) => !consume(request.url)}
+        onNavigationStateChange={(nav) => {
+          consume(nav.url);
+        }}
+      />
+      {popupUrl ? (
+        <View style={StyleSheet.absoluteFillObject}>
+          <WebView
+            {...webViewProps}
+            source={{ uri: popupUrl }}
+            onShouldStartLoadWithRequest={(request) => !consume(request.url)}
+            onNavigationStateChange={(nav) => {
+              consume(nav.url);
+            }}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function cardBrandLabel(brandName?: string | null) {
   const value = (brandName || '').toLowerCase();
   if (value.includes('master')) return 'Mastercard';
@@ -492,7 +575,26 @@ export function CheckoutScreen({ route, navigation }: Props) {
               </TouchableOpacity>
             </View>
             {invoiceUrl ? (
-              <WebView source={{ uri: invoiceUrl }} startInLoadingState style={{ flex: 1 }} />
+              <AsaasCheckoutWebView
+                uri={invoiceUrl}
+                onSuccess={() => setCardOpen(false)}
+                onDismissed={(reason) => {
+                  setCardOpen(false);
+                  Alert.alert(
+                    reason === 'expired' ? 'Pagamento expirado' : 'Pagamento não concluído',
+                    'O Asaas pediu uma verificação (captcha) que o app às vezes não mostra. Abra no navegador para finalizar o cartão.',
+                    [
+                      { text: 'Ok', style: 'cancel' },
+                      {
+                        text: 'Abrir no navegador',
+                        onPress: () => {
+                          if (invoiceUrl) void WebBrowser.openBrowserAsync(invoiceUrl);
+                        },
+                      },
+                    ],
+                  );
+                }}
+              />
             ) : null}
             <TouchableOpacity
               style={styles.externalLink}

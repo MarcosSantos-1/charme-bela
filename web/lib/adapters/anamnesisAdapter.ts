@@ -20,6 +20,7 @@ export interface FrontendAnamnesisData {
   state?: string
   number?: string
   complement?: string
+  ibge?: string
   howKnew?: string
   
   // Step 2: Estilo de Vida
@@ -154,6 +155,7 @@ export function frontendToBackend(
         state: frontendData.state || '',
         number: frontendData.number || '',
         complement: frontendData.complement || '',
+        ibge: frontendData.ibge || '',
       },
       howKnew: frontendData.howKnew || '',
     },
@@ -255,6 +257,7 @@ export function backendToFrontend(backendData: any): FrontendAnamnesisData {
     state: p.address?.state || '',
     number: p.address?.number || '',
     complement: p.address?.complement || '',
+    ibge: p.address?.ibge || '',
     howKnew: p.howKnew || '',
 
     exerciseActivity:

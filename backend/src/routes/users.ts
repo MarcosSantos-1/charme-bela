@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { notifyAdminNewClientRegistered, notifyWelcome } from '../utils/notifications'
@@ -408,12 +409,34 @@ export async function usersRoutes(app: FastifyInstance) {
           : clubWelcomeSeenAt === null
             ? null
             : new Date(clubWelcomeSeenAt)
+
+      let nextEmail: string | undefined
+      if (email !== undefined) {
+        const normalized = String(email).trim().toLowerCase()
+        if (!normalized) {
+          return reply.status(400).send({ success: false, error: 'Informe um e-mail válido.' })
+        }
+        if (normalized.endsWith('@phone.charmebela.local') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+          return reply.status(400).send({ success: false, error: 'Informe um e-mail válido.' })
+        }
+        const clash = await prisma.user.findFirst({
+          where: { email: normalized, NOT: { id } },
+          select: { id: true },
+        })
+        if (clash) {
+          return reply.status(409).send({
+            success: false,
+            error: 'Este e-mail já está em uso em outra conta.',
+          })
+        }
+        nextEmail = normalized
+      }
       
       const user = await prisma.user.update({
         where: { id },
         data: {
           ...(name && { name }),
-          ...(email && { email }),
+          ...(nextEmail && { email: nextEmail }),
           ...(phone !== undefined && { phone }),
           ...(cpf !== undefined && { cpf: cpf ? cpf.replace(/\D/g, '') : null }),
           ...(profileImageUrl !== undefined && { profileImageUrl }),
@@ -439,6 +462,12 @@ export async function usersRoutes(app: FastifyInstance) {
         data: user
       })
     } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return reply.status(409).send({
+          success: false,
+          error: 'Este e-mail já está em uso em outra conta.',
+        })
+      }
       logger.error('Erro ao atualizar usuário:', error)
       return reply.status(500).send({
         success: false,

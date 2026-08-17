@@ -30,6 +30,12 @@ export function isPlausibleBrPhone(phone: string): boolean {
   return true;
 }
 
+export function isValidContactEmail(email?: string | null): boolean {
+  const value = (email || '').trim();
+  if (!value || value.toLowerCase().endsWith('@phone.charmebela.local')) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 export function formatPhoneDisplay(phone?: string | null): string {
   if (!phone) return '';
   const digits = phone.replace(/\D/g, '');

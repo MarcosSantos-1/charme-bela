@@ -35,6 +35,7 @@ import {
   payChargeWithCardToken,
   pickAsaasPhone,
   refundPayment,
+  asaasCustomerEmail,
   toCheckoutPayload,
   updateCustomer,
   updateSubscriptionCreditCard,
@@ -177,12 +178,11 @@ function clientIp(request: FastifyRequest) {
 }
 
 function isCardCapableBilling(billingType?: string | null) {
-  return (
-    billingType === 'CREDIT_CARD' ||
-    billingType === 'DEBIT_CARD' ||
-    billingType === 'UNDEFINED'
-  )
+  return billingType === 'CREDIT_CARD' || billingType === 'DEBIT_CARD'
 }
+
+const ASAAS_EMAIL_REQUIRED =
+  'Informe um e-mail em Dados pessoais. O Asaas exige esse campo para pagar com cartão.'
 
 function cardKindFromBilling(billingType?: string | null): 'credit' | 'debit' {
   return billingType === 'DEBIT_CARD' ? 'debit' : 'credit'
@@ -252,7 +252,7 @@ async function ensureCardInvoice(opts: {
   })
   const pending = (listed.data || []).find(
     (item) =>
-      isCardCapableBilling(item.billingType) &&
+      item.billingType === 'CREDIT_CARD' &&
       (item.status === 'PENDING' || item.status === 'OVERDUE') &&
       !item.deleted,
   )
@@ -262,19 +262,13 @@ async function ensureCardInvoice(opts: {
     value: opts.value,
     description: opts.description,
     externalReference: opts.externalReference,
-    billingType: 'UNDEFINED',
+    billingType: 'CREDIT_CARD',
   })
 }
 
 async function reuseOrCreateCharge(opts: {
   customerId: string
-  customerName: string
-  customerEmail: string
-  customerCpf: string
-  customerPhone?: string | null
-  customerAddress?: ReturnType<typeof addressFromAnamnesisPersonalData>
   value: number
-  name: string
   description: string
   externalReference: string
   existingPaymentId?: string | null
@@ -304,34 +298,15 @@ async function reuseOrCreateCharge(opts: {
 
   let cardInvoiceUrl: string | null = null
   try {
-    const checkout = await createCreditCardCheckout({
+    const card = await ensureCardInvoice({
       customerId: opts.customerId,
-      customerName: opts.customerName,
-      customerEmail: opts.customerEmail,
-      customerCpf: opts.customerCpf,
-      customerPhone: opts.customerPhone,
-      customerAddress: opts.customerAddress,
       value: opts.value,
-      name: opts.name,
       description: opts.description,
       externalReference: opts.externalReference,
-      recurrent: false,
-      billingTypes: ['CREDIT_CARD'],
     })
-    cardInvoiceUrl = checkout.link || null
+    cardInvoiceUrl = card.invoiceUrl || null
   } catch (error: any) {
-    logger.warning(`Checkout de cartão indisponível para ${opts.externalReference}: ${error.message}`)
-    try {
-      const card = await ensureCardInvoice({
-        customerId: opts.customerId,
-        value: opts.value,
-        description: opts.description,
-        externalReference: opts.externalReference,
-      })
-      cardInvoiceUrl = card.invoiceUrl || null
-    } catch (fallbackError: any) {
-      logger.warning(`Fatura de cartão indisponível para ${opts.externalReference}: ${fallbackError.message}`)
-    }
+    logger.warning(`Fatura de cartão indisponível para ${opts.externalReference}: ${error.message}`)
   }
 
   return toCheckoutPayload(pix, {
@@ -533,6 +508,9 @@ async function createAddCardCheckout(request: FastifyRequest, reply: FastifyRepl
         error: 'Informe o CPF no cadastro para salvar um cartão no Asaas.',
       })
     }
+    if (!asaasCustomerEmail(user.email)) {
+      return reply.status(400).send({ success: false, error: ASAAS_EMAIL_REQUIRED })
+    }
 
     const payer = await loadAsaasPayer(user.id)
     const customerPhone = pickAsaasPhone(payer.anamnesisPhone, user.phone)
@@ -559,8 +537,8 @@ async function createAddCardCheckout(request: FastifyRequest, reply: FastifyRepl
     })
     const pendingAddCard = (existing.data || []).find(
       (item) =>
+        item.billingType === 'CREDIT_CARD' &&
         (item.status === 'PENDING' || item.status === 'OVERDUE') &&
-        isCardCapableBilling(item.billingType) &&
         !item.deleted &&
         item.invoiceUrl,
     )
@@ -576,21 +554,13 @@ async function createAddCardCheckout(request: FastifyRequest, reply: FastifyRepl
       })
     }
 
-    const checkout = await createCreditCardCheckout({
+    const checkout = await ensureCardInvoice({
       customerId,
-      customerName: user.name,
-      customerEmail: user.email,
-      customerCpf: cpfCnpj,
-      customerPhone,
-      customerAddress: payer.address,
       value: 5,
-      name: 'Salvar cartão',
       description: 'Validação para memorizar o cartão. Estornamos em seguida.',
       externalReference: addCardRef,
-      recurrent: false,
-      billingTypes: ['CREDIT_CARD'],
     })
-    if (!checkout.link) {
+    if (!checkout.invoiceUrl) {
       return reply.status(502).send({
         success: false,
         error: 'O Asaas não devolveu o link para cadastrar o cartão. Tente de novo em instantes.',
@@ -599,7 +569,7 @@ async function createAddCardCheckout(request: FastifyRequest, reply: FastifyRepl
     return reply.status(200).send({
       success: true,
       data: {
-        url: checkout.link,
+        url: checkout.invoiceUrl,
         paymentId: checkout.id,
         pendingInvoice: false,
         validationCharge: true,
@@ -762,6 +732,9 @@ export async function paymentsRoutes(app: FastifyInstance) {
           error: 'Informe o CPF para emitir a cobrança. O Asaas exige o documento do pagador.',
         })
       }
+      if (!asaasCustomerEmail(user.email)) {
+        return reply.status(400).send({ success: false, error: ASAAS_EMAIL_REQUIRED })
+      }
 
       const payer = await loadAsaasPayer(user.id)
       const customerPhone = pickAsaasPhone(payer.anamnesisPhone, user.phone)
@@ -772,13 +745,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
 
       const checkout = await reuseOrCreateCharge({
         customerId,
-        customerName: user.name,
-        customerEmail: user.email,
-        customerCpf: cpfCnpj,
-        customerPhone,
-        customerAddress: payer.address,
         value: finalAmount,
-        name: service.name,
         description: body.customDescription ? `${description} (${body.customDescription})` : description,
         externalReference,
         existingPaymentId,
@@ -841,6 +808,9 @@ export async function paymentsRoutes(app: FastifyInstance) {
           success: false,
           error: 'Informe o CPF para emitir a cobrança. O Asaas exige o documento do pagador.',
         })
+      }
+      if (!asaasCustomerEmail(user.email)) {
+        return reply.status(400).send({ success: false, error: ASAAS_EMAIL_REQUIRED })
       }
 
       const payer = await loadAsaasPayer(user.id)

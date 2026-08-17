@@ -240,10 +240,11 @@ export function isAsaasPhoneError(error: unknown) {
   )
 }
 
-function asaasCustomerEmail(email?: string | null) {
+export function asaasCustomerEmail(email?: string | null) {
   const value = (email || '').trim()
   if (!value) return null
-  if (value.endsWith('@phone.charmebela.local')) return null
+  if (value.toLowerCase().endsWith('@phone.charmebela.local')) return null
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return null
   return value
 }
 

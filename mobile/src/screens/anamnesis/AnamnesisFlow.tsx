@@ -29,7 +29,7 @@ import {
 import { saveAnamnesis, updateUser } from '../../lib/api';
 import { getApiErrorMessage } from '../../types/commercial';
 import { brand } from '../../theme/brand';
-import { isPlausibleBrPhone, phonePrefillFromUser } from '../../lib/userDisplay';
+import { isPlausibleBrPhone, isValidContactEmail, phonePrefillFromUser } from '../../lib/userDisplay';
 import { cpfDigits, isValidCpf, maskCpf } from '../../lib/cpf';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -105,7 +105,8 @@ function canContinue(step: StepId, state: AnamnesisFormState): boolean {
         state.fullName.trim() &&
           state.birthDate.trim().length >= 8 &&
           isValidCpf(state.cpf) &&
-          isPlausibleBrPhone(state.phone),
+          isPlausibleBrPhone(state.phone) &&
+          isValidContactEmail(state.email),
       );
     case 'address':
       return Boolean(
@@ -305,6 +306,7 @@ export function AnamnesisFlow({ user, onComplete, initialForm }: AnamnesisFlowPr
         try {
           const updated = await updateUser(user.id, {
             ...(fullName ? { name: fullName } : {}),
+            ...(isValidContactEmail(state.email) ? { email: state.email.trim() } : {}),
             ...(phoneDigits.length >= 10 ? { phone: phoneDigits } : {}),
             ...(isValidCpf(document) ? { cpf: document } : {}),
           });
@@ -650,6 +652,20 @@ function renderStep(
             onChangeText={(fullName) => patch({ fullName })}
             placeholder="Como você gosta de ser chamada"
           />
+          <RevealInput
+            label="E-mail"
+            value={state.email}
+            onChangeText={(email) => patch({ email })}
+            placeholder="seu@email.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {state.email.trim().length > 3 && !isValidContactEmail(state.email) ? (
+            <Text style={{ color: '#b91c1c', fontSize: 13, fontWeight: '600', marginTop: -4 }}>
+              Informe um e-mail válido. O Asaas usa esse campo no cartão.
+            </Text>
+          ) : null}
           <RevealInput
             label="Data de nascimento"
             value={state.birthDate}

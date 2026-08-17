@@ -26,13 +26,18 @@ export default function PerfilPage() {
   const [isEditing, setIsEditing] = useState(false)
   const [editedName, setEditedName] = useState('')
   const [editedPhone, setEditedPhone] = useState('')
+  const [editedEmail, setEditedEmail] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const visibleEmail = (value?: string | null) =>
+    value && !value.endsWith('@phone.charmebela.local') ? value : ''
 
   // Atualizar campos quando user carregar
   useEffect(() => {
     if (user) {
       setEditedName(user.name || '')
       setEditedPhone(user.phone || '')
+      setEditedEmail(visibleEmail(user.email))
     }
   }, [user])
   
@@ -51,14 +56,19 @@ export default function PerfilPage() {
       return
     }
 
+    const emailValue = editedEmail.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue) || emailValue.endsWith('@phone.charmebela.local')) {
+      toast.error('Informe um e-mail válido')
+      return
+    }
+
     setSaving(true)
     
     try {
-      console.log('💾 Salvando perfil:', { name: editedName, phone: editedPhone })
-      
       await api.updateUser(user.id, { 
         name: editedName, 
-        phone: editedPhone 
+        phone: editedPhone,
+        email: emailValue,
       })
       
       toast.success('Perfil atualizado com sucesso!')
@@ -219,12 +229,19 @@ export default function PerfilPage() {
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type="email"
-                  value={user?.email || ''}
-                  disabled
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl bg-gray-50 text-gray-900"
+                  value={isEditing ? editedEmail : visibleEmail(user?.email)}
+                  onChange={(e) => setEditedEmail(e.target.value)}
+                  disabled={!isEditing}
+                  autoComplete="email"
+                  placeholder="seu@email.com"
+                  className={`w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 ${
+                    !isEditing ? 'bg-gray-50' : ''
+                  }`}
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-1">O e-mail não pode ser alterado</p>
+              <p className="text-xs text-gray-500 mt-1">
+                O Asaas usa este e-mail no pagamento com cartão. O login continua pelo método que você já usa.
+              </p>
             </div>
 
             <div>

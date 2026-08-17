@@ -22,6 +22,7 @@ import {
   displayUserName,
   isPhoneLocalEmail,
   isPlausibleBrPhone,
+  isValidContactEmail,
   phonePrefillFromUser,
 } from '../../../lib/userDisplay';
 import {
@@ -121,10 +122,10 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
     confirmPhoneLink,
   } = useAuth();
 
-  const contactEmail =
-    user?.email && !isPhoneLocalEmail(user.email) ? user.email : '';
-
   const [phone, setPhone] = useState(() => phonePrefillFromUser(user));
+  const [email, setEmail] = useState(() =>
+    user?.email && !isPhoneLocalEmail(user.email) ? user.email : '',
+  );
   const [cpf, setCpf] = useState(() => maskCpf(user?.cpf || ''));
   const [birthDate, setBirthDate] = useState('');
   const [loadingForm, setLoadingForm] = useState(true);
@@ -241,6 +242,14 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
       Alert.alert('Data inválida', 'Use o formato DD/MM/AAAA.');
       return;
     }
+    const emailValue = email.trim();
+    if (!isValidContactEmail(emailValue)) {
+      Alert.alert(
+        'E-mail inválido',
+        'Informe um e-mail válido. O Asaas usa esse campo no pagamento com cartão.',
+      );
+      return;
+    }
 
     setSaving(true);
     try {
@@ -251,6 +260,7 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
         : undefined;
 
       const updated = await updateUser(user.id, {
+        email: emailValue,
         ...(e164 ? { phone: e164 } : {}),
         cpf: cpfDigits(cpf),
       });
@@ -263,6 +273,7 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
             ...(current?.personalData || {}),
             birthDate: birthDate.trim(),
             cpf: cpfDigits(cpf),
+            email: emailValue,
             ...(e164 ? { phone: e164 } : {}),
           },
           lifestyleData: current?.lifestyleData || {},
@@ -410,10 +421,13 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
           <FormField
             label="Email"
             icon="mail-outline"
-            value={contactEmail}
-            placeholder={isPhoneLocalEmail(user?.email) ? 'Conta por celular' : 'seu@email.com'}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="seu@email.com"
             keyboardType="email-address"
-            editable={false}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable
           />
           <FormField
             label="Telefone"

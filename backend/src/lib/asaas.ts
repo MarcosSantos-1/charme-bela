@@ -177,9 +177,19 @@ export function normalizeCpfCnpj(value?: string | null): string | null {
   return null
 }
 
+/** DDD + número local. Rejeita placeholder tipo 11999999999 (Asaas: "celular informado é inválido"). */
+export function isPlausibleBrLocalPhone(local: string): boolean {
+  if (local.length !== 10 && local.length !== 11) return false
+  if (local[0] === '0') return false
+  const subscriber = local.slice(2)
+  if (!subscriber || /^(\d)\1+$/.test(subscriber)) return false
+  if (local.length === 11 && subscriber[0] !== '9') return false
+  return true
+}
+
 /**
  * Celular/fixo BR para o Asaas: DDD + número, sem DDI 55.
- * `+5511999999999` / `5511999999999` → `11999999999`.
+ * `+5511987654321` / `5511987654321` → `11987654321`.
  * Não remove `55` de números com 10–11 dígitos (DDD 55 existe no RS).
  */
 export function normalizeAsaasMobilePhone(value?: string | null): string | null {
@@ -190,8 +200,8 @@ export function normalizeAsaasMobilePhone(value?: string | null): string | null 
   while (digits.startsWith('55') && digits.length >= 12) {
     digits = digits.slice(2)
   }
-  if (digits.length === 10 || digits.length === 11) return digits
-  return null
+  if (!isPlausibleBrLocalPhone(digits)) return null
+  return digits
 }
 
 /** Primeiro telefone que o Asaas aceita, entre cadastro Firebase e anamnese. */
@@ -223,7 +233,11 @@ export function asaasCheckoutPhone(value?: string | null): string | null {
 
 export function isAsaasPhoneError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || '')
-  return /telefone informado é inválido/i.test(message) || /invalid phone/i.test(message)
+  return (
+    /celular informado é inválido/i.test(message) ||
+    /telefone informado é inválido/i.test(message) ||
+    /invalid (phone|mobile)/i.test(message)
+  )
 }
 
 function asaasCustomerEmail(email?: string | null) {

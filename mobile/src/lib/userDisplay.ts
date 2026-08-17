@@ -15,6 +15,21 @@ export function looksLikePhoneName(value?: string | null): boolean {
   return digits.length >= 10 && digits.length === trimmed.replace(/[+\s().-]/g, '').length;
 }
 
+/** DDD + número real. Rejeita placeholder tipo (11) 99999-9999. */
+export function isPlausibleBrPhone(phone: string): boolean {
+  const digits = phone.replace(/\D/g, '');
+  const local =
+    digits.startsWith('55') && (digits.length === 12 || digits.length === 13)
+      ? digits.slice(2)
+      : digits;
+  if (local.length !== 10 && local.length !== 11) return false;
+  if (local[0] === '0') return false;
+  const subscriber = local.slice(2);
+  if (!subscriber || /^(\d)\1+$/.test(subscriber)) return false;
+  if (local.length === 11 && subscriber[0] !== '9') return false;
+  return true;
+}
+
 export function formatPhoneDisplay(phone?: string | null): string {
   if (!phone) return '';
   const digits = phone.replace(/\D/g, '');

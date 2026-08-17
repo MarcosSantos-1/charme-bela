@@ -21,6 +21,7 @@ import { KeyboardForm, dismissKeyboard } from '../../../components/KeyboardForm'
 import {
   displayUserName,
   isPhoneLocalEmail,
+  isPlausibleBrPhone,
   phonePrefillFromUser,
 } from '../../../lib/userDisplay';
 import {
@@ -225,8 +226,11 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
     if (!user?.id) return;
     dismissKeyboard();
     const phoneDigits = phone.replace(/\D/g, '');
-    if (phoneDigits && phoneDigits.length < 10) {
-      Alert.alert('Telefone inválido', 'Informe um telefone com DDD.');
+    if (phoneDigits && !isPlausibleBrPhone(phoneDigits)) {
+      Alert.alert(
+        'Telefone inválido',
+        'Informe um celular real com DDD. Números como 99999-9999 o pagamento recusa.',
+      );
       return;
     }
     if (!isValidCpf(cpf)) {
@@ -416,7 +420,7 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
             icon="call-outline"
             value={phone}
             onChangeText={(t) => setPhone(maskPhone(t))}
-            placeholder="(11) 99999-9999"
+            placeholder="(00) 00000-0000"
             keyboardType="phone-pad"
             editable
           />

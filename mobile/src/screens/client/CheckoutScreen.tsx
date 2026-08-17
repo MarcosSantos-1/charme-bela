@@ -167,7 +167,14 @@ export function CheckoutScreen({ route, navigation }: Props) {
         if (cancelled) return;
         if (status.pixQrBase64 && !isPlan) setPixQr(status.pixQrBase64);
         if (status.pixCopyPaste && !isPlan) setPixCopy(status.pixCopyPaste);
-        if (status.invoiceUrl) setInvoiceUrl(status.invoiceUrl);
+        if (status.invoiceUrl) {
+          setInvoiceUrl((current) => {
+            if (current && /checkoutSession/i.test(current) && !/checkoutSession/i.test(status.invoiceUrl || '')) {
+              return current;
+            }
+            return status.invoiceUrl;
+          });
+        }
         if (status.paid) {
           setPhase('paid');
           await refresh();

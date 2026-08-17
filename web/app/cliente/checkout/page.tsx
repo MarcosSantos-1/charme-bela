@@ -68,7 +68,14 @@ function PayCheckout({
         const status = await api.getPaymentStatus(paymentId)
         if (cancelled) return
         setAmount(status.value || 0)
-        if (status.invoiceUrl) setInvoiceUrl(status.invoiceUrl)
+        if (status.invoiceUrl) {
+          setInvoiceUrl((current) => {
+            if (current && /checkoutSession/i.test(current) && !/checkoutSession/i.test(status.invoiceUrl || '')) {
+              return current
+            }
+            return status.invoiceUrl
+          })
+        }
         const cardBilling = status.billingType === 'credit_card' || status.billingType === 'debit_card'
         if (!cardOnly && !cardBilling) {
           if (status.pixCopyPaste) setPixCopy(status.pixCopyPaste)

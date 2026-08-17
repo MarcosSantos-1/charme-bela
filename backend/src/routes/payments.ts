@@ -268,7 +268,13 @@ async function ensureCardInvoice(opts: {
 
 async function reuseOrCreateCharge(opts: {
   customerId: string
+  customerName: string
+  customerEmail: string
+  customerCpf: string
+  customerPhone?: string | null
+  customerAddress?: ReturnType<typeof addressFromAnamnesisPersonalData>
   value: number
+  name: string
   description: string
   externalReference: string
   existingPaymentId?: string | null
@@ -298,15 +304,34 @@ async function reuseOrCreateCharge(opts: {
 
   let cardInvoiceUrl: string | null = null
   try {
-    const card = await ensureCardInvoice({
+    const checkout = await createCreditCardCheckout({
       customerId: opts.customerId,
+      customerName: opts.customerName,
+      customerEmail: opts.customerEmail,
+      customerCpf: opts.customerCpf,
+      customerPhone: opts.customerPhone,
+      customerAddress: opts.customerAddress,
       value: opts.value,
+      name: opts.name,
       description: opts.description,
       externalReference: opts.externalReference,
+      recurrent: false,
+      billingTypes: ['CREDIT_CARD'],
     })
-    cardInvoiceUrl = card.invoiceUrl || null
+    cardInvoiceUrl = checkout.link || null
   } catch (error: any) {
-    logger.warning(`Fatura de cartão indisponível para ${opts.externalReference}: ${error.message}`)
+    logger.warning(`Checkout de cartão indisponível para ${opts.externalReference}: ${error.message}`)
+    try {
+      const card = await ensureCardInvoice({
+        customerId: opts.customerId,
+        value: opts.value,
+        description: opts.description,
+        externalReference: opts.externalReference,
+      })
+      cardInvoiceUrl = card.invoiceUrl || null
+    } catch (fallbackError: any) {
+      logger.warning(`Fatura de cartão indisponível para ${opts.externalReference}: ${fallbackError.message}`)
+    }
   }
 
   return toCheckoutPayload(pix, {
@@ -563,7 +588,7 @@ async function createAddCardCheckout(request: FastifyRequest, reply: FastifyRepl
       description: 'Validação para memorizar o cartão. Estornamos em seguida.',
       externalReference: addCardRef,
       recurrent: false,
-      billingTypes: ['CREDIT_CARD', 'DEBIT_CARD'],
+      billingTypes: ['CREDIT_CARD'],
     })
     if (!checkout.link) {
       return reply.status(502).send({
@@ -602,7 +627,7 @@ async function checkoutPaidStatus(payment: AsaasPayment) {
     }
   }
 
-  let invoiceUrl = payment.billingType === 'CREDIT_CARD' ? payment.invoiceUrl || null : null
+  let invoiceUrl = isCardCapableBilling(payment.billingType) ? payment.invoiceUrl || null : null
   if (payment.externalReference) {
     try {
       const siblings = await listPayments({
@@ -615,15 +640,16 @@ async function checkoutPaidStatus(payment: AsaasPayment) {
           paid: true,
           status: paidSibling.status,
           billingType: mapAsaasBillingType(paidSibling.billingType),
-          invoiceUrl: paidSibling.invoiceUrl || payment.invoiceUrl || null,
+          invoiceUrl: paidSibling.invoiceUrl || invoiceUrl || payment.invoiceUrl || null,
         }
       }
       const card = (siblings.data || []).find(
         (item) =>
-          item.billingType === 'CREDIT_CARD' &&
-          (item.status === 'PENDING' || item.status === 'OVERDUE'),
+          isCardCapableBilling(item.billingType) &&
+          (item.status === 'PENDING' || item.status === 'OVERDUE') &&
+          item.invoiceUrl,
       )
-      invoiceUrl = card?.invoiceUrl || invoiceUrl || payment.invoiceUrl || null
+      if (card?.invoiceUrl) invoiceUrl = card.invoiceUrl
     } catch (error: any) {
       logger.warning(`Não foi possível listar cobranças irmãs de ${payment.id}: ${error.message}`)
     }
@@ -633,7 +659,7 @@ async function checkoutPaidStatus(payment: AsaasPayment) {
     paid: false,
     status: payment.status,
     billingType: mapAsaasBillingType(payment.billingType),
-    invoiceUrl: invoiceUrl || payment.invoiceUrl || null,
+    invoiceUrl,
   }
 }
 
@@ -737,14 +763,22 @@ export async function paymentsRoutes(app: FastifyInstance) {
         })
       }
 
-      const customerId = await ensureAsaasCustomer(user, cpfCnpj)
+      const payer = await loadAsaasPayer(user.id)
+      const customerPhone = pickAsaasPhone(payer.anamnesisPhone, user.phone)
+      const customerId = await ensureAsaasCustomer(user, cpfCnpj, payer.address, customerPhone)
       const externalReference = resolvedPackagePurchaseId
         ? `pkg_${resolvedPackagePurchaseId}`
         : `apt_${appointmentId || service.id}`
 
       const checkout = await reuseOrCreateCharge({
         customerId,
+        customerName: user.name,
+        customerEmail: user.email,
+        customerCpf: cpfCnpj,
+        customerPhone,
+        customerAddress: payer.address,
         value: finalAmount,
+        name: service.name,
         description: body.customDescription ? `${description} (${body.customDescription})` : description,
         externalReference,
         existingPaymentId,

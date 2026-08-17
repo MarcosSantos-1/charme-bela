@@ -673,6 +673,13 @@ export async function listSubscriptions(params: {
 const CHECKOUT_ITEM_IMAGE =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
 
+/** Checkout hospedado Asaas só aceita CREDIT_CARD e PIX — DEBIT_CARD retorna "billingTypes inválido". */
+export function hostedCheckoutBillingTypes(requested?: AsaasBillingType[]): Array<'CREDIT_CARD' | 'PIX'> {
+  const allowed = (requested || []).filter((type): type is 'CREDIT_CARD' | 'PIX' => type === 'CREDIT_CARD' || type === 'PIX')
+  if (allowed.length) return [...new Set(allowed)]
+  return ['CREDIT_CARD']
+}
+
 export async function createCreditCardCheckout(input: {
   customerId?: string
   customerName: string
@@ -702,11 +709,7 @@ export async function createCreditCardCheckout(input: {
     asaasFetch<AsaasCheckout>('/checkouts', {
       method: 'POST',
       body: JSON.stringify({
-        billingTypes: input.billingTypes?.length
-          ? input.billingTypes
-          : input.recurrent
-            ? ['CREDIT_CARD']
-            : ['CREDIT_CARD', 'DEBIT_CARD'],
+        billingTypes: hostedCheckoutBillingTypes(input.billingTypes),
         chargeTypes: input.recurrent ? ['RECURRENT'] : ['DETACHED'],
         minutesToExpire: 60,
         externalReference: input.externalReference.slice(0, 200),

@@ -374,9 +374,9 @@ export async function pauseSubscription(userId: string): Promise<Subscription> {
   return unwrap<Subscription>(response.data);
 }
 
-export async function createPortalSession(userId: string) {
-  const response = await api.post('/payments/manage', { userId });
-  return unwrap<{ url: string }>(response.data);
+export async function addCardCheckout(userId: string) {
+  const response = await api.post('/payments/add-card', { userId });
+  return unwrap<{ url: string; pendingInvoice?: boolean }>(response.data);
 }
 
 export async function getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
@@ -387,6 +387,19 @@ export async function getPaymentMethods(userId: string): Promise<PaymentMethod[]
     if (error?.response?.status === 404) return [];
     throw error;
   }
+}
+
+export async function updateSavedCard(
+  cardId: string,
+  data: { userId?: string; nickname?: string | null; isDefault?: boolean },
+): Promise<PaymentMethod[]> {
+  const response = await api.patch(`/payments/methods/${cardId}`, data);
+  return unwrap<PaymentMethod[]>(response.data);
+}
+
+export async function deleteSavedCard(cardId: string, userId: string): Promise<PaymentMethod[]> {
+  const response = await api.delete(`/payments/methods/${cardId}`, { params: { userId } });
+  return unwrap<PaymentMethod[]>(response.data);
 }
 
 export async function getPaymentHistory(userId: string): Promise<PaymentHistoryItem[]> {

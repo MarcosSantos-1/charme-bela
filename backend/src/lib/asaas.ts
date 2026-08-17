@@ -65,6 +65,7 @@ export type AsaasPayment = {
   description?: string
   externalReference?: string | null
   invoiceUrl?: string | null
+  transactionReceiptUrl?: string | null
   dueDate?: string
   paymentDate?: string | null
   confirmedDate?: string | null
@@ -515,6 +516,51 @@ export async function updateSubscriptionValue(id: string, value: number) {
   })
 }
 
+export type AsaasCreditCardHolderInfo = {
+  name: string
+  email: string
+  cpfCnpj: string
+  postalCode?: string
+  addressNumber?: string
+  addressComplement?: string | null
+  phone?: string | null
+  mobilePhone?: string | null
+}
+
+/** Troca o cartão da assinatura sem gerar cobrança nova. */
+export async function updateSubscriptionCreditCard(
+  id: string,
+  input: {
+    creditCardToken: string
+    remoteIp: string
+    holder?: AsaasCreditCardHolderInfo | null
+  },
+) {
+  return asaasFetch<AsaasSubscription>(`/subscriptions/${id}/creditCard`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      creditCardToken: input.creditCardToken,
+      remoteIp: input.remoteIp,
+      ...(input.holder
+        ? {
+            creditCardHolderInfo: {
+              name: input.holder.name,
+              email: input.holder.email,
+              cpfCnpj: input.holder.cpfCnpj,
+              ...(input.holder.postalCode ? { postalCode: input.holder.postalCode } : {}),
+              ...(input.holder.addressNumber ? { addressNumber: input.holder.addressNumber } : {}),
+              ...(input.holder.addressComplement
+                ? { addressComplement: input.holder.addressComplement }
+                : {}),
+              ...(input.holder.phone ? { phone: input.holder.phone } : {}),
+              ...(input.holder.mobilePhone ? { mobilePhone: input.holder.mobilePhone } : {}),
+            },
+          }
+        : {}),
+    }),
+  })
+}
+
 export function extractCardToken(payment: {
   creditCardToken?: string | null
   creditCard?: AsaasCreditCardSummary | null
@@ -567,6 +613,7 @@ export async function createCreditCardCheckout(input: {
   description: string
   externalReference: string
   recurrent?: boolean
+  billingTypes?: AsaasBillingType[]
 }) {
   const frontend = (process.env.FRONTEND_URL || 'https://localhost').replace(/\/$/, '')
   const mobile = normalizeAsaasMobilePhone(input.customerPhone)
@@ -584,7 +631,11 @@ export async function createCreditCardCheckout(input: {
   return asaasFetch<AsaasCheckout>('/checkouts', {
     method: 'POST',
     body: JSON.stringify({
-      billingTypes: ['CREDIT_CARD'],
+      billingTypes: input.billingTypes?.length
+        ? input.billingTypes
+        : input.recurrent
+          ? ['CREDIT_CARD']
+          : ['CREDIT_CARD', 'DEBIT_CARD'],
       chargeTypes: input.recurrent ? ['RECURRENT'] : ['DETACHED'],
       minutesToExpire: 60,
       externalReference: input.externalReference.slice(0, 200),

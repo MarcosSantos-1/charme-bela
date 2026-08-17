@@ -25,6 +25,12 @@ function cardBrandLabel(brandName?: string | null) {
   return 'Cartão'
 }
 
+function savedCardLabel(card: api.PaymentMethod) {
+  const nick = card.nickname?.trim()
+  if (nick) return nick
+  return `${cardBrandLabel(card.brand)} •••• ${card.last4}`
+}
+
 function PayCheckout({
   paymentId,
   appointmentId,
@@ -44,15 +50,18 @@ function PayCheckout({
   const [pixQr, setPixQr] = useState<string | null>(null)
   const [savedCards, setSavedCards] = useState<api.PaymentMethod[]>([])
   const [chargingSavedId, setChargingSavedId] = useState<string | null>(null)
+  const [nicknameCard, setNicknameCard] = useState<api.PaymentMethod | null>(null)
+  const [nicknameDraft, setNicknameDraft] = useState('')
 
   useEffect(() => {
     if (!user?.id) return
     api.getPaymentMethods(user.id).then((methods) => {
-      setSavedCards(methods.filter((method) => method.last4))
+      setSavedCards(methods.filter((method) => method.last4 && (!cardOnly || method.kind !== 'debit')))
     }).catch(() => setSavedCards([]))
-  }, [user?.id])
+  }, [user?.id, cardOnly])
 
   useEffect(() => {
+    if (paid) return
     let cancelled = false
     const poll = async () => {
       try {
@@ -68,7 +77,23 @@ function PayCheckout({
         setLoading(false)
         if (status.paid) {
           setPaid(true)
-          setTimeout(() => router.push(cardOnly ? '/cliente/plano' : '/cliente'), 1800)
+          if (user?.id) {
+            api.getPaymentMethods(user.id).then((methods) => {
+              const unnamed = methods
+                .filter((method) => method.last4 && !method.nickname?.trim())
+                .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0]
+              if (unnamed) {
+                setNicknameCard(unnamed)
+                setNicknameDraft('')
+                return
+              }
+              setTimeout(() => router.push(cardOnly ? '/cliente/plano' : '/cliente'), 1800)
+            }).catch(() => {
+              setTimeout(() => router.push(cardOnly ? '/cliente/plano' : '/cliente'), 1800)
+            })
+          } else {
+            setTimeout(() => router.push(cardOnly ? '/cliente/plano' : '/cliente'), 1800)
+          }
         }
       } catch (error: any) {
         if (!cancelled) {
@@ -83,7 +108,7 @@ function PayCheckout({
       cancelled = true
       clearInterval(id)
     }
-  }, [cardOnly, paymentId, router])
+  }, [cardOnly, paymentId, router, paid, user?.id])
 
   const payWithSaved = async (card: api.PaymentMethod) => {
     if (!user || chargingSavedId) return
@@ -98,6 +123,19 @@ function PayCheckout({
       if (result.paid) {
         setPaid(true)
         toast.success('Cartão cobrado')
+        try {
+          const methods = await api.getPaymentMethods(user.id)
+          const unnamed = methods
+            .filter((method) => method.last4 && !method.nickname?.trim())
+            .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0]
+          if (unnamed) {
+            setNicknameCard(unnamed)
+            setNicknameDraft('')
+            return
+          }
+        } catch {
+          // segue para a agenda
+        }
         setTimeout(() => router.push(cardOnly ? '/cliente/plano' : '/cliente'), 1800)
         return
       }
@@ -122,12 +160,52 @@ function PayCheckout({
 
   if (paid) {
     return (
-      <div className="bg-white rounded-2xl p-8 border border-gray-200 text-center">
-        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+      <div className="bg-white rounded-2xl p-8 border border-gray-200 text-center space-y-4">
+        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto">
           <Check className="w-10 h-10 text-green-600" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Pagamento confirmado</h2>
+        <h2 className="text-2xl font-bold text-gray-900">Pagamento confirmado</h2>
         <p className="text-gray-600">{cardOnly ? 'Sua assinatura está ativa.' : 'Seu horário está reservado.'}</p>
+        {nicknameCard ? (
+          <div className="text-left rounded-2xl border border-pink-100 bg-pink-50 p-4 space-y-3">
+            <p className="font-semibold text-gray-900">Apelido do cartão</p>
+            <p className="text-sm text-gray-600">
+              Como você quer ver {cardBrandLabel(nicknameCard.brand)} •••• {nicknameCard.last4} na hora de pagar?
+            </p>
+            <input
+              value={nicknameDraft}
+              onChange={(event) => setNicknameDraft(event.target.value.slice(0, 40))}
+              placeholder="Ex.: Nubank pessoal"
+              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm"
+            />
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                className="flex-1"
+                onClick={async () => {
+                  const nickname = nicknameDraft.trim()
+                  if (!nickname || !user) return
+                  try {
+                    await api.updateSavedCard(nicknameCard.id, { userId: user.id, nickname })
+                    toast.success('Apelido salvo')
+                    router.push(cardOnly ? '/cliente/plano' : '/cliente')
+                  } catch (error: any) {
+                    toast.error(error.message || 'Não foi possível salvar o apelido')
+                  }
+                }}
+              >
+                Salvar apelido
+              </Button>
+              <button
+                type="button"
+                className="flex-1 rounded-xl border border-gray-200 font-semibold text-gray-600"
+                onClick={() => router.push(cardOnly ? '/cliente/plano' : '/cliente')}
+              >
+                Agora não
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     )
   }
@@ -187,10 +265,16 @@ function PayCheckout({
             {charging ? <Loader2 className="w-6 h-6 animate-spin" /> : <Check className="w-6 h-6" />}
             <div className="flex-1">
               <p className="font-bold">
-                Pagar agora com {cardBrandLabel(card.brand)} •••• {card.last4}
+                Pagar agora com {savedCardLabel(card)}
               </p>
               <p className="text-sm text-pink-100">
-                {card.isDefault ? 'Cartão principal · um clique' : 'Um clique. Sem preencher de novo.'}
+                {card.kind === 'debit'
+                  ? 'Débito · só compras avulsas'
+                  : card.nickname
+                    ? `${cardBrandLabel(card.brand)} •••• ${card.last4}${card.isDefault ? ' · principal' : ''}`
+                    : card.isDefault
+                      ? 'Cartão principal · um clique'
+                      : 'Um clique. Sem preencher de novo.'}
               </p>
             </div>
           </button>
@@ -222,8 +306,8 @@ function PayCheckout({
             </p>
             <p className="text-sm text-pink-100">
               {cardOnly
-                ? 'A assinatura renova no crédito. Cartões novos também ficam salvos.'
-                : 'Crédito ou débito no checkout seguro. Cartão de crédito fica salvo para a próxima.'}
+                ? 'A assinatura renova no crédito. Depois você escolhe um apelido para o cartão.'
+                : 'Crédito ou débito no checkout seguro. Depois você escolhe um apelido para aparecer na hora de pagar.'}
             </p>
           </div>
         </a>

@@ -15,7 +15,6 @@ import {
   AlertCircle,
   ExternalLink,
   Loader2,
-  Settings,
   CheckCircle,
   XCircle
 } from 'lucide-react'
@@ -25,7 +24,9 @@ import toast from 'react-hot-toast'
 import { 
   getPaymentMethods, 
   getPaymentHistory, 
-  createCustomerPortalSession,
+  addCardCheckout,
+  updateSavedCard,
+  deleteSavedCard,
   releaseAppointmentHold,
   PaymentMethod,
   PaymentHistory
@@ -91,7 +92,10 @@ function PagamentosContent() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([])
   const [loading, setLoading] = useState(true)
-  const [openingPortal, setOpeningPortal] = useState(false)
+  const [openingAddCard, setOpeningAddCard] = useState(false)
+  const [busyCardId, setBusyCardId] = useState<string | null>(null)
+  const [editingCard, setEditingCard] = useState<PaymentMethod | null>(null)
+  const [nicknameDraft, setNicknameDraft] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 5
 
@@ -119,36 +123,73 @@ function PagamentosContent() {
     }
   }
 
-  const handleOpenCustomerPortal = async () => {
+  const handleAddCard = async () => {
     if (!user) return
-    
-    setOpeningPortal(true)
-    
+    setOpeningAddCard(true)
     try {
-      const portalData = await createCustomerPortalSession(user.id)
-      
-      // apiRequest já retorna só o data, então portalData = { url }
-      if (portalData && portalData.url) {
-        // Redireciona para o checkout Asaas
-        window.location.href = portalData.url
-      } else {
-        throw new Error('Erro ao abrir portal')
+      const result = await addCardCheckout(user.id)
+      if (result?.url) {
+        window.location.href = result.url
+        return
       }
+      throw new Error('Não foi possível abrir o checkout do cartão')
     } catch (error: any) {
-      console.error('Erro ao abrir portal:', error)
-      
-      // Mostra mensagem de erro específica se disponível
-      const errorMessage = error?.message || 'Erro ao abrir portal. Tente novamente.'
-      
-      if (errorMessage.includes('Portal de Pagamentos precisa ser ativado')) {
-        toast.error('Não foi possível abrir a fatura Asaas. Tente de novo em instantes.', { duration: 6000 })
-      } else if (errorMessage.includes('Assine um plano primeiro')) {
-        toast.error('Você precisa assinar um plano primeiro para acessar o portal', { duration: 5000 })
-      } else {
-        toast.error(errorMessage, { duration: 5000 })
-      }
+      toast.error(error?.message || 'Use um cartão novo no próximo pagamento para memorizá-lo.')
     } finally {
-      setOpeningPortal(false)
+      setOpeningAddCard(false)
+    }
+  }
+
+  const handleSetDefault = async (card: PaymentMethod) => {
+    if (!user) return
+    if (card.kind === 'debit') {
+      toast.error('Cartão de débito não pode ser o débito automático da assinatura.')
+      return
+    }
+    setBusyCardId(card.id)
+    try {
+      const next = await updateSavedCard(card.id, { userId: user.id, isDefault: true })
+      setPaymentMethods(next)
+      toast.success('Este cartão passa a ser debitado automaticamente.')
+    } catch (error: any) {
+      toast.error(error?.message || 'Não foi possível trocar o cartão do débito automático.')
+    } finally {
+      setBusyCardId(null)
+    }
+  }
+
+  const handleDeleteCard = async (card: PaymentMethod) => {
+    if (!user) return
+    if (!window.confirm(`Remover ${card.nickname || card.brand + ' •••• ' + card.last4}?`)) return
+    setBusyCardId(card.id)
+    try {
+      const next = await deleteSavedCard(card.id, user.id)
+      setPaymentMethods(next)
+      toast.success('Cartão removido')
+    } catch (error: any) {
+      toast.error(error?.message || 'Não foi possível remover o cartão.')
+    } finally {
+      setBusyCardId(null)
+    }
+  }
+
+  const handleSaveNickname = async () => {
+    if (!user || !editingCard) return
+    const nickname = nicknameDraft.trim()
+    if (!nickname) {
+      toast.error('Digite um apelido')
+      return
+    }
+    setBusyCardId(editingCard.id)
+    try {
+      const next = await updateSavedCard(editingCard.id, { userId: user.id, nickname })
+      setPaymentMethods(next)
+      setEditingCard(null)
+      toast.success('Apelido salvo')
+    } catch (error: any) {
+      toast.error(error?.message || 'Não foi possível salvar o apelido.')
+    } finally {
+      setBusyCardId(null)
     }
   }
 
@@ -347,14 +388,14 @@ function PagamentosContent() {
 
           {/* Payment Methods */}
           <div className="bg-white rounded-2xl p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">Seus Cartões</h3>
+            <h3 className="font-semibold text-gray-900 mb-1">Seus Cartões</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Débito automático da assinatura usa crédito. Débito vale para avulsos. O apelido aparece na hora de pagar.
+            </p>
 
             {paymentMethods.length > 0 ? (
-              <>
-                <p className="text-sm text-gray-600 mb-3">Cartões salvos:</p>
-                <div className="space-y-4">
-                  {paymentMethods.map((card) => {
-                  // Gradientes modernos por bandeira
+              <div className="space-y-4">
+                {paymentMethods.map((card) => {
                   const brandStyle = card.brand === 'visa' 
                     ? 'bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800' 
                     : card.brand === 'mastercard'
@@ -366,69 +407,134 @@ function PagamentosContent() {
                     : 'bg-gradient-to-br from-gray-700 via-gray-800 to-slate-900'
                   
                   return (
+                    <div key={card.id} className="space-y-2">
                     <div
-                      key={card.id}
-                      className={`relative rounded-2xl p-6 text-white shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-[1.02] ${brandStyle}`}
+                      className={`relative rounded-2xl p-6 text-white shadow-lg ${brandStyle}`}
                     >
-                      {/* Pattern de fundo */}
                       <div className="absolute inset-0 opacity-10 rounded-2xl" style={{
                         backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 80%, white 1px, transparent 1px)',
                         backgroundSize: '50px 50px'
                       }}></div>
                       
-                      {/* Conteúdo */}
                       <div className="relative z-10">
-                        {/* Header: Chip + Badge */}
-                        <div className="flex items-start justify-between mb-8">
+                        <div className="flex items-start justify-between mb-6">
                           <div className="w-14 h-11 bg-gradient-to-br from-yellow-300 via-yellow-400 to-yellow-500 rounded-lg shadow-md"></div>
-                          {card.isDefault && (
-                            <div className="bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1">
-                              ⭐ Padrão
-                            </div>
-                          )}
-            </div>
-
-                        {/* Número do Cartão */}
-                        <div className="text-2xl font-mono tracking-[0.2em] mb-6 flex items-center gap-3">
-                          <span className="opacity-60">••••</span>
-                          <span className="opacity-60">••••</span>
-                          <span className="opacity-60">••••</span>
-                          <span className="font-bold">{card.last4}</span>
-            </div>
-
-                        {/* Footer: Validade + Bandeira */}
-                        <div className="flex justify-between items-end">
-                          <div>
-                            <div className="text-xs opacity-70 mb-1 uppercase tracking-wider">
-                              {card.expMonth ? 'Válido até' : 'Cartão salvo'}
-                            </div>
-                            <div className="text-base font-semibold">
-                              {card.expMonth
-                                ? `${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)}`
-                                : card.isDefault ? 'Principal' : 'Um clique'}
-                            </div>
+                          <div className="flex gap-2">
+                            {card.kind === 'debit' ? (
+                              <div className="bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-semibold">
+                                Débito
+                              </div>
+                            ) : (
+                              <div className="bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-semibold">
+                                Crédito
+                              </div>
+                            )}
+                            {card.isDefault && (
+                              <div className="bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-semibold">
+                                Débito automático
+                              </div>
+                            )}
                           </div>
-                          <div className="text-2xl font-bold uppercase tracking-wider opacity-90">
-                            {card.brand}
-                      </div>
                         </div>
+
+                        <div className="text-lg font-bold mb-2">
+                          {card.nickname?.trim() || `${card.brand} •••• ${card.last4}`}
+                        </div>
+                        {card.nickname?.trim() ? (
+                          <div className="text-sm font-mono tracking-[0.2em] opacity-80 mb-4">
+                            •••• {card.last4}
+                          </div>
+                        ) : (
+                          <div className="text-2xl font-mono tracking-[0.2em] mb-4 flex items-center gap-3">
+                            <span className="opacity-60">••••</span>
+                            <span className="font-bold">{card.last4}</span>
+                          </div>
+                        )}
                       </div>
                       
-                      {/* Brilho sutil */}
                       <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl"></div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {card.kind !== 'debit' && !card.isDefault ? (
+                        <button
+                          type="button"
+                          disabled={busyCardId === card.id}
+                          onClick={() => void handleSetDefault(card)}
+                          className="text-sm font-semibold text-pink-700 bg-pink-50 hover:bg-pink-100 rounded-full px-3 py-1.5"
+                        >
+                          Usar no débito automático
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingCard(card)
+                          setNicknameDraft(card.nickname || '')
+                        }}
+                        className="text-sm font-semibold text-pink-700 bg-pink-50 hover:bg-pink-100 rounded-full px-3 py-1.5"
+                      >
+                        {card.nickname ? 'Editar apelido' : 'Dar apelido'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyCardId === card.id}
+                        onClick={() => void handleDeleteCard(card)}
+                        className="text-sm font-semibold text-red-700 bg-red-50 hover:bg-red-100 rounded-full px-3 py-1.5"
+                      >
+                        Remover
+                      </button>
+                    </div>
                     </div>
                   )
                   })}
                 </div>
-              </>
             ) : (
               <div className="text-center py-8 text-gray-500">
                 <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-30" />
                 <p className="text-sm">Nenhum cartão salvo ainda</p>
-                <p className="text-xs mt-1">Seus cartões aparecerão aqui após o primeiro pagamento</p>
+                <p className="text-xs mt-1">Pague uma vez no checkout seguro e o cartão aparece aqui</p>
               </div>
             )}
+            <button
+              type="button"
+              onClick={() => void handleAddCard()}
+              disabled={openingAddCard}
+              className="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-pink-200 py-3 text-sm font-bold text-pink-700 hover:bg-pink-50 disabled:opacity-60"
+            >
+              {openingAddCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+              Adicionar cartão
+            </button>
           </div>
+
+          {editingCard ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div className="w-full max-w-md rounded-2xl bg-white p-6 space-y-4">
+                <h3 className="font-bold text-gray-900">Apelido do cartão</h3>
+                <p className="text-sm text-gray-500">
+                  Como você quer ver {editingCard.brand} •••• {editingCard.last4} na hora de pagar?
+                </p>
+                <input
+                  value={nicknameDraft}
+                  onChange={(event) => setNicknameDraft(event.target.value.slice(0, 40))}
+                  placeholder="Ex.: Nubank pessoal"
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <Button variant="primary" className="flex-1" onClick={() => void handleSaveNickname()}>
+                    Salvar apelido
+                  </Button>
+                  <button
+                    type="button"
+                    className="flex-1 rounded-xl border border-gray-200 font-semibold text-gray-600"
+                    onClick={() => setEditingCard(null)}
+                  >
+                    Agora não
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {/* Payment History */}
           <div className="bg-white rounded-2xl p-6">
@@ -495,10 +601,9 @@ function PagamentosContent() {
                       </div>
                     </div>
                       
-                      {/* Links de comprovante */}
-                      {isPaid && (
+                      {isPaid && (payment.hostedInvoiceUrl || payment.receiptUrl || payment.invoicePdf) ? (
                         <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
-                          {payment.invoicePdf && (
+                          {payment.invoicePdf ? (
                             <a
                               href={payment.invoicePdf}
                               target="_blank"
@@ -508,31 +613,20 @@ function PagamentosContent() {
                               <Download className="w-4 h-4" />
                               <span>PDF</span>
                             </a>
-                          )}
-                          {payment.hostedInvoiceUrl && (
+                          ) : null}
+                          {(payment.receiptUrl || payment.hostedInvoiceUrl) ? (
                             <a
-                              href={payment.hostedInvoiceUrl}
+                              href={payment.receiptUrl || payment.hostedInvoiceUrl || ''}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                              className="flex items-center space-x-2 text-sm text-pink-600 hover:text-pink-700 font-medium"
                             >
                               <ExternalLink className="w-4 h-4" />
-                              <span>Comprovante</span>
+                              <span>Ver comprovante</span>
                             </a>
-                          )}
-                          {payment.receiptUrl && (
-                            <a
-                              href={payment.receiptUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center space-x-2 text-sm text-green-600 hover:text-green-700 font-medium"
-                            >
-                              <Download className="w-4 h-4" />
-                              <span>Recibo</span>
-                            </a>
-                          )}
+                          ) : null}
                         </div>
-                      )}
+                      ) : null}
                       
                       {/* Mensagem de erro se falhou */}
                       {isFailed && (

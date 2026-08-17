@@ -17,6 +17,7 @@ import * as WebBrowser from 'expo-web-browser';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ClientStackParamList } from '../../navigation/ClientNavigator';
 import { ScreenHeader } from '../../components/ScreenHeader';
+import { CardNicknameModal } from '../../components/CardNicknameModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCommercial } from '../../contexts/CommercialContext';
 import {
@@ -26,8 +27,15 @@ import {
   createPaymentSession,
   getPaymentMethods,
   getPaymentStatus,
+  updateSavedCard,
 } from '../../lib/api';
-import { getApiErrorMessage, type PaymentMethod } from '../../types/commercial';
+import {
+  cardBrandLabel,
+  getApiErrorMessage,
+  savedCardLabel,
+  unnamedSavedCard,
+  type PaymentMethod,
+} from '../../types/commercial';
 import { brand } from '../../theme/brand';
 import { isValidCpf, maskCpf } from '../../lib/cpf';
 import { creditCard3dSource } from '../../assets/brandAssets';
@@ -45,16 +53,6 @@ function formatCountdown(ms: number) {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-function cardBrandLabel(brandName?: string | null) {
-  const value = (brandName || '').toLowerCase();
-  if (value.includes('master')) return 'Mastercard';
-  if (value.includes('visa')) return 'Visa';
-  if (value.includes('amex') || value.includes('american')) return 'Amex';
-  if (value.includes('elo')) return 'Elo';
-  if (value.includes('hiper')) return 'Hipercard';
-  return 'Cartão';
 }
 
 export function CheckoutScreen({ route, navigation }: Props) {
@@ -80,6 +78,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
   const [remaining, setRemaining] = useState(0);
   const [savedCards, setSavedCards] = useState<PaymentMethod[]>([]);
   const [chargingSavedId, setChargingSavedId] = useState<string | null>(null);
+  const [nicknameCard, setNicknameCard] = useState<PaymentMethod | null>(null);
   const abandoning = useRef(false);
   const startedRef = useRef(false);
   const cpfRef = useRef(cpf);
@@ -116,7 +115,9 @@ export function CheckoutScreen({ route, navigation }: Props) {
       if (checkout.expiresAt && !isPlan) setExpiresAt(new Date(checkout.expiresAt).getTime());
       try {
         const methods = await getPaymentMethods(user.id);
-        setSavedCards(methods.filter((method) => method.last4));
+        setSavedCards(
+          methods.filter((method) => method.last4 && (!isPlan || method.kind !== 'debit')),
+        );
       } catch {
         setSavedCards([]);
       }
@@ -170,6 +171,15 @@ export function CheckoutScreen({ route, navigation }: Props) {
         if (status.paid) {
           setPhase('paid');
           await refresh();
+          try {
+            if (user) {
+              const methods = await getPaymentMethods(user.id);
+              const unnamed = unnamedSavedCard(methods);
+              if (unnamed) setNicknameCard(unnamed);
+            }
+          } catch {
+            // apelido pode ser dado depois em Meu Plano
+          }
         }
       } catch {
         // webhook continua sendo a fonte da verdade
@@ -181,7 +191,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [isPlan, phase, paymentId, refresh]);
+  }, [isPlan, phase, paymentId, refresh, user?.id]);
 
   const qrSource = useMemo(() => {
     if (!pixQr) return null;
@@ -245,6 +255,13 @@ export function CheckoutScreen({ route, navigation }: Props) {
       if (result.paid) {
         setPhase('paid');
         await refresh();
+        try {
+          const methods = await getPaymentMethods(user.id);
+          const unnamed = unnamedSavedCard(methods);
+          if (unnamed) setNicknameCard(unnamed);
+        } catch {
+          // apelido pode ser dado depois em Meu Plano
+        }
         return;
       }
       Alert.alert(
@@ -429,10 +446,16 @@ export function CheckoutScreen({ route, navigation }: Props) {
                   )}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.savedCardTitle}>
-                      Pagar agora com {cardBrandLabel(card.brand)} •••• {card.last4}
+                      Pagar agora com {savedCardLabel(card)}
                     </Text>
                     <Text style={styles.savedCardHint}>
-                      {card.isDefault ? 'Cartão principal · um toque' : 'Um toque. Sem preencher de novo.'}
+                      {card.kind === 'debit'
+                        ? 'Débito · só compras avulsas'
+                        : card.nickname
+                          ? `${cardBrandLabel(card.brand)}${card.last4 ? ` •••• ${card.last4}` : ''}${card.isDefault ? ' · principal' : ''}`
+                          : card.isDefault
+                            ? 'Cartão principal · um toque'
+                            : 'Um toque. Sem preencher de novo.'}
                     </Text>
                   </View>
                 </LinearGradient>
@@ -458,8 +481,8 @@ export function CheckoutScreen({ route, navigation }: Props) {
                 </Text>
                 <Text style={styles.cardCtaHint}>
                   {isPlan
-                    ? 'Abre o Asaas no navegador — captcha e cartão funcionam melhor lá. Ao voltar, esta tela confirma sozinha.'
-                    : 'Abre o Asaas no navegador. Cartão de crédito fica salvo para a próxima.'}
+                    ? 'Abre o Asaas no navegador — captcha e cartão funcionam melhor lá. Ao voltar, esta tela confirma sozinha. Depois você escolhe um apelido para o cartão.'
+                    : 'Abre o Asaas no navegador. Crédito ou débito. Depois você escolhe um apelido para aparecer na hora de pagar.'}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.85)" />
@@ -467,6 +490,22 @@ export function CheckoutScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </ScrollView>
       ) : null}
+
+      <CardNicknameModal
+        visible={Boolean(nicknameCard)}
+        brandName={nicknameCard?.brand}
+        last4={nicknameCard?.last4}
+        initialValue={nicknameCard?.nickname}
+        onSkip={() => setNicknameCard(null)}
+        onSave={(nickname) => {
+          const card = nicknameCard;
+          setNicknameCard(null);
+          if (!user || !card) return;
+          void updateSavedCard(card.id, { userId: user.id, nickname }).catch(() => {
+            Alert.alert('Apelido', 'O pagamento já está ok. Você pode apelidar o cartão em Meu Plano.');
+          });
+        }}
+      />
     </View>
   );
 }

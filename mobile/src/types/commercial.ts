@@ -156,9 +156,36 @@ export interface PaymentMethod {
   id: string;
   brand?: string;
   last4?: string;
+  nickname?: string | null;
+  kind?: 'credit' | 'debit' | string;
   expMonth?: number;
   expYear?: number;
   isDefault: boolean;
+  updatedAt?: string;
+}
+
+export function cardBrandLabel(brandName?: string | null) {
+  const value = (brandName || '').toLowerCase();
+  if (value.includes('master')) return 'Mastercard';
+  if (value.includes('visa')) return 'Visa';
+  if (value.includes('amex') || value.includes('american')) return 'Amex';
+  if (value.includes('elo')) return 'Elo';
+  if (value.includes('hiper')) return 'Hipercard';
+  if (value.includes('diners')) return 'Diners';
+  return brandName ? brandName : 'Cartão';
+}
+
+export function savedCardLabel(card: Pick<PaymentMethod, 'nickname' | 'brand' | 'last4'>) {
+  const nick = card.nickname?.trim();
+  if (nick) return nick;
+  const last4 = card.last4 ? `•••• ${card.last4}` : '';
+  return `${cardBrandLabel(card.brand)}${last4 ? ` ${last4}` : ''}`.trim();
+}
+
+export function unnamedSavedCard(methods: PaymentMethod[]) {
+  return methods
+    .filter((method) => method.last4 && !method.nickname?.trim())
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0];
 }
 
 export interface PaymentHistoryItem {

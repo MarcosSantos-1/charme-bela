@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'crypto'
-import { FastifyInstance, FastifyRequest } from 'fastify'
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
@@ -31,10 +31,12 @@ import {
   listSubscriptionPayments,
   mapAsaasBillingType,
   normalizeCpfCnpj,
+  normalizeAsaasMobilePhone,
   payChargeWithCardToken,
   refundPayment,
   toCheckoutPayload,
   updateCustomer,
+  updateSubscriptionCreditCard,
 } from '../lib/asaas'
 import { cancelUnpaidPackagePurchase, markPackagePurchasePaid } from '../utils/packages'
 import {
@@ -172,6 +174,69 @@ function clientIp(request: FastifyRequest) {
   return request.ip || '127.0.0.1'
 }
 
+function isCardCapableBilling(billingType?: string | null) {
+  return (
+    billingType === 'CREDIT_CARD' ||
+    billingType === 'DEBIT_CARD' ||
+    billingType === 'UNDEFINED'
+  )
+}
+
+function cardKindFromBilling(billingType?: string | null): 'credit' | 'debit' {
+  return billingType === 'DEBIT_CARD' ? 'debit' : 'credit'
+}
+
+function sanitizeCardNickname(value?: string | null) {
+  const nickname = (value || '').trim().slice(0, 40)
+  return nickname || null
+}
+
+async function creditCardHolderInfo(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true, phone: true, cpf: true },
+  })
+  if (!user) return null
+  const cpfCnpj = normalizeCpfCnpj(user.cpf)
+  if (!cpfCnpj) return null
+  const payer = await loadAsaasPayer(userId)
+  const phone = normalizeAsaasMobilePhone(user.phone || payer.anamnesisPhone)
+  return {
+    name: user.name,
+    email: user.email,
+    cpfCnpj,
+    postalCode: payer.address?.postalCode,
+    addressNumber: payer.address?.addressNumber,
+    addressComplement: payer.address?.complement || null,
+    phone,
+    mobilePhone: phone,
+  }
+}
+
+async function syncSubscriptionDefaultCard(opts: {
+  userId: string
+  asaasToken: string
+  remoteIp?: string | null
+}) {
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId: opts.userId },
+    select: { asaasSubscriptionId: true, status: true },
+  })
+  if (!subscription?.asaasSubscriptionId) return
+  if (subscription.status === 'CANCELED') return
+  const holder = await creditCardHolderInfo(opts.userId)
+  try {
+    await updateSubscriptionCreditCard(subscription.asaasSubscriptionId, {
+      creditCardToken: opts.asaasToken,
+      remoteIp: opts.remoteIp || '127.0.0.1',
+      holder,
+    })
+  } catch (error: any) {
+    logger.warning(`Não foi possível atualizar o cartão da assinatura Asaas: ${error.message}`)
+    throw error
+  }
+}
+
 async function ensureCardInvoice(opts: {
   customerId: string
   value: number
@@ -181,11 +246,13 @@ async function ensureCardInvoice(opts: {
   const listed = await listPayments({
     customer: opts.customerId,
     externalReference: opts.externalReference,
-    billingType: 'CREDIT_CARD',
     limit: 10,
   })
   const pending = (listed.data || []).find(
-    (item) => item.status === 'PENDING' || item.status === 'OVERDUE',
+    (item) =>
+      isCardCapableBilling(item.billingType) &&
+      (item.status === 'PENDING' || item.status === 'OVERDUE') &&
+      !item.deleted,
   )
   if (pending?.invoiceUrl) return pending
   return createPayment({
@@ -193,7 +260,7 @@ async function ensureCardInvoice(opts: {
     value: opts.value,
     description: opts.description,
     externalReference: opts.externalReference,
-    billingType: 'CREDIT_CARD',
+    billingType: 'UNDEFINED',
   })
 }
 
@@ -256,9 +323,12 @@ async function listCardMethods(userId: string) {
     id: card.id,
     brand: (card.brand || 'card').toLowerCase(),
     last4: card.last4,
+    nickname: card.nickname,
+    kind: card.kind === 'debit' ? 'debit' : 'credit',
     expMonth: 0,
     expYear: 0,
     isDefault: card.isDefault,
+    updatedAt: card.updatedAt.toISOString(),
   }))
 }
 
@@ -305,6 +375,7 @@ async function persistSavedCard(payment: AsaasPayment) {
   if (!user) return
 
   const digits = last4 || '****'
+  const kind = cardKindFromBilling(payment.billingType)
   const existing = await prisma.savedCard.findFirst({
     where: {
       userId: user.id,
@@ -316,10 +387,13 @@ async function persistSavedCard(payment: AsaasPayment) {
   })
 
   await prisma.$transaction(async (tx) => {
-    await tx.savedCard.updateMany({
-      where: { userId: user.id },
-      data: { isDefault: false },
-    })
+    const makeDefault = kind === 'credit'
+    if (makeDefault) {
+      await tx.savedCard.updateMany({
+        where: { userId: user.id },
+        data: { isDefault: false },
+      })
+    }
     if (existing) {
       await tx.savedCard.update({
         where: { id: existing.id },
@@ -327,7 +401,8 @@ async function persistSavedCard(payment: AsaasPayment) {
           asaasToken: token!,
           brand,
           last4: digits,
-          isDefault: true,
+          kind,
+          isDefault: makeDefault ? true : existing.isDefault,
         },
       })
       return
@@ -338,10 +413,19 @@ async function persistSavedCard(payment: AsaasPayment) {
         asaasToken: token!,
         brand,
         last4: digits,
-        isDefault: true,
+        kind,
+        isDefault: makeDefault,
       },
     })
   })
+
+  if (kind === 'credit') {
+    try {
+      await syncSubscriptionDefaultCard({ userId: user.id, asaasToken: token })
+    } catch {
+      // o cartão já ficou salvo no app; a assinatura Asaas tenta de novo no "usar no débito automático"
+    }
+  }
 }
 
 async function cancelOrphanUnpaidSubscriptions(customerId: string, keepId?: string | null) {
@@ -383,7 +467,7 @@ function toHistoryItem(payment: AsaasPayment) {
     createdAt: payment.dueDate || new Date().toISOString(),
     invoicePdf: null,
     hostedInvoiceUrl: payment.invoiceUrl || null,
-    receiptUrl: payment.invoiceUrl || null,
+    receiptUrl: payment.transactionReceiptUrl || payment.invoiceUrl || null,
   }
 }
 
@@ -391,6 +475,72 @@ function isVisibleHistoryStatus(status?: string | null) {
   if (!status) return false
   if (status === 'PENDING' || status === 'OVERDUE' || status === 'DELETED') return false
   return true
+}
+
+async function createAddCardCheckout(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    if (!isAsaasConfigured()) {
+      return reply.status(503).send({ success: false, error: 'Asaas não configurado (ASAAS_API_KEY)' })
+    }
+    const body = (request.body || {}) as { userId?: string }
+    const resolved = resolveUserId(request, body.userId)
+    if (resolved.error === 'forbidden') {
+      return reply.status(403).send({ success: false, error: 'Acesso negado' })
+    }
+    if (!resolved.userId) {
+      return reply.status(400).send({ success: false, error: 'Usuário não autenticado' })
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: resolved.userId },
+      include: { subscription: true },
+    })
+    if (!user) {
+      return reply.status(404).send({ success: false, error: 'Usuário não encontrado' })
+    }
+    if (!user.asaasCustomerId) {
+      return reply.status(404).send({
+        success: false,
+        error:
+          'Nenhum pagamento Asaas encontrado. Assine um plano ou pague um agendamento para cadastrar o primeiro cartão.',
+      })
+    }
+
+    let url: string | null = null
+    if (user.subscription?.asaasSubscriptionId) {
+      const subPayments = await listSubscriptionPayments(user.subscription.asaasSubscriptionId)
+      const pending = (subPayments.data || []).find(
+        (item) => item.status === 'PENDING' || item.status === 'OVERDUE',
+      )
+      url = pending?.invoiceUrl || null
+    }
+    if (!url) {
+      const history = await listPayments({ customer: user.asaasCustomerId, limit: 20 })
+      const pending = (history.data || []).find(
+        (item) =>
+          (item.status === 'PENDING' || item.status === 'OVERDUE') &&
+          isCardCapableBilling(item.billingType) &&
+          !item.deleted,
+      )
+      url = pending?.invoiceUrl || null
+    }
+    if (url) {
+      return reply.status(200).send({ success: true, data: { url, pendingInvoice: true } })
+    }
+
+    return reply.status(409).send({
+      success: false,
+      error:
+        'Não há fatura em aberto. O Asaas só memoriza o cartão numa compra: use crédito ou débito no próximo pagamento (plano ou agendamento). Depois escolha o apelido e qual crédito é debitado automaticamente.',
+    })
+  } catch (error: any) {
+    logger.error('Erro ao abrir cadastro de cartão:', error)
+    return reply.status(500).send({
+      success: false,
+      error: 'Erro ao abrir cadastro de cartão',
+      details: error.message,
+    })
+  }
 }
 
 async function checkoutPaidStatus(payment: AsaasPayment) {
@@ -695,56 +845,12 @@ export async function paymentsRoutes(app: FastifyInstance) {
 
   app.post('/payments/manage', async (request, reply) => {
     logger.route('POST', '/payments/manage')
-    try {
-      if (!isAsaasConfigured()) {
-        return reply.status(503).send({ success: false, error: 'Asaas não configurado (ASAAS_API_KEY)' })
-      }
-      const body = request.body as { userId?: string }
-      const resolved = resolveUserId(request, body.userId)
-      if (resolved.error === 'forbidden') {
-        return reply.status(403).send({ success: false, error: 'Acesso negado' })
-      }
-      if (!resolved.userId) {
-        return reply.status(400).send({ success: false, error: 'Usuário não autenticado' })
-      }
+    return createAddCardCheckout(request, reply)
+  })
 
-      const user = await prisma.user.findUnique({
-        where: { id: resolved.userId },
-        include: { subscription: true },
-      })
-      if (!user) {
-        return reply.status(404).send({ success: false, error: 'Usuário não encontrado' })
-      }
-      if (!user.asaasCustomerId) {
-        return reply.status(404).send({
-          success: false,
-          error: 'Nenhum pagamento Asaas encontrado. Assine um plano primeiro.',
-        })
-      }
-
-      let url: string | null = null
-      if (user.subscription?.asaasSubscriptionId) {
-        const subPayments = await listSubscriptionPayments(user.subscription.asaasSubscriptionId)
-        const paid = (subPayments.data || []).find((item) => isAsaasPaidStatus(item.status))
-        url = paid?.invoiceUrl || null
-      }
-      if (!url) {
-        const history = await listPayments({ customer: user.asaasCustomerId, limit: 20 })
-        const paid = (history.data || []).find((item) => isAsaasPaidStatus(item.status))
-        url = paid?.invoiceUrl || null
-      }
-      if (!url) {
-        return reply.status(404).send({
-          success: false,
-          error: 'Ainda não há fatura paga para visualizar. Os cartões salvos aparecem no app; um cartão novo é cadastrado no próximo pagamento seguro.',
-        })
-      }
-
-      return reply.status(200).send({ success: true, data: { url } })
-    } catch (error: any) {
-      logger.error('Erro ao abrir gestão Asaas:', error)
-      return reply.status(500).send({ success: false, error: 'Erro ao abrir portal de pagamentos', details: error.message })
-    }
+  app.post('/payments/add-card', async (request, reply) => {
+    logger.route('POST', '/payments/add-card')
+    return createAddCardCheckout(request, reply)
   })
 
   app.post('/payments/abandon', async (request, reply) => {
@@ -940,6 +1046,119 @@ export async function paymentsRoutes(app: FastifyInstance) {
     }
   })
 
+  app.patch('/payments/methods/:id', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    logger.route('PATCH', `/payments/methods/${id}`)
+    try {
+      const body = (request.body || {}) as { userId?: string; nickname?: string | null; isDefault?: boolean }
+      const resolved = resolveUserId(request, body.userId)
+      if (resolved.error === 'forbidden') {
+        return reply.status(403).send({ success: false, error: 'Acesso negado' })
+      }
+      if (!resolved.userId) {
+        return reply.status(400).send({ success: false, error: 'Usuário não autenticado' })
+      }
+      const card = await prisma.savedCard.findFirst({
+        where: { id, userId: resolved.userId },
+      })
+      if (!card) {
+        return reply.status(404).send({ success: false, error: 'Cartão não encontrado' })
+      }
+      if (body.isDefault === true && card.kind === 'debit') {
+        return reply.status(400).send({
+          success: false,
+          error: 'Cartão de débito não pode ser o débito automático da assinatura. Escolha um cartão de crédito.',
+        })
+      }
+
+      if (body.isDefault === true) {
+        await prisma.$transaction(async (tx) => {
+          await tx.savedCard.updateMany({
+            where: { userId: resolved.userId! },
+            data: { isDefault: false },
+          })
+          await tx.savedCard.update({
+            where: { id: card.id },
+            data: {
+              isDefault: true,
+              ...(body.nickname !== undefined ? { nickname: sanitizeCardNickname(body.nickname) } : {}),
+            },
+          })
+        })
+        try {
+          await syncSubscriptionDefaultCard({
+            userId: resolved.userId,
+            asaasToken: card.asaasToken,
+            remoteIp: clientIp(request),
+          })
+        } catch (error: any) {
+          return reply.status(502).send({
+            success: false,
+            error:
+              error.message ||
+              'Cartão marcado no app, mas o Asaas não atualizou o débito automático. Tente de novo em instantes.',
+          })
+        }
+      } else if (body.nickname !== undefined) {
+        await prisma.savedCard.update({
+          where: { id: card.id },
+          data: { nickname: sanitizeCardNickname(body.nickname) },
+        })
+      }
+
+      return reply.status(200).send({ success: true, data: await listCardMethods(resolved.userId) })
+    } catch (error: any) {
+      logger.error('Erro ao atualizar cartão salvo:', error)
+      return reply.status(500).send({ success: false, error: 'Não foi possível atualizar o cartão' })
+    }
+  })
+
+  app.delete('/payments/methods/:id', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    logger.route('DELETE', `/payments/methods/${id}`)
+    try {
+      const query = request.query as { userId?: string }
+      const body = (request.body || {}) as { userId?: string }
+      const resolved = resolveUserId(request, body.userId || query.userId)
+      if (resolved.error === 'forbidden') {
+        return reply.status(403).send({ success: false, error: 'Acesso negado' })
+      }
+      if (!resolved.userId) {
+        return reply.status(400).send({ success: false, error: 'Usuário não autenticado' })
+      }
+      const card = await prisma.savedCard.findFirst({
+        where: { id, userId: resolved.userId },
+      })
+      if (!card) {
+        return reply.status(404).send({ success: false, error: 'Cartão não encontrado' })
+      }
+      const wasDefault = card.isDefault
+      await prisma.savedCard.delete({ where: { id: card.id } })
+      if (wasDefault) {
+        const next = await prisma.savedCard.findFirst({
+          where: { userId: resolved.userId, kind: 'credit' },
+          orderBy: { createdAt: 'desc' },
+        })
+        if (next) {
+          await prisma.savedCard.update({ where: { id: next.id }, data: { isDefault: true } })
+          try {
+            await syncSubscriptionDefaultCard({
+              userId: resolved.userId,
+              asaasToken: next.asaasToken,
+              remoteIp: clientIp(request),
+            })
+          } catch (error: any) {
+            logger.warning(`Cartão removido, mas o Asaas não atualizou o débito automático: ${error.message}`)
+          }
+        }
+      }
+      return reply.status(200).send({ success: true, data: await listCardMethods(resolved.userId) })
+    } catch (error: any) {
+      logger.error('Erro ao remover cartão salvo:', error)
+      return reply.status(500).send({ success: false, error: 'Não foi possível remover o cartão' })
+    }
+  })
+
   app.post('/payments/charge-saved-card', async (request, reply) => {
     logger.route('POST', '/payments/charge-saved-card')
     try {
@@ -983,6 +1202,12 @@ export async function paymentsRoutes(app: FastifyInstance) {
         return reply.status(400).send({
           success: false,
           error: 'Nenhum cartão salvo. Pague uma vez no checkout seguro para guardar o cartão.',
+        })
+      }
+      if (body.planId && savedCard.kind === 'debit') {
+        return reply.status(400).send({
+          success: false,
+          error: 'A assinatura só renova no crédito. Escolha um cartão de crédito ou pague no checkout seguro.',
         })
       }
 
@@ -1151,7 +1376,12 @@ export async function paymentsRoutes(app: FastifyInstance) {
       await cancelOrphanUnpaidSubscriptions(user.asaasCustomerId, user.subscription?.asaasSubscriptionId)
       const payments = await listPayments({ customer: user.asaasCustomerId, limit: 50 })
       const history = (payments.data || [])
-        .filter((payment) => isVisibleHistoryStatus(payment.status) && !payment.deleted)
+        .filter(
+          (payment) =>
+            isVisibleHistoryStatus(payment.status) &&
+            !payment.deleted &&
+            !String(payment.externalReference || '').startsWith('addcard_'),
+        )
         .map(toHistoryItem)
       return reply.status(200).send({ success: true, data: history })
     } catch (error: any) {
@@ -1181,7 +1411,12 @@ export async function paymentsRoutes(app: FastifyInstance) {
       await cancelOrphanUnpaidSubscriptions(user.asaasCustomerId, user.subscription?.asaasSubscriptionId)
       const payments = await listPayments({ customer: user.asaasCustomerId, limit: 50 })
       const history = (payments.data || [])
-        .filter((payment) => isVisibleHistoryStatus(payment.status) && !payment.deleted)
+        .filter(
+          (payment) =>
+            isVisibleHistoryStatus(payment.status) &&
+            !payment.deleted &&
+            !String(payment.externalReference || '').startsWith('addcard_'),
+        )
         .map(toHistoryItem)
       return reply.status(200).send({ success: true, data: history })
     } catch {
@@ -1362,6 +1597,14 @@ async function handlePaymentPaid(payment: AsaasPayment) {
   if (!isAsaasPaidStatus(payment.status)) return
 
   await persistSavedCard(payment)
+  if (payment.externalReference?.startsWith('addcard_')) {
+    try {
+      await refundPayment(payment.id, undefined, 'Estorno do cadastro de cartão')
+    } catch (error: any) {
+      logger.warning(`Estorno add-card falhou para ${payment.id}: ${error.message}`)
+    }
+    return
+  }
   await cancelPendingByExternalReference(payment.externalReference, payment.id)
   if (payment.customer) {
     await cancelOrphanUnpaidSubscriptions(payment.customer, payment.subscription || null)

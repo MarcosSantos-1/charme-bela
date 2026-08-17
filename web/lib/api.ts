@@ -1211,9 +1211,12 @@ export interface PaymentMethod {
   id: string
   brand: string
   last4: string
+  nickname?: string | null
+  kind?: 'credit' | 'debit' | string
   expMonth: number
   expYear: number
   isDefault: boolean
+  updatedAt?: string
 }
 
 export interface PaymentHistory {
@@ -1352,9 +1355,32 @@ export async function refundPackagePurchase(id: string): Promise<PackagePurchase
 export async function createCustomerPortalSession(
   userId: string
 ): Promise<CustomerPortalResponse> {
-  return apiRequest('/payments/manage', {
+  return apiRequest('/payments/add-card', {
     method: 'POST',
     body: JSON.stringify({ userId })
+  })
+}
+
+export async function addCardCheckout(userId: string): Promise<CustomerPortalResponse & { pendingInvoice?: boolean }> {
+  return apiRequest('/payments/add-card', {
+    method: 'POST',
+    body: JSON.stringify({ userId })
+  })
+}
+
+export async function updateSavedCard(
+  cardId: string,
+  data: { userId?: string; nickname?: string | null; isDefault?: boolean }
+): Promise<PaymentMethod[]> {
+  return apiRequest(`/payments/methods/${cardId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function deleteSavedCard(cardId: string, userId: string): Promise<PaymentMethod[]> {
+  return apiRequest(`/payments/methods/${cardId}?userId=${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
   })
 }
 

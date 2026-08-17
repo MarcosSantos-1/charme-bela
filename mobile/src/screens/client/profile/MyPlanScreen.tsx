@@ -21,18 +21,24 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCommercial } from '../../../contexts/CommercialContext';
 import { ScreenHeader } from '../../../components/ScreenHeader';
+import { CardNicknameModal } from '../../../components/CardNicknameModal';
 import { creditCard3dSource, logoSource } from '../../../assets/brandAssets';
 import {
+  addCardCheckout,
   cancelSubscription,
   changePlan,
-  createPortalSession,
+  deleteSavedCard,
   getPaymentHistory,
   getPaymentMethods,
   reactivateSubscription,
+  updateSavedCard,
 } from '../../../lib/api';
 import {
   CATEGORY_META,
+  cardBrandLabel,
   getApiErrorMessage,
+  savedCardLabel,
+  unnamedSavedCard,
   type PaymentHistoryItem,
   type PaymentMethod,
   type Plan,
@@ -60,6 +66,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
   const [loadingPayments, setLoadingPayments] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
+  const [nicknameCard, setNicknameCard] = useState<PaymentMethod | null>(null);
 
   const loadPayments = useCallback(async () => {
     if (!user) return;
@@ -123,18 +130,72 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
     ]);
   };
 
-  const managePayment = async () => {
+  const addOrChangeCard = async () => {
     if (!user) return;
-    setBusy('portal');
-    try {
-      const result = await createPortalSession(user.id);
-      await WebBrowser.openBrowserAsync(result.url);
-      await loadPayments();
-    } catch (error) {
-      Alert.alert('Portal indisponível', getApiErrorMessage(error));
-    } finally {
-      setBusy(null);
+    Alert.alert(
+      'Cadastrar cartão',
+      'O número do cartão só é digitado no checkout seguro do Asaas. Se houver fatura em aberto, ela abre agora para você pagar com o cartão novo (crédito ou débito). Sem fatura, use o próximo pagamento e depois escolha o apelido e o débito automático aqui.',
+      [
+        { text: 'Agora não', style: 'cancel' },
+        {
+          text: 'Continuar',
+          onPress: () => {
+            void (async () => {
+              setBusy('add-card');
+              try {
+                const result = await addCardCheckout(user.id);
+                await WebBrowser.openBrowserAsync(result.url);
+                await loadPayments();
+                const unnamed = unnamedSavedCard(await getPaymentMethods(user.id));
+                if (unnamed) setNicknameCard(unnamed);
+              } catch (error) {
+                Alert.alert('Cadastro de cartão', getApiErrorMessage(error));
+              } finally {
+                setBusy(null);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
+  const setDefaultCard = (card: PaymentMethod) => {
+    if (!user) return;
+    if (card.kind === 'debit') {
+      Alert.alert(
+        'Débito automático',
+        'Cartão de débito não renova a assinatura. Escolha um cartão de crédito para o débito automático.',
+      );
+      return;
     }
+    void run(
+      `default-${card.id}`,
+      () => updateSavedCard(card.id, { userId: user.id, isDefault: true }),
+      `${savedCardLabel(card)} passa a ser debitado automaticamente.`,
+    );
+  };
+
+  const removeCard = (card: PaymentMethod) => {
+    if (!user) return;
+    Alert.alert('Remover cartão', `Tirar ${savedCardLabel(card)} dos cartões salvos?`, [
+      { text: 'Manter', style: 'cancel' },
+      {
+        text: 'Remover',
+        style: 'destructive',
+        onPress: () =>
+          void run(`delete-${card.id}`, () => deleteSavedCard(card.id, user.id), 'Cartão removido deste aparelho.'),
+      },
+    ]);
+  };
+
+  const openReceipt = async (payment: PaymentHistoryItem) => {
+    const url = payment.receiptUrl || payment.hostedInvoiceUrl;
+    if (!url) {
+      Alert.alert('Comprovante', 'O comprovante ainda não está disponível para este pagamento.');
+      return;
+    }
+    await WebBrowser.openBrowserAsync(url);
   };
 
   const requestCancel = () => {
@@ -337,42 +398,87 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
 
         <Text style={styles.sectionTitleSpaced}>Forma de pagamento</Text>
         <View style={styles.whiteCard}>
+          <Text style={styles.cardSectionHint}>
+            Débito automático da assinatura usa crédito. Débito entra nas compras avulsas. O apelido aparece na hora de
+            pagar.
+          </Text>
           {loadingPayments ? (
             <ActivityIndicator color={brand.rose} />
           ) : methods.length ? (
-            methods.map((method) => (
-              <View key={method.id} style={styles.paymentMethod}>
-                <Image source={creditCard3dSource} style={styles.card3dIcon} resizeMode="contain" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.methodTitle}>
-                    {(method.brand || 'Cartão').toUpperCase()} •••• {method.last4}
-                  </Text>
-                  <Text style={styles.methodSubtitle}>
-                    {method.isDefault ? 'Principal · salvo para um toque' : 'Salvo para um toque'}
-                  </Text>
+            methods.map((method) => {
+              const settingDefault = busy === `default-${method.id}`;
+              const deleting = busy === `delete-${method.id}`;
+              return (
+                <View key={method.id} style={styles.cardBlock}>
+                  <View style={styles.paymentMethod}>
+                    <Image source={creditCard3dSource} style={styles.card3dIcon} resizeMode="contain" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.methodTitle}>{savedCardLabel(method)}</Text>
+                      <Text style={styles.methodSubtitle}>
+                        {method.kind === 'debit' ? 'Débito' : 'Crédito'}
+                        {method.nickname
+                          ? ` · ${cardBrandLabel(method.brand)}${method.last4 ? ` •••• ${method.last4}` : ''}`
+                          : method.last4
+                            ? ` · ${cardBrandLabel(method.brand)} •••• ${method.last4}`
+                            : ''}
+                        {method.isDefault ? ' · débito automático' : ''}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.cardActions}>
+                    {method.kind !== 'debit' && !method.isDefault ? (
+                      <TouchableOpacity
+                        style={styles.cardAction}
+                        onPress={() => setDefaultCard(method)}
+                        disabled={Boolean(busy)}
+                      >
+                        {settingDefault ? (
+                          <ActivityIndicator color={brand.roseDeep} />
+                        ) : (
+                          <Text style={styles.cardActionText}>Usar no débito automático</Text>
+                        )}
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      style={styles.cardAction}
+                      onPress={() => setNicknameCard(method)}
+                      disabled={Boolean(busy)}
+                    >
+                      <Text style={styles.cardActionText}>{method.nickname ? 'Editar apelido' : 'Dar apelido'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.cardAction}
+                      onPress={() => removeCard(method)}
+                      disabled={Boolean(busy)}
+                    >
+                      {deleting ? (
+                        <ActivityIndicator color={brand.roseDeep} />
+                      ) : (
+                        <Text style={[styles.cardActionText, styles.cardActionDanger]}>Remover</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            ))
+              );
+            })
           ) : (
             <View style={styles.paymentMethod}>
               <Image source={creditCard3dSource} style={styles.card3dIcon} resizeMode="contain" />
               <Text style={[styles.emptyText, { flex: 1, textAlign: 'left', paddingVertical: 0 }]}>
-                Nenhum cartão salvo ainda. Depois do primeiro pagamento no crédito, ele aparece aqui para um toque.
+                Nenhum cartão salvo ainda. Pague uma vez no checkout seguro (crédito ou débito) e ele aparece aqui.
               </Text>
             </View>
           )}
-          {subscription ? (
-            <TouchableOpacity style={styles.portalButton} onPress={managePayment} disabled={busy === 'portal'}>
-              {busy === 'portal' ? (
-                <ActivityIndicator color={brand.rose} />
-              ) : (
-                <>
-                  <Ionicons name="open-outline" size={18} color={brand.rose} />
-                  <Text style={styles.portalText}>Ver faturas no Asaas</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          ) : null}
+          <TouchableOpacity style={styles.portalButton} onPress={() => void addOrChangeCard()} disabled={busy === 'add-card'}>
+            {busy === 'add-card' ? (
+              <ActivityIndicator color={brand.rose} />
+            ) : (
+              <>
+                <Ionicons name="add-circle-outline" size={18} color={brand.rose} />
+                <Text style={styles.portalText}>Adicionar cartão</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
 
         <Text style={styles.sectionTitleSpaced}>Últimos pagamentos</Text>
@@ -380,37 +486,64 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
           {loadingPayments ? (
             <ActivityIndicator color={brand.rose} />
           ) : payments.length ? (
-            payments.slice(0, 5).map((payment) => (
-              <View key={payment.id} style={styles.paymentItem}>
-                <View
-                  style={[
-                    styles.paymentIcon,
-                    {
-                      backgroundColor:
-                        payment.status === 'paid' || payment.status === 'succeeded' ? '#fce7f3' : '#fef3c7',
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={payment.status === 'paid' || payment.status === 'succeeded' ? 'checkmark' : 'time-outline'}
-                    size={19}
-                    color={payment.status === 'paid' || payment.status === 'succeeded' ? brand.roseDeep : '#d97706'}
-                  />
+            payments.slice(0, 12).map((payment) => {
+              const paid = payment.status === 'paid' || payment.status === 'succeeded';
+              const receiptUrl = payment.receiptUrl || payment.hostedInvoiceUrl;
+              return (
+                <View key={payment.id} style={styles.paymentBlock}>
+                  <View style={styles.paymentItem}>
+                    <View
+                      style={[
+                        styles.paymentIcon,
+                        {
+                          backgroundColor: paid ? '#fce7f3' : '#fef3c7',
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={paid ? 'checkmark' : 'time-outline'}
+                        size={19}
+                        color={paid ? brand.roseDeep : '#d97706'}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.methodTitle}>{payment.description}</Text>
+                      <Text style={styles.methodSubtitle}>
+                        {new Date(payment.paidAt || payment.createdAt).toLocaleDateString('pt-BR')}
+                      </Text>
+                    </View>
+                    <Text style={styles.paymentValue}>{money(payment.amount)}</Text>
+                  </View>
+                  {paid && receiptUrl ? (
+                    <TouchableOpacity style={styles.receiptButton} onPress={() => void openReceipt(payment)}>
+                      <Ionicons name="document-text-outline" size={16} color={brand.roseDeep} />
+                      <Text style={styles.receiptText}>Ver comprovante</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.methodTitle}>{payment.description}</Text>
-                  <Text style={styles.methodSubtitle}>
-                    {new Date(payment.paidAt || payment.createdAt).toLocaleDateString('pt-BR')}
-                  </Text>
-                </View>
-                <Text style={styles.paymentValue}>{money(payment.amount)}</Text>
-              </View>
-            ))
+              );
+            })
           ) : (
             <Text style={styles.emptyText}>Seu histórico de pagamentos aparecerá aqui.</Text>
           )}
         </View>
       </ScrollView>
+
+      <CardNicknameModal
+        visible={Boolean(nicknameCard)}
+        brandName={nicknameCard?.brand}
+        last4={nicknameCard?.last4}
+        initialValue={nicknameCard?.nickname}
+        onSkip={() => setNicknameCard(null)}
+        onSave={(nickname) => {
+          const card = nicknameCard;
+          setNicknameCard(null);
+          if (!user || !card) return;
+          void updateSavedCard(card.id, { userId: user.id, nickname })
+            .then((next) => setMethods(next))
+            .catch((error) => Alert.alert('Apelido', getApiErrorMessage(error)));
+        }}
+      />
     </View>
   );
 }
@@ -939,10 +1072,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(236,73,152,0.12)',
   },
-  paymentMethod: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 12 },
+  cardSectionHint: { color: brand.muted, fontSize: 12, lineHeight: 18, marginBottom: 14 },
+  cardBlock: {
+    marginBottom: 14,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: brand.border,
+  },
+  paymentMethod: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 8 },
   card3dIcon: { width: 52, height: 36 },
   methodTitle: { color: brand.ink, fontWeight: '700' },
   methodSubtitle: { color: brand.muted, fontSize: 12, marginTop: 3 },
+  cardActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingLeft: 64 },
+  cardAction: {
+    backgroundColor: brand.blush,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  cardActionText: { color: brand.roseDeep, fontWeight: '700', fontSize: 12 },
+  cardActionDanger: { color: '#b42318' },
   portalButton: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: brand.border,
@@ -954,14 +1103,31 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   portalText: { color: brand.rose, fontWeight: '800' },
+  paymentBlock: {
+    paddingBottom: 8,
+    marginBottom: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: brand.border,
+  },
   paymentItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 11,
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: brand.border,
   },
+  receiptButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginLeft: 47,
+    marginBottom: 6,
+    backgroundColor: brand.blush,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  receiptText: { color: brand.roseDeep, fontWeight: '800', fontSize: 12 },
   paymentIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   paymentValue: { color: brand.ink, fontWeight: '800' },
   emptyText: { color: brand.muted, textAlign: 'center', paddingVertical: 12 },

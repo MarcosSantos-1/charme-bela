@@ -62,6 +62,9 @@ model SavedCard {
   asaasToken String
   brand      String?
   last4      String
+  nickname   String?
+  /// credit | debit — débito automático da assinatura só aceita crédito
+  kind       String   @default("credit")
   isDefault  Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

@@ -1,6 +1,9 @@
 import { prisma } from '../lib/prisma'
 import {
   getSubscription as getAsaasSubscription,
+  isAsaasPaidStatus,
+  listPayments,
+  type AsaasPayment,
   updateSubscription,
 } from '../lib/asaas'
 import { logger } from './logger'
@@ -256,4 +259,117 @@ export async function cancelScheduledPlanChange(userId: string) {
 
   logger.success(`Troca de plano cancelada para ${userId}`)
   return updated
+}
+
+export function isUpgradePaymentLabel(payment: { description?: string | null; externalReference?: string | null }) {
+  const ref = parseExternalReference(payment.externalReference)
+  if (ref.kind === 'upgrade') return true
+  return /upgrade/i.test(payment.description || '')
+}
+
+export function upgradeHistoryDescription(payment: { description?: string | null; externalReference?: string | null }) {
+  const raw = (payment.description || '').trim()
+  if (raw && /upgrade/i.test(raw)) return raw
+  return 'Upgrade de plano Charme & Bela Club'
+}
+
+async function inferUpgradePlanId(
+  payment: AsaasPayment,
+  currentPlan: { id: string; name: string; price: number },
+): Promise<string | null> {
+  const ref = parseExternalReference(payment.externalReference)
+  if (ref.kind === 'appointment' || ref.kind === 'package' || ref.kind === 'subscription') {
+    return null
+  }
+  if (ref.kind === 'upgrade' && ref.extra) return ref.extra
+
+  const plans = await prisma.subscriptionPlan.findMany({ where: { isActive: true } })
+  const description = payment.description || ''
+  if (/upgrade/i.test(description) || description.includes('→')) {
+    const arrow = description.split('→').pop()?.trim()
+    if (arrow) {
+      const byName = plans.find(
+        (plan) => plan.id !== currentPlan.id && plan.name.toLowerCase() === arrow.toLowerCase(),
+      )
+      if (byName) return byName.id
+    }
+    const upgradeName = description.replace(/^upgrade\s+/i, '').trim()
+    if (upgradeName) {
+      const byName = plans.find(
+        (plan) => plan.id !== currentPlan.id && upgradeName.toLowerCase().includes(plan.name.toLowerCase()),
+      )
+      if (byName) return byName.id
+    }
+  }
+
+  if (payment.subscription) return null
+  const desc = description.trim()
+  const looksClub =
+    !desc ||
+    /upgrade|charme|club|plano|diferen/i.test(desc) ||
+    plans.some((plan) => desc.toLowerCase().includes(plan.name.toLowerCase()))
+  if (!looksClub) return null
+  const linked = await prisma.appointment.findFirst({
+    where: { asaasPaymentId: payment.id },
+    select: { id: true },
+  })
+  if (linked) return null
+  const matches = plans.filter(
+    (plan) =>
+      plan.price > currentPlan.price &&
+      Math.abs(plan.price - currentPlan.price - Number(payment.value)) < 0.051,
+  )
+  return matches.length === 1 ? matches[0].id : null
+}
+
+export function isLikelyUpgradeHistoryPayment(
+  payment: AsaasPayment,
+  opts: { linkedAppointmentIds: Set<string>; planPrices: number[]; planNames?: string[] },
+) {
+  if (isUpgradePaymentLabel(payment)) return true
+  if (payment.subscription) return false
+  const ref = parseExternalReference(payment.externalReference)
+  if (ref.kind) return false
+  if (opts.linkedAppointmentIds.has(payment.id)) return false
+  const desc = (payment.description || '').trim()
+  const looksClub =
+    !desc ||
+    /upgrade|charme|club|plano|diferen/i.test(desc) ||
+    (opts.planNames || []).some((name) => desc.toLowerCase().includes(name.toLowerCase()))
+  if (!looksClub) return false
+  const uniqueDeltas = new Set<number>()
+  for (const from of opts.planPrices) {
+    for (const to of opts.planPrices) {
+      if (to > from) uniqueDeltas.add(Number((to - from).toFixed(2)))
+    }
+  }
+  return [...uniqueDeltas].some((delta) => Math.abs(delta - Number(payment.value)) < 0.051)
+}
+
+export async function recoverMissedUpgrade(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { subscription: { include: { plan: true } } },
+  })
+  if (!user?.asaasCustomerId || !hasPaidClubSubscription(user.subscription) || !user.subscription) {
+    return null
+  }
+
+  try {
+    const listed = await listPayments({ customer: user.asaasCustomerId, limit: 40 })
+    const paid = (listed.data || []).filter(
+      (payment) => isAsaasPaidStatus(payment.status) && !payment.deleted && !payment.subscription,
+    )
+    for (const payment of paid) {
+      const newPlanId = await inferUpgradePlanId(payment, user.subscription.plan)
+      if (!newPlanId || newPlanId === user.subscription.planId) continue
+      const newPlan = await prisma.subscriptionPlan.findUnique({ where: { id: newPlanId } })
+      if (!newPlan || newPlan.price <= user.subscription.plan.price) continue
+      logger.info(`Recuperando upgrade pago ${payment.id}: ${user.subscription.plan.name} → ${newPlan.name}`)
+      return applyPlanChange(user.id, newPlanId)
+    }
+  } catch (error: any) {
+    logger.warning(`Não foi possível recuperar upgrade pago de ${userId}: ${error.message}`)
+  }
+  return null
 }

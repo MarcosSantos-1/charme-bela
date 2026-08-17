@@ -53,8 +53,12 @@ import {
   applyPlanChange,
   clubSubscriptionReference,
   hasPaidClubSubscription,
+  isLikelyUpgradeHistoryPayment,
+  isUpgradePaymentLabel,
   parseExternalReference,
+  recoverMissedUpgrade,
   syncAsaasSubscriptionPlan,
+  upgradeHistoryDescription,
   upgradeReference,
 } from '../utils/planChange'
 
@@ -458,21 +462,24 @@ async function cancelOrphanUnpaidSubscriptions(customerId: string, keepId?: stri
   }
 }
 
-function toHistoryItem(payment: AsaasPayment) {
+function toHistoryItem(payment: AsaasPayment, upgradeOverride = false) {
+  const upgrade = upgradeOverride || isUpgradePaymentLabel(payment)
   return {
     id: payment.id,
-    type: payment.subscription ? ('subscription' as const) : ('single' as const),
+    type: payment.subscription ? ('subscription' as const) : upgrade ? ('subscription' as const) : ('single' as const),
     amount: payment.value,
     totalAmount: payment.value,
     currency: 'brl',
     status: isAsaasPaidStatus(payment.status)
-      ? payment.subscription
+      ? payment.subscription || upgrade
         ? 'paid'
         : 'succeeded'
       : payment.status === 'REFUNDED' || payment.status === 'REFUND_REQUESTED'
         ? 'refunded'
         : payment.status.toLowerCase(),
-    description: payment.description || (payment.subscription ? 'Assinatura Charme & Bela Club' : 'Tratamento avulso'),
+    description: upgrade
+      ? upgradeHistoryDescription(payment)
+      : payment.description || (payment.subscription ? 'Assinatura Charme & Bela Club' : 'Tratamento avulso'),
     paidAt: payment.paymentDate || payment.confirmedDate || null,
     createdAt: payment.dueDate || new Date().toISOString(),
     invoicePdf: null,
@@ -485,6 +492,33 @@ function isVisibleHistoryStatus(status?: string | null) {
   if (!status) return false
   if (status === 'PENDING' || status === 'OVERDUE' || status === 'DELETED') return false
   return true
+}
+
+async function toHistoryItems(payments: AsaasPayment[]) {
+  const candidates = payments.filter(
+    (payment) => !payment.subscription && !parseExternalReference(payment.externalReference).kind,
+  )
+  const linked = candidates.length
+    ? await prisma.appointment.findMany({
+        where: { asaasPaymentId: { in: candidates.map((item) => item.id) } },
+        select: { asaasPaymentId: true },
+      })
+    : []
+  const linkedAppointmentIds = new Set(
+    linked.map((item) => item.asaasPaymentId).filter((id): id is string => Boolean(id)),
+  )
+  const plans = await prisma.subscriptionPlan.findMany({
+    where: { isActive: true },
+    select: { price: true, name: true },
+  })
+  const planPrices = plans.map((plan) => plan.price)
+  const planNames = plans.map((plan) => plan.name)
+  return payments.map((payment) =>
+    toHistoryItem(
+      payment,
+      isLikelyUpgradeHistoryPayment(payment, { linkedAppointmentIds, planPrices, planNames }),
+    ),
+  )
 }
 
 async function rejectStandaloneCardSave(request: FastifyRequest, reply: FastifyReply) {
@@ -887,48 +921,11 @@ export async function paymentsRoutes(app: FastifyInstance) {
         description,
         externalReference,
       })
-
-      try {
-        const checkoutSession = await createCreditCardCheckout({
-          customerId,
-          customerName: user.name,
-          customerEmail: user.email,
-          customerCpf: cpfCnpj,
-          customerPhone,
-          customerAddress: payer.address,
-          value: difference,
-          name: `Upgrade ${newPlan.name}`.slice(0, 30),
-          description,
-          externalReference,
-          recurrent: false,
-          successQuery: 'success=true&plan=1&upgrade=1',
-        })
-        logger.success(`Checkout de upgrade Asaas criado: ${checkoutSession.id}`)
-        return reply.status(200).send({
-          success: true,
-          data: {
-            paymentId: checkoutSession.id,
-            sessionId: checkoutSession.id,
-            url: checkoutSession.link || charge.invoiceUrl || null,
-            invoiceUrl: checkoutSession.link || charge.invoiceUrl || null,
-            pixCopyPaste: null,
-            pixQrBase64: null,
-            expiresAt: null,
-            amount: difference,
-            description,
-            upgrade: true,
-            newPlanId: newPlan.id,
-            newPlanName: newPlan.name,
-          },
-        })
-      } catch (checkoutError: any) {
-        logger.warning(`Checkout de upgrade indisponível, usando fatura: ${checkoutError.message}`)
-      }
-
       const checkout = await toCheckoutPayload(charge, {
         description,
         invoiceUrl: charge.invoiceUrl || null,
       })
+      logger.success(`Cobrança de upgrade Asaas criada: ${charge.id}`)
       return reply.status(200).send({
         success: true,
         data: {
@@ -1080,6 +1077,9 @@ export async function paymentsRoutes(app: FastifyInstance) {
             }
           }
         }
+        if ((paidCheckout || paidByRef) && request.authUser?.id) {
+          await recoverMissedUpgrade(request.authUser.id)
+        }
         return reply.status(200).send({
           success: true,
           data: {
@@ -1100,6 +1100,8 @@ export async function paymentsRoutes(app: FastifyInstance) {
         const ref = parseExternalReference(payment.externalReference)
         if (ref.kind === 'upgrade') {
           await handlePaymentPaid(payment)
+        } else if (!payment.subscription && request.authUser?.id) {
+          await recoverMissedUpgrade(request.authUser.id)
         }
       }
       const pix =
@@ -1474,6 +1476,12 @@ export async function paymentsRoutes(app: FastifyInstance) {
       if (payment.customer !== user.asaasCustomerId) {
         return reply.status(403).send({ success: false, error: 'Essa cobrança não pertence a você' })
       }
+      if (savedCard.kind === 'debit' && isUpgradePaymentLabel(payment)) {
+        return reply.status(400).send({
+          success: false,
+          error: 'A diferença do upgrade só pode ser paga no crédito. Escolha um cartão de crédito.',
+        })
+      }
       if (isAsaasPaidStatus(payment.status)) {
         return reply.status(200).send({
           success: true,
@@ -1560,16 +1568,17 @@ export async function paymentsRoutes(app: FastifyInstance) {
       if (!user?.asaasCustomerId) {
         return reply.status(200).send({ success: true, data: [] })
       }
+      await recoverMissedUpgrade(user.id)
       await cancelOrphanUnpaidSubscriptions(user.asaasCustomerId, user.subscription?.asaasSubscriptionId)
       const payments = await listPayments({ customer: user.asaasCustomerId, limit: 50 })
-      const history = (payments.data || [])
-        .filter(
+      const history = await toHistoryItems(
+        (payments.data || []).filter(
           (payment) =>
             isVisibleHistoryStatus(payment.status) &&
             !payment.deleted &&
             !String(payment.externalReference || '').startsWith('addcard_'),
-        )
-        .map(toHistoryItem)
+        ),
+      )
       return reply.status(200).send({ success: true, data: history })
     } catch (error: any) {
       logger.error('Erro ao buscar histórico Asaas:', error)
@@ -1595,16 +1604,17 @@ export async function paymentsRoutes(app: FastifyInstance) {
       return reply.status(200).send({ success: true, data: [] })
     }
     try {
+      await recoverMissedUpgrade(user.id)
       await cancelOrphanUnpaidSubscriptions(user.asaasCustomerId, user.subscription?.asaasSubscriptionId)
       const payments = await listPayments({ customer: user.asaasCustomerId, limit: 50 })
-      const history = (payments.data || [])
-        .filter(
+      const history = await toHistoryItems(
+        (payments.data || []).filter(
           (payment) =>
             isVisibleHistoryStatus(payment.status) &&
             !payment.deleted &&
             !String(payment.externalReference || '').startsWith('addcard_'),
-        )
-        .map(toHistoryItem)
+        ),
+      )
       return reply.status(200).send({ success: true, data: history })
     } catch {
       return reply.status(200).send({ success: true, data: [] })
@@ -1838,6 +1848,15 @@ async function handlePaymentPaid(payment: AsaasPayment) {
   }
   if (byPayment) {
     await confirmAppointmentPayment(byPayment.id, paidAmount, method, payment.id)
+    return
+  }
+
+  const payer = await prisma.user.findFirst({
+    where: { asaasCustomerId: payment.customer },
+    select: { id: true },
+  })
+  if (payer) {
+    await recoverMissedUpgrade(payer.id)
   }
 }
 

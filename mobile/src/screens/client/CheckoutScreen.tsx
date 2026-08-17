@@ -333,7 +333,9 @@ export function CheckoutScreen({ route, navigation }: Props) {
           <Ionicons name="id-card-outline" size={48} color={brand.rose} />
           <Text style={styles.successTitle}>CPF do pagador</Text>
           <Text style={styles.muted}>
-            {isPlan
+            {isUpgrade
+              ? 'O cartão no Asaas exige o CPF de quem vai pagar. Usamos só para cobrar a diferença do plano.'
+              : isPlan
               ? 'O cartão no Asaas exige o CPF de quem vai pagar. Usamos só para emitir a assinatura.'
               : 'O Pix e o cartão no Asaas exigem o CPF de quem vai pagar. Usamos só para emitir a cobrança.'}
           </Text>
@@ -366,7 +368,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       {phase === 'loading' ? (
         <View style={styles.centered}>
           <ActivityIndicator color={brand.rose} size="large" />
-          <Text style={styles.muted}>{isPlan ? 'Preparando o cartão…' : 'Gerando Pix seguro…'}</Text>
+          <Text style={styles.muted}>{isUpgrade ? 'Preparando a diferença do plano…' : isPlan ? 'Preparando o cartão…' : 'Gerando Pix seguro…'}</Text>
         </View>
       ) : null}
 
@@ -515,7 +517,9 @@ export function CheckoutScreen({ route, navigation }: Props) {
                       : 'Pagar com crédito ou débito'}
                 </Text>
                 <Text style={styles.cardCtaHint}>
-                  {isPlan
+                  {isUpgrade
+                    ? 'Pode pagar com o cartão salvo acima. Se preferir outro cartão, abre o Asaas no navegador — a diferença é cobrada agora e o plano troca na hora.'
+                    : isPlan
                     ? 'Abre o Asaas no navegador — captcha e cartão funcionam melhor lá. Ao voltar, esta tela confirma sozinha. Depois você escolhe um apelido para o cartão.'
                     : 'Abre o Asaas no navegador. Crédito ou débito. Depois você escolhe um apelido para aparecer na hora de pagar.'}
                 </Text>

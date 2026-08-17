@@ -7,6 +7,7 @@ import {
   applyPlanChange,
   cancelScheduledPlanChange,
   hasPaidClubSubscription,
+  recoverMissedUpgrade,
   resolveNextDueDate,
   scheduleDowngrade,
 } from '../utils/planChange'
@@ -71,6 +72,7 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
     logger.route('GET', `/subscriptions/user/${userId}`)
     
     try {
+      await recoverMissedUpgrade(userId)
       const subscription = await prisma.subscription.findUnique({
         where: { userId },
         include: {

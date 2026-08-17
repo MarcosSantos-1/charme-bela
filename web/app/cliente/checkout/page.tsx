@@ -232,7 +232,7 @@ function PayCheckout({
         </p>
         <p className="text-sm text-pink-100 mt-2">
           {isUpgrade
-            ? 'Upgrade no cartão de crédito. A diferença é cobrada agora e o plano troca na hora.'
+            ? 'Só a diferença do plano, no crédito. Pode usar o cartão salvo — o plano troca assim que o pagamento confirmar.'
             : cardOnly
             ? 'Assinatura no cartão de crédito. Débito não renova o plano.'
             : 'Pague com Pix nesta tela ou crédito/débito no checkout seguro.'}
@@ -320,7 +320,9 @@ function PayCheckout({
                   : 'Pagar com crédito ou débito'}
             </p>
             <p className="text-sm text-pink-100">
-              {cardOnly
+              {isUpgrade
+                ? 'Mesma tela da assinatura. A diferença entra no cartão e o plano novo vale na hora.'
+                : cardOnly
                 ? 'A assinatura renova no crédito. Depois você escolhe um apelido para o cartão.'
                 : 'Crédito ou débito no checkout seguro. Depois você escolhe um apelido para aparecer na hora de pagar.'}
             </p>

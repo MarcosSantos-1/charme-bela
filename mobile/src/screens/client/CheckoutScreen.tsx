@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
   ScrollView,
   Share,
   StyleSheet,
@@ -15,8 +14,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
-import { WebView } from 'react-native-webview';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ClientStackParamList } from '../../navigation/ClientNavigator';
 import { ScreenHeader } from '../../components/ScreenHeader';
@@ -50,89 +47,6 @@ function formatCountdown(ms: number) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-const ASAAS_WEBVIEW_UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1';
-
-function asaasCallbackKind(url?: string | null): 'success' | 'cancel' | 'expired' | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    if (parsed.searchParams.get('success') === 'true') return 'success';
-    if (parsed.searchParams.get('expired') === 'true') return 'expired';
-    if (parsed.searchParams.get('canceled') === 'true') return 'cancel';
-  } catch {
-    if (url.includes('success=true')) return 'success';
-    if (url.includes('expired=true')) return 'expired';
-    if (url.includes('canceled=true')) return 'cancel';
-  }
-  return null;
-}
-
-function AsaasCheckoutWebView({
-  uri,
-  onSuccess,
-  onDismissed,
-}: {
-  uri: string;
-  onSuccess: () => void;
-  onDismissed: (reason: 'cancel' | 'expired') => void;
-}) {
-  const [popupUrl, setPopupUrl] = useState<string | null>(null);
-  const handled = useRef(false);
-
-  const consume = (url?: string) => {
-    if (!url || handled.current) return false;
-    const kind = asaasCallbackKind(url);
-    if (!kind) return false;
-    handled.current = true;
-    if (kind === 'success') onSuccess();
-    else onDismissed(kind);
-    return true;
-  };
-
-  const webViewProps = {
-    javaScriptEnabled: true,
-    domStorageEnabled: true,
-    sharedCookiesEnabled: true,
-    thirdPartyCookiesEnabled: true,
-    javaScriptCanOpenWindowsAutomatically: true,
-    setSupportMultipleWindows: true,
-    originWhitelist: ['*'] as string[],
-    mixedContentMode: 'always' as const,
-    userAgent: ASAAS_WEBVIEW_UA,
-    startInLoadingState: true,
-  };
-
-  return (
-    <View style={{ flex: 1 }}>
-      <WebView
-        {...webViewProps}
-        source={{ uri }}
-        onOpenWindow={(event) => {
-          const targetUrl = event.nativeEvent.targetUrl;
-          if (targetUrl) setPopupUrl(targetUrl);
-        }}
-        onShouldStartLoadWithRequest={(request) => !consume(request.url)}
-        onNavigationStateChange={(nav) => {
-          consume(nav.url);
-        }}
-      />
-      {popupUrl ? (
-        <View style={StyleSheet.absoluteFillObject}>
-          <WebView
-            {...webViewProps}
-            source={{ uri: popupUrl }}
-            onShouldStartLoadWithRequest={(request) => !consume(request.url)}
-            onNavigationStateChange={(nav) => {
-              consume(nav.url);
-            }}
-          />
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
 function cardBrandLabel(brandName?: string | null) {
   const value = (brandName || '').toLowerCase();
   if (value.includes('master')) return 'Mastercard';
@@ -164,7 +78,6 @@ export function CheckoutScreen({ route, navigation }: Props) {
     return params.expiresAt ? new Date(params.expiresAt).getTime() : Date.now() + 5 * 60 * 1000;
   });
   const [remaining, setRemaining] = useState(0);
-  const [cardOpen, setCardOpen] = useState(false);
   const [savedCards, setSavedCards] = useState<PaymentMethod[]>([]);
   const [chargingSavedId, setChargingSavedId] = useState<string | null>(null);
   const abandoning = useRef(false);
@@ -256,7 +169,6 @@ export function CheckoutScreen({ route, navigation }: Props) {
         if (status.invoiceUrl) setInvoiceUrl(status.invoiceUrl);
         if (status.paid) {
           setPhase('paid');
-          setCardOpen(false);
           await refresh();
         }
       } catch {
@@ -315,7 +227,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       Alert.alert('Cartão', 'Link de pagamento indisponível no momento.');
       return;
     }
-    setCardOpen(true);
+    await WebBrowser.openBrowserAsync(invoiceUrl);
   };
 
   const payWithSaved = async (card: PaymentMethod) => {
@@ -332,7 +244,6 @@ export function CheckoutScreen({ route, navigation }: Props) {
       });
       if (result.paid) {
         setPhase('paid');
-        setCardOpen(false);
         await refresh();
         return;
       }
@@ -547,12 +458,8 @@ export function CheckoutScreen({ route, navigation }: Props) {
                 </Text>
                 <Text style={styles.cardCtaHint}>
                   {isPlan
-                    ? savedCards.length
-                      ? 'Abre o checkout seguro para cadastrar outro cartão de crédito. Débito não assina o plano.'
-                      : 'A assinatura renova no crédito. Depois desta compra o cartão fica salvo para o próximo pagamento.'
-                    : savedCards.length
-                      ? 'Abre o checkout seguro para crédito, débito ou outro cartão. Cartões novos de crédito também ficam salvos.'
-                      : 'Crédito ou débito no checkout seguro. Cartão de crédito fica salvo para a próxima.'}
+                    ? 'Abre o Asaas no navegador — captcha e cartão funcionam melhor lá. Ao voltar, esta tela confirma sozinha.'
+                    : 'Abre o Asaas no navegador. Cartão de crédito fica salvo para a próxima.'}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.85)" />
@@ -560,51 +467,6 @@ export function CheckoutScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </ScrollView>
       ) : null}
-
-      <Modal visible={cardOpen} animationType="slide" onRequestClose={() => setCardOpen(false)}>
-        <SafeAreaProvider>
-          <SafeAreaView style={styles.cardModal} edges={['top', 'bottom']}>
-            <View style={styles.cardModalHeader}>
-              <Text style={styles.cardModalTitle}>{isPlan ? 'Cartão de crédito' : 'Crédito ou débito'}</Text>
-              <TouchableOpacity
-                onPress={() => setCardOpen(false)}
-                style={styles.modalClose}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <Ionicons name="close" size={26} color={brand.ink} />
-              </TouchableOpacity>
-            </View>
-            {invoiceUrl ? (
-              <AsaasCheckoutWebView
-                uri={invoiceUrl}
-                onSuccess={() => setCardOpen(false)}
-                onDismissed={(reason) => {
-                  setCardOpen(false);
-                  Alert.alert(
-                    reason === 'expired' ? 'Pagamento expirado' : 'Pagamento não concluído',
-                    'O Asaas pediu uma verificação (captcha) que o app às vezes não mostra. Abra no navegador para finalizar o cartão.',
-                    [
-                      { text: 'Ok', style: 'cancel' },
-                      {
-                        text: 'Abrir no navegador',
-                        onPress: () => {
-                          if (invoiceUrl) void WebBrowser.openBrowserAsync(invoiceUrl);
-                        },
-                      },
-                    ],
-                  );
-                }}
-              />
-            ) : null}
-            <TouchableOpacity
-              style={styles.externalLink}
-              onPress={() => invoiceUrl && WebBrowser.openBrowserAsync(invoiceUrl)}
-            >
-              <Text style={styles.externalLinkText}>Abrir no navegador</Text>
-            </TouchableOpacity>
-          </SafeAreaView>
-        </SafeAreaProvider>
-      </Modal>
     </View>
   );
 }
@@ -713,25 +575,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   successTitle: { fontSize: 22, fontWeight: '800', color: brand.ink, textAlign: 'center' },
-  cardModal: { flex: 1, backgroundColor: brand.background },
-  cardModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 10,
-    minHeight: 56,
-  },
-  cardModalTitle: { fontSize: 17, fontWeight: '800', color: brand.ink, flex: 1 },
-  modalClose: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 22,
-    backgroundColor: brand.white,
-  },
-  externalLink: { alignItems: 'center', paddingVertical: 16, paddingHorizontal: 16 },
-  externalLinkText: { color: brand.roseDeep, fontWeight: '700', fontSize: 16 },
 });

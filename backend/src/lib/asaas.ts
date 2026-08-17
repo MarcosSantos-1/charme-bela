@@ -556,6 +556,7 @@ const CHECKOUT_ITEM_IMAGE =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
 
 export async function createCreditCardCheckout(input: {
+  customerId?: string
   customerName: string
   customerEmail: string
   customerCpf: string
@@ -569,6 +570,17 @@ export async function createCreditCardCheckout(input: {
 }) {
   const frontend = (process.env.FRONTEND_URL || 'https://localhost').replace(/\/$/, '')
   const mobile = normalizeAsaasMobilePhone(input.customerPhone)
+  const customerPayload = input.customerId
+    ? { customer: input.customerId }
+    : {
+        customerData: {
+          name: input.customerName,
+          cpfCnpj: input.customerCpf,
+          email: input.customerEmail,
+          ...(mobile ? { phone: mobile, mobilePhone: mobile } : {}),
+          ...asaasAddressPayload(input.customerAddress),
+        },
+      }
   return asaasFetch<AsaasCheckout>('/checkouts', {
     method: 'POST',
     body: JSON.stringify({
@@ -590,13 +602,7 @@ export async function createCreditCardCheckout(input: {
           imageBase64: CHECKOUT_ITEM_IMAGE,
         },
       ],
-      customerData: {
-        name: input.customerName,
-        cpfCnpj: input.customerCpf,
-        email: input.customerEmail,
-        ...(mobile ? { phone: mobile, mobilePhone: mobile } : {}),
-        ...asaasAddressPayload(input.customerAddress),
-      },
+      ...customerPayload,
       ...(input.recurrent
         ? {
             subscription: {

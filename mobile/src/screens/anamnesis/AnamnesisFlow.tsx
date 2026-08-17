@@ -104,7 +104,8 @@ function canContinue(step: StepId, state: AnamnesisFormState): boolean {
       return Boolean(
         state.fullName.trim() &&
           state.birthDate.trim().length >= 8 &&
-          isValidCpf(state.cpf),
+          isValidCpf(state.cpf) &&
+          isValidBrMobile(state.phone),
       );
     case 'address':
       return Boolean(
@@ -196,6 +197,15 @@ function maskPhone(value: string) {
   if (digits.length <= 2) return digits.replace(/(\d{0,2})/, '($1');
   if (digits.length <= 7) return digits.replace(/(\d{2})(\d{0,5})/, '($1) $2');
   return digits.replace(/(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3');
+}
+
+function isValidBrMobile(phone: string) {
+  const digits = phone.replace(/\D/g, '');
+  const local =
+    digits.startsWith('55') && (digits.length === 12 || digits.length === 13)
+      ? digits.slice(2)
+      : digits;
+  return local.length === 10 || local.length === 11;
 }
 
 function maskCep(value: string) {
@@ -657,12 +667,17 @@ function renderStep(
             keyboardType="numeric"
           />
           <RevealInput
-            label="Telefone"
+            label="Celular"
             value={state.phone}
             onChangeText={(v) => patch({ phone: maskPhone(v) })}
             placeholder="(00) 00000-0000"
             keyboardType="phone-pad"
           />
+          {state.phone.replace(/\D/g, '').length >= 10 && !isValidBrMobile(state.phone) ? (
+            <Text style={{ color: '#b91c1c', fontSize: 13, fontWeight: '600', marginTop: -4 }}>
+              Celular inválido. Use DDD + número.
+            </Text>
+          ) : null}
           <RevealInput
             label="CPF"
             value={state.cpf}

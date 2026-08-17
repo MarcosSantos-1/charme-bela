@@ -618,6 +618,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
 
       try {
         const checkoutSession = await createCreditCardCheckout({
+          customerId,
           customerName: user.name,
           customerEmail: user.email,
           customerCpf: cpfCnpj,
@@ -724,17 +725,18 @@ export async function paymentsRoutes(app: FastifyInstance) {
       let url: string | null = null
       if (user.subscription?.asaasSubscriptionId) {
         const subPayments = await listSubscriptionPayments(user.subscription.asaasSubscriptionId)
-        const pending = subPayments.data?.find((item) => item.status === 'PENDING' || item.status === 'OVERDUE')
-        url = pending?.invoiceUrl || subPayments.data?.[0]?.invoiceUrl || null
+        const paid = (subPayments.data || []).find((item) => isAsaasPaidStatus(item.status))
+        url = paid?.invoiceUrl || null
       }
       if (!url) {
-        const history = await listPayments({ customer: user.asaasCustomerId, limit: 1 })
-        url = history.data?.[0]?.invoiceUrl || null
+        const history = await listPayments({ customer: user.asaasCustomerId, limit: 20 })
+        const paid = (history.data || []).find((item) => isAsaasPaidStatus(item.status))
+        url = paid?.invoiceUrl || null
       }
       if (!url) {
         return reply.status(404).send({
           success: false,
-          error: 'Não há fatura Asaas disponível no momento.',
+          error: 'Ainda não há fatura paga para visualizar. Os cartões salvos aparecem no app; um cartão novo é cadastrado no próximo pagamento seguro.',
         })
       }
 

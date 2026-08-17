@@ -368,7 +368,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
               ) : (
                 <>
                   <Ionicons name="open-outline" size={18} color={brand.rose} />
-                  <Text style={styles.portalText}>Gerenciar no portal seguro</Text>
+                  <Text style={styles.portalText}>Ver faturas no Asaas</Text>
                 </>
               )}
             </TouchableOpacity>

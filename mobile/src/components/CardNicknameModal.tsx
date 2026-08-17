@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
-  Modal,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -34,13 +34,15 @@ export function CardNicknameModal({
   }, [initialValue, visible]);
 
   const trimmed = value.trim();
+  if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onSkip}>
+    <View style={styles.wrap} pointerEvents="box-none">
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <Pressable style={StyleSheet.absoluteFill} onPress={onSkip} />
         <View style={styles.sheet}>
           <Text style={styles.title}>Apelido do cartão</Text>
           <Text style={styles.subtitle}>
@@ -53,7 +55,6 @@ export function CardNicknameModal({
             placeholder="Ex.: Nubank pessoal, cartão da empresa"
             placeholderTextColor={brand.muted}
             maxLength={40}
-            autoFocus
             style={styles.input}
             returnKeyType="done"
             onSubmitEditing={() => {
@@ -72,11 +73,15 @@ export function CardNicknameModal({
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 50,
+  },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(43, 23, 33, 0.45)',

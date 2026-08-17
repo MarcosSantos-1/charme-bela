@@ -14,7 +14,6 @@ import {
   CreditCard,
   AlertCircle,
   ExternalLink,
-  Loader2,
   CheckCircle,
   XCircle
 } from 'lucide-react'
@@ -24,7 +23,6 @@ import toast from 'react-hot-toast'
 import { 
   getPaymentMethods, 
   getPaymentHistory, 
-  addCardCheckout,
   updateSavedCard,
   deleteSavedCard,
   releaseAppointmentHold,
@@ -92,7 +90,6 @@ function PagamentosContent() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([])
   const [loading, setLoading] = useState(true)
-  const [openingAddCard, setOpeningAddCard] = useState(false)
   const [busyCardId, setBusyCardId] = useState<string | null>(null)
   const [editingCard, setEditingCard] = useState<PaymentMethod | null>(null)
   const [nicknameDraft, setNicknameDraft] = useState('')
@@ -120,23 +117,6 @@ function PagamentosContent() {
       console.error('Erro ao carregar dados de pagamento:', error)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleAddCard = async () => {
-    if (!user) return
-    setOpeningAddCard(true)
-    try {
-      const result = await addCardCheckout(user.id)
-      if (result?.url) {
-        window.location.href = result.url
-        return
-      }
-      throw new Error('Não foi possível abrir o checkout do cartão')
-    } catch (error: any) {
-      toast.error(error?.message || 'Use um cartão novo no próximo pagamento para memorizá-lo.')
-    } finally {
-      setOpeningAddCard(false)
     }
   }
 
@@ -495,15 +475,6 @@ function PagamentosContent() {
                 <p className="text-xs mt-1">Pague uma vez no checkout seguro e o cartão aparece aqui</p>
               </div>
             )}
-            <button
-              type="button"
-              onClick={() => void handleAddCard()}
-              disabled={openingAddCard}
-              className="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-pink-200 py-3 text-sm font-bold text-pink-700 hover:bg-pink-50 disabled:opacity-60"
-            >
-              {openingAddCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-              Adicionar cartão
-            </button>
           </div>
 
           {editingCard ? (

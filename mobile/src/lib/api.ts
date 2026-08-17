@@ -374,11 +374,6 @@ export async function pauseSubscription(userId: string): Promise<Subscription> {
   return unwrap<Subscription>(response.data);
 }
 
-export async function addCardCheckout(userId: string) {
-  const response = await api.post('/payments/add-card', { userId });
-  return unwrap<{ url: string; pendingInvoice?: boolean }>(response.data);
-}
-
 export async function getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
   try {
     const response = await api.get(`/payments/methods/${userId}`);

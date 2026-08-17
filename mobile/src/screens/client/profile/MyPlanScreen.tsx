@@ -24,7 +24,6 @@ import { ScreenHeader } from '../../../components/ScreenHeader';
 import { CardNicknameModal } from '../../../components/CardNicknameModal';
 import { creditCard3dSource, logoSource } from '../../../assets/brandAssets';
 import {
-  addCardCheckout,
   cancelSubscription,
   changePlan,
   deleteSavedCard,
@@ -38,7 +37,6 @@ import {
   cardBrandLabel,
   getApiErrorMessage,
   savedCardLabel,
-  unnamedSavedCard,
   type PaymentHistoryItem,
   type PaymentMethod,
   type Plan,
@@ -128,36 +126,6 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
         onPress: () => void run(plan.id, () => changePlan(user.id, plan.id), `Seu plano agora é ${plan.name}.`),
       },
     ]);
-  };
-
-  const addOrChangeCard = async () => {
-    if (!user) return;
-    Alert.alert(
-      'Cadastrar cartão',
-      'O número do cartão só é digitado no checkout seguro do Asaas. Se houver fatura em aberto, você paga com o cartão novo. Senão, o Asaas cobra R$ 5,00 só para memorizar o cartão — o estorno é automático.',
-      [
-        { text: 'Agora não', style: 'cancel' },
-        {
-          text: 'Continuar',
-          onPress: () => {
-            void (async () => {
-              setBusy('add-card');
-              try {
-                const result = await addCardCheckout(user.id);
-                await WebBrowser.openBrowserAsync(result.url);
-                await loadPayments();
-                const unnamed = unnamedSavedCard(await getPaymentMethods(user.id));
-                if (unnamed) setNicknameCard(unnamed);
-              } catch (error) {
-                Alert.alert('Cadastro de cartão', getApiErrorMessage(error));
-              } finally {
-                setBusy(null);
-              }
-            })();
-          },
-        },
-      ],
-    );
   };
 
   const setDefaultCard = (card: PaymentMethod) => {
@@ -469,16 +437,6 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
               </Text>
             </View>
           )}
-          <TouchableOpacity style={styles.portalButton} onPress={() => void addOrChangeCard()} disabled={busy === 'add-card'}>
-            {busy === 'add-card' ? (
-              <ActivityIndicator color={brand.rose} />
-            ) : (
-              <>
-                <Ionicons name="add-circle-outline" size={18} color={brand.rose} />
-                <Text style={styles.portalText}>Adicionar cartão</Text>
-              </>
-            )}
-          </TouchableOpacity>
         </View>
 
         <Text style={styles.sectionTitleSpaced}>Últimos pagamentos</Text>

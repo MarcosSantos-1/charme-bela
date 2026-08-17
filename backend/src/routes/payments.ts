@@ -479,112 +479,20 @@ function isVisibleHistoryStatus(status?: string | null) {
   return true
 }
 
-async function createAddCardCheckout(request: FastifyRequest, reply: FastifyReply) {
+async function rejectStandaloneCardSave(request: FastifyRequest, reply: FastifyReply) {
   try {
-    if (!isAsaasConfigured()) {
-      return reply.status(503).send({ success: false, error: 'Asaas não configurado (ASAAS_API_KEY)' })
-    }
     const body = (request.body || {}) as { userId?: string }
     const resolved = resolveUserId(request, body.userId)
-    if (resolved.error === 'forbidden') {
-      return reply.status(403).send({ success: false, error: 'Acesso negado' })
+    if (resolved.userId) {
+      await cancelPendingByExternalReference(`addcard_${resolved.userId}`)
     }
-    if (!resolved.userId) {
-      return reply.status(400).send({ success: false, error: 'Usuário não autenticado' })
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: resolved.userId },
-      include: { subscription: true },
-    })
-    if (!user) {
-      return reply.status(404).send({ success: false, error: 'Usuário não encontrado' })
-    }
-
-    const cpfCnpj = normalizeCpfCnpj(user.cpf)
-    if (!cpfCnpj) {
-      return reply.status(400).send({
-        success: false,
-        error: 'Informe o CPF no cadastro para salvar um cartão no Asaas.',
-      })
-    }
-    if (!asaasCustomerEmail(user.email)) {
-      return reply.status(400).send({ success: false, error: ASAAS_EMAIL_REQUIRED })
-    }
-
-    const payer = await loadAsaasPayer(user.id)
-    const customerPhone = pickAsaasPhone(payer.anamnesisPhone, user.phone)
-    const customerId = await ensureAsaasCustomer(user, cpfCnpj, payer.address, customerPhone)
-
-    if (user.subscription?.asaasSubscriptionId) {
-      const subPayments = await listSubscriptionPayments(user.subscription.asaasSubscriptionId)
-      const pending = (subPayments.data || []).find(
-        (item) => item.status === 'PENDING' || item.status === 'OVERDUE',
-      )
-      if (pending?.invoiceUrl) {
-        return reply.status(200).send({
-          success: true,
-          data: { url: pending.invoiceUrl, pendingInvoice: true },
-        })
-      }
-    }
-
-    const addCardRef = `addcard_${user.id}`
-    const existing = await listPayments({
-      customer: customerId,
-      externalReference: addCardRef,
-      limit: 10,
-    })
-    const pendingAddCard = (existing.data || []).find(
-      (item) =>
-        item.billingType === 'CREDIT_CARD' &&
-        (item.status === 'PENDING' || item.status === 'OVERDUE') &&
-        !item.deleted &&
-        item.invoiceUrl,
-    )
-    if (pendingAddCard?.invoiceUrl) {
-      return reply.status(200).send({
-        success: true,
-        data: {
-          url: pendingAddCard.invoiceUrl,
-          pendingInvoice: false,
-          validationCharge: true,
-          amount: 5,
-        },
-      })
-    }
-
-    const checkout = await ensureCardInvoice({
-      customerId,
-      value: 5,
-      description: 'Validação para memorizar o cartão. Estornamos em seguida.',
-      externalReference: addCardRef,
-    })
-    if (!checkout.invoiceUrl) {
-      return reply.status(502).send({
-        success: false,
-        error: 'O Asaas não devolveu o link para cadastrar o cartão. Tente de novo em instantes.',
-      })
-    }
-    return reply.status(200).send({
-      success: true,
-      data: {
-        url: checkout.invoiceUrl,
-        paymentId: checkout.id,
-        pendingInvoice: false,
-        validationCharge: true,
-        amount: 5,
-      },
-    })
   } catch (error: any) {
-    logger.error('Erro ao abrir cadastro de cartão:', error)
-    const status = error instanceof AsaasError ? Math.min(error.statusCode, 502) || 502 : 500
-    return reply.status(status >= 400 && status < 600 ? status : 500).send({
-      success: false,
-      error: error.message || 'Erro ao abrir cadastro de cartão',
-      details: error.message,
-    })
+    logger.warning(`Não foi possível cancelar cobrança avulsa de cartão: ${error.message}`)
   }
+  return reply.status(410).send({
+    success: false,
+    error: 'O cartão é memorizado no primeiro pagamento. Não cobramos para cadastrar cartão.',
+  })
 }
 
 async function checkoutPaidStatus(payment: AsaasPayment) {
@@ -898,12 +806,12 @@ export async function paymentsRoutes(app: FastifyInstance) {
 
   app.post('/payments/manage', async (request, reply) => {
     logger.route('POST', '/payments/manage')
-    return createAddCardCheckout(request, reply)
+    return rejectStandaloneCardSave(request, reply)
   })
 
   app.post('/payments/add-card', async (request, reply) => {
     logger.route('POST', '/payments/add-card')
-    return createAddCardCheckout(request, reply)
+    return rejectStandaloneCardSave(request, reply)
   })
 
   app.post('/payments/abandon', async (request, reply) => {

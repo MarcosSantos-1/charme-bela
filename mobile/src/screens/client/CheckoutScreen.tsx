@@ -82,7 +82,19 @@ export function CheckoutScreen({ route, navigation }: Props) {
   const abandoning = useRef(false);
   const startedRef = useRef(false);
   const cpfRef = useRef(cpf);
+  const browserOpenRef = useRef(false);
   cpfRef.current = cpf;
+
+  const offerNicknameIfNeeded = useCallback(async () => {
+    if (!user || browserOpenRef.current) return;
+    try {
+      const methods = await getPaymentMethods(user.id);
+      const unnamed = unnamedSavedCard(methods);
+      if (unnamed) setNicknameCard(unnamed);
+    } catch {
+      // apelido pode ser dado depois em Meu Plano
+    }
+  }, [user]);
 
   const loadCheckout = useCallback(async () => {
     if (!user) return;
@@ -177,15 +189,9 @@ export function CheckoutScreen({ route, navigation }: Props) {
         }
         if (status.paid) {
           setPhase('paid');
-          await refresh();
-          try {
-            if (user) {
-              const methods = await getPaymentMethods(user.id);
-              const unnamed = unnamedSavedCard(methods);
-              if (unnamed) setNicknameCard(unnamed);
-            }
-          } catch {
-            // apelido pode ser dado depois em Meu Plano
+          if (!browserOpenRef.current) {
+            await refresh();
+            await offerNicknameIfNeeded();
           }
         }
       } catch {
@@ -198,7 +204,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [isPlan, phase, paymentId, refresh, user?.id]);
+  }, [isPlan, phase, paymentId, refresh, offerNicknameIfNeeded]);
 
   const qrSource = useMemo(() => {
     if (!pixQr) return null;
@@ -207,6 +213,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
   }, [pixQr]);
 
   const leave = useCallback(() => {
+    setNicknameCard(null);
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.navigate('ClientTabs', { screen: 'Agenda' });
   }, [navigation]);
@@ -244,7 +251,24 @@ export function CheckoutScreen({ route, navigation }: Props) {
       Alert.alert('Cartão', 'Link de pagamento indisponível no momento.');
       return;
     }
-    await WebBrowser.openBrowserAsync(invoiceUrl);
+    browserOpenRef.current = true;
+    try {
+      await WebBrowser.openBrowserAsync(invoiceUrl);
+    } finally {
+      browserOpenRef.current = false;
+    }
+    try {
+      if (paymentId) {
+        const status = await getPaymentStatus(paymentId);
+        if (status.paid) {
+          setPhase('paid');
+          await refresh();
+        }
+      }
+      await offerNicknameIfNeeded();
+    } catch {
+      // webhook continua sendo a fonte da verdade
+    }
   };
 
   const payWithSaved = async (card: PaymentMethod) => {
@@ -262,13 +286,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       if (result.paid) {
         setPhase('paid');
         await refresh();
-        try {
-          const methods = await getPaymentMethods(user.id);
-          const unnamed = unnamedSavedCard(methods);
-          if (unnamed) setNicknameCard(unnamed);
-        } catch {
-          // apelido pode ser dado depois em Meu Plano
-        }
+        await offerNicknameIfNeeded();
         return;
       }
       Alert.alert(
@@ -371,7 +389,10 @@ export function CheckoutScreen({ route, navigation }: Props) {
           </Text>
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => navigation.navigate('ClientTabs', { screen: 'Agenda' })}
+            onPress={() => {
+              setNicknameCard(null);
+              navigation.navigate('ClientTabs', { screen: 'Agenda' });
+            }}
           >
             <Text style={styles.primaryButtonText}>Ver agenda</Text>
           </TouchableOpacity>

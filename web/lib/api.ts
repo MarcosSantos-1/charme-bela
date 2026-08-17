@@ -1355,14 +1355,7 @@ export async function refundPackagePurchase(id: string): Promise<PackagePurchase
 export async function createCustomerPortalSession(
   userId: string
 ): Promise<CustomerPortalResponse> {
-  return apiRequest('/payments/add-card', {
-    method: 'POST',
-    body: JSON.stringify({ userId })
-  })
-}
-
-export async function addCardCheckout(userId: string): Promise<CustomerPortalResponse & { pendingInvoice?: boolean }> {
-  return apiRequest('/payments/add-card', {
+  return apiRequest('/payments/manage', {
     method: 'POST',
     body: JSON.stringify({ userId })
   })

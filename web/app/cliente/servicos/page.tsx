@@ -11,6 +11,7 @@ import { Search, Clock, Gift, Tag } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSubscription } from '@/lib/hooks/useSubscription'
 import * as api from '@/lib/api'
+import { isAmountCreditVoucher, isVoucherAvailable, voucherCreditBalance } from '@/lib/voucherCredit'
 import { Service } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -34,6 +35,12 @@ function ServicosContent() {
   const [selectedService, setSelectedService] = useState<Service | null>(null)
   const [selectedVoucher, setSelectedVoucher] = useState<api.Voucher | null>(null)
   const [showModal, setShowModal] = useState(false)
+
+  async function reloadVouchers() {
+    if (!user?.id) return
+    const vouchersData = await api.getVouchersByUserId(user.id)
+    setVouchers(vouchersData.filter(isVoucherAvailable))
+  }
   
   // Buscar serviços e vouchers do backend
   useEffect(() => {
@@ -49,10 +56,7 @@ function ServicosContent() {
         setServices(servicesData)
         setPromoBanners(Array.isArray(bannersData) ? bannersData : [])
         setPackagePurchases(purchasesData)
-        // Filtrar apenas vouchers ativos (não usados e não expirados)
-        const activeVouchers = vouchersData.filter(v => 
-          !v.isUsed && (!v.expiresAt || new Date(v.expiresAt) > new Date())
-        )
+        const activeVouchers = vouchersData.filter(isVoucherAvailable)
         setVouchers(activeVouchers)
       } catch (error) {
         console.error('Erro ao carregar dados:', error)
@@ -92,6 +96,60 @@ function ServicosContent() {
   
   // Pegar voucher de desconto ativo (se houver)
   const activeDiscountVoucher = vouchers.find(v => v.type === 'DISCOUNT')
+  const amountCredits = vouchers.filter(isAmountCreditVoucher)
+  const creditsTotal = amountCredits.reduce((sum, voucher) => sum + voucherCreditBalance(voucher), 0)
+
+  async function runMergeCredits(voucherIds: string[]) {
+    try {
+      const merged = await api.mergeVouchers(voucherIds)
+      await reloadVouchers()
+      setSelectedVoucher(merged)
+      toast.success(`Créditos unificados: ${formatBRL(merged.remainingAmount || 0)}`)
+    } catch (error: any) {
+      toast.error(error.message || 'Não foi possível unificar os créditos')
+    }
+  }
+
+  function confirmMergeCredits(voucherIds: string[], onSkip?: () => void) {
+    const selected = voucherIds
+      .map((id) => vouchers.find((voucher) => voucher.id === id))
+      .filter((voucher): voucher is api.Voucher => Boolean(voucher))
+    const total = selected.reduce((sum, voucher) => sum + voucherCreditBalance(voucher), 0)
+    const breakdown = selected.map((voucher) => formatBRL(voucherCreditBalance(voucher))).join(' + ')
+    toast(
+      (t) => (
+        <div className="flex flex-col gap-3">
+          <div>
+            <p className="font-semibold text-gray-900">Unificar créditos?</p>
+            <p className="text-sm text-gray-600 mt-1">
+              {breakdown} = {formatBRL(total)}. Você passa a ter um único crédito com esse valor.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                toast.dismiss(t.id)
+                void runMergeCredits(voucherIds)
+              }}
+              className="px-4 py-2 bg-pink-600 text-white rounded-lg text-sm font-medium hover:bg-pink-700"
+            >
+              Unificar
+            </button>
+            <button
+              onClick={() => {
+                toast.dismiss(t.id)
+                onSkip?.()
+              }}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300"
+            >
+              Agora não
+            </button>
+          </div>
+        </div>
+      ),
+      { duration: 10000, position: 'top-center' },
+    )
+  }
   
   // Calcular preço com desconto
   const calculatePrice = (originalPrice: number): { original: number, final: number, discount: number } => {
@@ -100,8 +158,9 @@ function ServicosContent() {
     let discount = 0
     if (activeDiscountVoucher.discountPercent) {
       discount = originalPrice * (activeDiscountVoucher.discountPercent / 100)
-    } else if (activeDiscountVoucher.discountAmount) {
-      discount = Math.min(activeDiscountVoucher.discountAmount, originalPrice)
+    } else {
+      const credit = voucherCreditBalance(activeDiscountVoucher)
+      if (credit > 0) discount = Math.min(credit, originalPrice)
     }
     
     return {
@@ -183,10 +242,20 @@ function ServicosContent() {
         })
       }
     } else if (voucher.type === 'DISCOUNT') {
-      // Para desconto geral, mostrar toast
+      if (
+        selectedVoucher &&
+        selectedVoucher.id !== voucher.id &&
+        isAmountCreditVoucher(selectedVoucher) &&
+        isAmountCreditVoucher(voucher)
+      ) {
+        confirmMergeCredits([selectedVoucher.id, voucher.id], () => setSelectedVoucher(voucher))
+        return
+      }
+      setSelectedVoucher(voucher)
+      const credit = voucherCreditBalance(voucher)
       const discountText = voucher.discountPercent 
         ? `${voucher.discountPercent}% de desconto` 
-        : `${formatBRL(voucher.discountAmount || 0)} de desconto`
+        : `${formatBRL(credit || voucher.discountAmount || 0)} de desconto`
       
       toast.success(`${discountText} aplicado em todos os tratamentos! 💰`, {
         duration: 3000,
@@ -214,6 +283,16 @@ function ServicosContent() {
                 }
               }}
             />
+          )}
+
+          {amountCredits.length >= 2 && (
+            <button
+              type="button"
+              onClick={() => confirmMergeCredits(amountCredits.map((voucher) => voucher.id))}
+              className="w-full rounded-xl border border-pink-200 bg-pink-50 px-4 py-3 text-sm font-semibold text-pink-700 hover:bg-pink-100"
+            >
+              Unificar créditos · {formatBRL(creditsTotal)}
+            </button>
           )}
 
           {/* Vouchers Banner */}

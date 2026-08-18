@@ -31,6 +31,8 @@ import {
   getApiErrorMessage,
   isPackageService,
   packageItemsOf,
+  voucherCreditBalance,
+  isVoucherAvailable,
   type AppointmentOrigin,
   type PackagePurchase,
   type Plan,
@@ -86,7 +88,7 @@ export function BookingScreen({ route, navigation }: Props) {
   const matchingVoucher = useMemo(() => {
     const usable = vouchers.filter((voucher) => {
       if (voucher.type === 'FREE_MONTH') return false;
-      if (voucher.expiresAt && new Date(voucher.expiresAt) < new Date()) return false;
+      if (!isVoucherAvailable(voucher)) return false;
       return voucher.type === 'DISCOUNT' || voucher.type === 'FREE_TREATMENT';
     });
     if (preferredVoucherId) {
@@ -128,8 +130,9 @@ export function BookingScreen({ route, navigation }: Props) {
     if (matchingVoucher.discountPercent) {
       return Math.max(0, service.price * (1 - matchingVoucher.discountPercent / 100));
     }
-    if (matchingVoucher.discountAmount) {
-      return Math.max(0, service.price - matchingVoucher.discountAmount);
+    const credit = voucherCreditBalance(matchingVoucher);
+    if (credit > 0) {
+      return Math.max(0, service.price - credit);
     }
     return service.price;
   }, [matchingVoucher, service]);

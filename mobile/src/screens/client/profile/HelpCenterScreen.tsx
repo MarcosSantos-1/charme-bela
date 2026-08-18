@@ -114,7 +114,7 @@ const FAQ_ITEMS: FaqCategory[] = [
         question: 'O que é um voucher?',
         keywords: ['cupom', 'benefício', 'cortesia'],
         answer:
-          'Vouchers e créditos ficam na sua conta. Crédito em reais pode ser usado em vários procedimentos até zerar o saldo. Tratamento cortesia ou desconto percentual segue a regra de cada voucher.',
+          'Vouchers e créditos ficam na sua conta. Crédito em reais pode ser usado em vários procedimentos até zerar o saldo. Se tiver mais de um crédito, toque nos dois (ou em Unificar) para somar os valores num só. Tratamento cortesia ou desconto percentual segue a regra de cada voucher.',
       },
       {
         id: '2-6',

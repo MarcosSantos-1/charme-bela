@@ -274,8 +274,15 @@ export async function getSubscription(userId: string): Promise<Subscription | nu
 }
 
 export async function getVouchers(userId: string): Promise<Voucher[]> {
-  const response = await api.get(`/vouchers/user/${userId}`);
+  // Lista completa do usuário (inclui crédito com saldo mesmo se isUsed=true).
+  // /vouchers/user/:id no Fly ainda esconde esses créditos.
+  const response = await api.get('/vouchers', { params: { userId } });
   return unwrap<Voucher[]>(response.data);
+}
+
+export async function mergeVouchers(voucherIds: string[]): Promise<Voucher> {
+  const response = await api.post('/vouchers/merge', { voucherIds });
+  return unwrap<Voucher>(response.data);
 }
 
 export async function createCheckoutSession(userId: string, planId: string, cpf?: string) {

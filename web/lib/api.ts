@@ -1031,7 +1031,14 @@ export async function getVouchers(filters?: {
 }
 
 export async function getVouchersByUserId(userId: string): Promise<Voucher[]> {
-  return apiRequest(`/vouchers/user/${userId}`, { method: 'GET' })
+  return apiRequest(`/vouchers?userId=${encodeURIComponent(userId)}`, { method: 'GET' })
+}
+
+export async function mergeVouchers(voucherIds: string[]): Promise<Voucher> {
+  return apiRequest('/vouchers/merge', {
+    method: 'POST',
+    body: JSON.stringify({ voucherIds }),
+  })
 }
 
 export async function getVoucher(id: string): Promise<Voucher> {

@@ -11,7 +11,7 @@ import {
   type Banner,
 } from '../lib/api';
 import type { Appointment, Plan, Service, Subscription, Voucher, PackagePurchase } from '../types/commercial';
-import { getApiErrorMessage } from '../types/commercial';
+import { getApiErrorMessage, isAmountCreditVoucher, isVoucherAvailable } from '../types/commercial';
 import {
   bannersSignature,
   isBannerCacheFresh,
@@ -36,7 +36,7 @@ interface CommercialContextValue {
 
 const CommercialContext = createContext<CommercialContextValue | null>(null);
 
-/** Esconde voucher usado OU já vinculado a agendamento ativo (pagamento pendente/confirmado). */
+/** Esconde voucher de uso único já vinculado a agendamento ativo. Crédito em R$ com saldo continua visível. */
 function filterAvailableVouchers(vouchers: Voucher[], appointments: Appointment[]): Voucher[] {
   const heldIds = new Set(
     appointments
@@ -47,7 +47,11 @@ function filterAvailableVouchers(vouchers: Voucher[], appointments: Appointment[
       )
       .map((apt) => apt.voucherId as string),
   );
-  return vouchers.filter((voucher) => !voucher.isUsed && !heldIds.has(voucher.id));
+  return vouchers.filter((voucher) => {
+    if (!isVoucherAvailable(voucher)) return false;
+    if (isAmountCreditVoucher(voucher)) return true;
+    return !heldIds.has(voucher.id);
+  });
 }
 
 export function CommercialProvider({ children }: { children: React.ReactNode }) {

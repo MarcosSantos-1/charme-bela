@@ -26,6 +26,14 @@ interface VoucherDisplay {
   planName?: string
 }
 
+function hasReusableBalance(v: Pick<VoucherDisplay, 'remainingAmount' | 'discountPercent'>) {
+  return (v.remainingAmount ?? 0) > 0.009 && !(Number(v.discountPercent) > 0)
+}
+
+function isEffectivelyUsed(v: Pick<VoucherDisplay, 'isUsed' | 'remainingAmount' | 'discountPercent'>) {
+  return v.isUsed && !hasReusableBalance(v)
+}
+
 export default function VouchersPage() {
   const router = useRouter()
   const [vouchers, setVouchers] = useState<VoucherDisplay[]>([])
@@ -69,13 +77,12 @@ export default function VouchersPage() {
 
   // Filtrar vouchers
   const filteredVouchers = vouchers.filter(v => {
-    // Filtro de status
     const now = new Date()
-    const isExpired = v.expiresAt && new Date(v.expiresAt) < now
-    
-    if (filter === 'used' && !v.isUsed) return false
+    const isExpired = Boolean(v.expiresAt && new Date(v.expiresAt) < now)
+
+    if (filter === 'used' && !isEffectivelyUsed(v)) return false
     if (filter === 'expired' && !isExpired) return false
-    if (filter === 'active' && (v.isUsed || isExpired)) return false
+    if (filter === 'active' && (isEffectivelyUsed(v) || isExpired)) return false
     
     // Filtro de busca
     if (searchTerm) {
@@ -112,7 +119,7 @@ export default function VouchersPage() {
     const now = new Date()
     const isExpired = voucher.expiresAt && new Date(voucher.expiresAt) < now
     
-    if (voucher.isUsed) {
+    if (isEffectivelyUsed(voucher)) {
       return (
         <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full border border-gray-200">
           ✓ Usado
@@ -251,7 +258,7 @@ export default function VouchersPage() {
                 <Check className="w-5 h-5 text-green-600" />
               </div>
               <div className="text-2xl sm:text-3xl font-bold text-green-700 mb-1">
-                {vouchers.filter(v => !v.isUsed && (!v.expiresAt || new Date(v.expiresAt) > new Date())).length}
+                {vouchers.filter(v => !isEffectivelyUsed(v) && (!v.expiresAt || new Date(v.expiresAt) > new Date())).length}
               </div>
               <div className="text-xs sm:text-sm font-medium text-green-600">Ativos</div>
             </div>
@@ -261,7 +268,7 @@ export default function VouchersPage() {
                 <Sparkles className="w-5 h-5 text-gray-600" />
               </div>
               <div className="text-2xl sm:text-3xl font-bold text-gray-700 mb-1">
-                {vouchers.filter(v => v.isUsed).length}
+                {vouchers.filter(v => isEffectivelyUsed(v)).length}
               </div>
               <div className="text-xs sm:text-sm font-medium text-gray-600">Usados</div>
             </div>
@@ -271,7 +278,7 @@ export default function VouchersPage() {
                 <X className="w-5 h-5 text-red-600" />
               </div>
               <div className="text-2xl sm:text-3xl font-bold text-red-700 mb-1">
-                {vouchers.filter(v => !v.isUsed && v.expiresAt && new Date(v.expiresAt) < new Date()).length}
+                {vouchers.filter(v => !isEffectivelyUsed(v) && v.expiresAt && new Date(v.expiresAt) < new Date()).length}
               </div>
               <div className="text-xs sm:text-sm font-medium text-red-600">Expirados</div>
             </div>
@@ -355,7 +362,7 @@ export default function VouchersPage() {
                         
                         {/* Ações */}
                         <div className="flex sm:flex-col items-center gap-2 sm:ml-4">
-                          {!voucher.isUsed && !isExpired && (
+                          {!isEffectivelyUsed(voucher) && !isExpired && (
                             <button
                               onClick={() => handleDeleteVoucher(voucher.id)}
                               className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"

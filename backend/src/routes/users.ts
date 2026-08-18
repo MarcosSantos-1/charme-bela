@@ -169,7 +169,12 @@ export async function usersRoutes(app: FastifyInstance) {
             take: 10
           },
           vouchers: {
-            where: { isUsed: false },
+            where: {
+              OR: [
+                { isUsed: false },
+                { remainingAmount: { gt: 0 } },
+              ],
+            },
             orderBy: { createdAt: 'desc' }
           },
           monthlyUsage: {
@@ -228,7 +233,12 @@ export async function usersRoutes(app: FastifyInstance) {
             take: 10 // Últimos 10 agendamentos
           },
           vouchers: {
-            where: { isUsed: false },
+            where: {
+              OR: [
+                { isUsed: false },
+                { remainingAmount: { gt: 0 } },
+              ],
+            },
             orderBy: { createdAt: 'desc' }
           },
           monthlyUsage: {

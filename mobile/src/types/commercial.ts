@@ -247,6 +247,31 @@ export const CATEGORY_META: Record<ServiceCategory, { label: string; color: stri
   MASSAGEM: { label: 'Massagens', color: '#10b981', icon: 'hand-heart-outline' },
 };
 
+export function isAmountCreditVoucher(voucher: Pick<Voucher, 'type' | 'discountAmount' | 'discountPercent'>): boolean {
+  return (
+    voucher.type === 'DISCOUNT' &&
+    voucher.discountAmount != null &&
+    !(Number(voucher.discountPercent) > 0)
+  );
+}
+
+/** Saldo em R$ ainda utilizável (crédito reutilizável). */
+export function voucherCreditBalance(
+  voucher: Pick<Voucher, 'type' | 'discountAmount' | 'discountPercent' | 'remainingAmount' | 'isUsed'>,
+): number {
+  if (!isAmountCreditVoucher(voucher)) return 0;
+  if (voucher.remainingAmount != null) return Number(voucher.remainingAmount);
+  return voucher.isUsed ? 0 : Number(voucher.discountAmount || 0);
+}
+
+export function isVoucherAvailable(
+  voucher: Pick<Voucher, 'type' | 'discountAmount' | 'discountPercent' | 'remainingAmount' | 'isUsed' | 'expiresAt'>,
+): boolean {
+  if (voucher.expiresAt && new Date(voucher.expiresAt) < new Date()) return false;
+  if (isAmountCreditVoucher(voucher)) return voucherCreditBalance(voucher) > 0.009;
+  return !voucher.isUsed;
+}
+
 export function getApiErrorMessage(error: unknown, fallback = 'Não foi possível concluir a operação') {
   const value = error as any;
   const data = value?.response?.data;

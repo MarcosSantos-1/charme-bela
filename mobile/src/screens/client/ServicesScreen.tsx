@@ -9,6 +9,7 @@ import {
   RefreshControl,
   TextInput,
   Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -18,8 +19,13 @@ import { getCategoryIllustrations } from '../../assets/brandAssets';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCommercial } from '../../contexts/CommercialContext';
 import { HomePromoCarousel } from '../../components/HomePromoCarousel';
+import { mergeVouchers } from '../../lib/api';
 import {
   CATEGORY_META,
+  getApiErrorMessage,
+  isAmountCreditVoucher,
+  isVoucherAvailable,
+  voucherCreditBalance,
   type Service,
   type ServiceCategory,
   type Subscription,
@@ -46,9 +52,8 @@ function isServiceInPlan(service: Service, subscription: Subscription | null) {
 }
 
 function isUsableServiceVoucher(voucher: Voucher) {
-  if (voucher.isUsed) return false;
+  if (!isVoucherAvailable(voucher)) return false;
   if (voucher.type === 'FREE_MONTH') return false;
-  if (voucher.expiresAt && new Date(voucher.expiresAt) < new Date()) return false;
   return voucher.type === 'FREE_TREATMENT' || voucher.type === 'DISCOUNT';
 }
 
@@ -64,8 +69,9 @@ function priceWithVoucher(service: Service, voucher: Voucher) {
   if (voucher.discountPercent != null && voucher.discountPercent > 0) {
     return Math.max(0, service.price * (1 - voucher.discountPercent / 100));
   }
-  if (voucher.discountAmount != null && voucher.discountAmount > 0) {
-    return Math.max(0, service.price - voucher.discountAmount);
+  const credit = voucherCreditBalance(voucher);
+  if (credit > 0) {
+    return Math.max(0, service.price - credit);
   }
   return service.price;
 }
@@ -73,6 +79,8 @@ function priceWithVoucher(service: Service, voucher: Voucher) {
 function voucherBenefitLabel(voucher: Voucher) {
   if (voucher.type === 'FREE_TREATMENT') return 'Tratamento cortesia';
   if (voucher.discountPercent) return `${voucher.discountPercent}% OFF`;
+  const credit = voucherCreditBalance(voucher);
+  if (credit > 0) return `${formatCurrency(credit)} OFF`;
   if (voucher.discountAmount) return `${formatCurrency(voucher.discountAmount)} OFF`;
   return 'Desconto disponível';
 }
@@ -86,12 +94,67 @@ export function ServicesScreen() {
   const [selectedCategory, setSelectedCategory] = useState<ServiceCategory | null>(null);
   const [machineFilter, setMachineFilter] = useState<'LASER' | 'CRYO' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [voucherApplied, setVoucherApplied] = useState(false);
+  const [appliedVoucherId, setAppliedVoucherId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  const activeVoucher = useMemo(
-    () => vouchers.find(isUsableServiceVoucher) ?? null,
+  const usableVouchers = useMemo(
+    () => vouchers.filter(isUsableServiceVoucher),
     [vouchers],
+  );
+  const activeVoucher = usableVouchers.find((voucher) => voucher.id === appliedVoucherId) ?? null;
+  const voucherApplied = Boolean(activeVoucher);
+  const amountCredits = useMemo(
+    () => usableVouchers.filter(isAmountCreditVoucher),
+    [usableVouchers],
+  );
+  const creditsTotal = amountCredits.reduce((sum, voucher) => sum + voucherCreditBalance(voucher), 0);
+
+  const runMergeCredits = useCallback(
+    async (voucherIds: string[]) => {
+      try {
+        const merged = await mergeVouchers(voucherIds);
+        await refresh();
+        setAppliedVoucherId(merged.id);
+      } catch (mergeError) {
+        Alert.alert('Não foi possível unificar', getApiErrorMessage(mergeError, 'Tente de novo em instantes.'));
+      }
+    },
+    [refresh],
+  );
+
+  const confirmMergeCredits = useCallback(
+    (voucherIds: string[], onSkip?: () => void) => {
+      const selected = voucherIds
+        .map((id) => usableVouchers.find((voucher) => voucher.id === id))
+        .filter((voucher): voucher is Voucher => Boolean(voucher));
+      const total = selected.reduce((sum, voucher) => sum + voucherCreditBalance(voucher), 0);
+      const breakdown = selected.map((voucher) => formatCurrency(voucherCreditBalance(voucher))).join(' + ');
+      Alert.alert(
+        'Unificar créditos?',
+        `${breakdown} = ${formatCurrency(total)}. Você passa a ter um único crédito com esse valor.`,
+        [
+          { text: 'Agora não', style: 'cancel', onPress: onSkip },
+          { text: 'Unificar', onPress: () => { void runMergeCredits(voucherIds); } },
+        ],
+      );
+    },
+    [runMergeCredits, usableVouchers],
+  );
+
+  const onToggleVoucher = useCallback(
+    (voucher: Voucher) => {
+      if (appliedVoucherId === voucher.id) {
+        setAppliedVoucherId(null);
+        return;
+      }
+      const current = usableVouchers.find((item) => item.id === appliedVoucherId);
+      if (current && isAmountCreditVoucher(current) && isAmountCreditVoucher(voucher)) {
+        confirmMergeCredits([current.id, voucher.id], () => setAppliedVoucherId(voucher.id));
+        return;
+      }
+      setAppliedVoucherId(voucher.id);
+    },
+    [appliedVoucherId, confirmMergeCredits, usableVouchers],
   );
 
   const scrollToTop = useCallback(() => {
@@ -301,13 +364,27 @@ export function ServicesScreen() {
           ))}
         </View>
 
-        {activeVoucher ? (
-          <VoucherPromoBanner
-            voucher={activeVoucher}
-            applied={voucherApplied}
-            onToggle={() => setVoucherApplied((prev) => !prev)}
-          />
+        {amountCredits.length >= 2 ? (
+          <TouchableOpacity
+            style={styles.mergeCreditsButton}
+            onPress={() => confirmMergeCredits(amountCredits.map((voucher) => voucher.id))}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="layers-outline" size={18} color="#be185d" />
+            <Text style={styles.mergeCreditsText}>
+              Unificar créditos · {formatCurrency(creditsTotal)}
+            </Text>
+          </TouchableOpacity>
         ) : null}
+
+        {usableVouchers.map((voucher) => (
+          <VoucherPromoBanner
+            key={voucher.id}
+            voucher={voucher}
+            applied={appliedVoucherId === voucher.id}
+            onToggle={() => onToggleVoucher(voucher)}
+          />
+        ))}
 
         <View style={styles.servicesList}>
           {loading ? (
@@ -566,6 +643,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 8,
     paddingBottom: 12,
+  },
+  mergeCreditsButton: {
+    marginHorizontal: 24,
+    marginTop: 8,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#fdf2f8',
+    borderWidth: 1,
+    borderColor: '#f9a8d4',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  mergeCreditsText: {
+    color: '#be185d',
+    fontWeight: '700',
+    fontSize: 14,
   },
   voucherBanner: {
     width: '100%',

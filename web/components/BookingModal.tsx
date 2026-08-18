@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { Service } from '@/types'
 import * as api from '@/lib/api'
+import { voucherCreditBalance } from '@/lib/voucherCredit'
 import toast from 'react-hot-toast'
 import ReactDatePicker, { registerLocale } from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -73,8 +74,9 @@ export function BookingModal({
       let discount = 0
       if (discountVoucher.discountPercent) {
         discount = service.price * (discountVoucher.discountPercent / 100)
-      } else if (discountVoucher.discountAmount) {
-        discount = Math.min(discountVoucher.discountAmount, service.price)
+      } else {
+        const credit = voucherCreditBalance(discountVoucher)
+        if (credit > 0) discount = Math.min(credit, service.price)
       }
       return Math.max(0, service.price - discount)
     }

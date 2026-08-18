@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { notifyVoucherReceived } from '../utils/notifications'
+import { isAmountCreditVoucher, isCurrentlyAvailableVoucher, mergeReusableCredits, MergeCreditsError, repairReusableCredits } from '../utils/vouchers'
 
 export async function vouchersRoutes(app: FastifyInstance) {
   // GET - Listar vouchers (com filtros)
@@ -13,6 +14,8 @@ export async function vouchersRoutes(app: FastifyInstance) {
         userId?: string
         isUsed?: string 
       }
+
+      await repairReusableCredits(userId)
       
       const vouchers = await prisma.voucher.findMany({
         where: {
@@ -51,8 +54,10 @@ export async function vouchersRoutes(app: FastifyInstance) {
     logger.route('GET', `/vouchers/user/${userId}`)
     
     try {
-      // Cura holds antigos: agendamento PENDING/CONFIRMED com voucher ainda isUsed=false
-      // → marca como usado (suspenso). Cancelamento libera de novo.
+      await repairReusableCredits(userId)
+
+      // Cura holds de vouchers de uso único (cortesia / % ). Crédito em R$ com
+      // saldo restante continua disponível — o valor já foi debitado no booking.
       const activeHolds = await prisma.appointment.findMany({
         where: {
           userId,
@@ -69,29 +74,30 @@ export async function vouchersRoutes(app: FastifyInstance) {
         )
       ]
       if (heldIds.length > 0) {
-        const healed = await prisma.voucher.updateMany({
+        const heldVouchers = await prisma.voucher.findMany({
           where: { id: { in: heldIds }, isUsed: false },
-          data: { isUsed: true, usedAt: new Date() }
         })
-        if (healed.count > 0) {
-          logger.warning(
-            `🎫 ${healed.count} voucher(s) suspenso(s) por agendamento ativo (pagamento pendente/confirmado)`
-          )
+        const oneShotIds = heldVouchers
+          .filter((voucher) => !isAmountCreditVoucher(voucher))
+          .map((voucher) => voucher.id)
+        if (oneShotIds.length > 0) {
+          const healed = await prisma.voucher.updateMany({
+            where: { id: { in: oneShotIds } },
+            data: { isUsed: true, usedAt: new Date() }
+          })
+          if (healed.count > 0) {
+            logger.warning(
+              `🎫 ${healed.count} voucher(s) suspenso(s) por agendamento ativo (pagamento pendente/confirmado)`
+            )
+          }
         }
       }
 
-      // Disponíveis = não usados e não expirados (holds ativos já foram marcados acima)
-      const vouchers = await prisma.voucher.findMany({
-        where: {
-          userId,
-          isUsed: false,
-          OR: [
-            { expiresAt: null },
-            { expiresAt: { gte: new Date() } }
-          ]
-        },
+      const allVouchers = await prisma.voucher.findMany({
+        where: { userId },
         orderBy: { createdAt: 'desc' }
       })
+      const vouchers = allVouchers.filter(isCurrentlyAvailableVoucher)
       
       logger.success(`Retornando ${vouchers.length} vouchers disponíveis`)
       return reply.status(200).send({
@@ -103,6 +109,77 @@ export async function vouchersRoutes(app: FastifyInstance) {
       return reply.status(500).send({
         success: false,
         error: 'Erro ao buscar vouchers'
+      })
+    }
+  })
+
+  app.post('/vouchers/merge', async (request, reply) => {
+    logger.route('POST', '/vouchers/merge')
+    try {
+      const { voucherIds, userId: bodyUserId } = request.body as {
+        voucherIds?: string[]
+        userId?: string
+      }
+      if (!Array.isArray(voucherIds) || voucherIds.length < 2) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Selecione pelo menos dois créditos para unificar',
+        })
+      }
+
+      const uniqueIds = [...new Set(voucherIds.filter(Boolean))]
+      const found = await prisma.voucher.findMany({
+        where: { id: { in: uniqueIds } },
+        select: { userId: true },
+      })
+      if (found.length !== uniqueIds.length) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Um dos créditos não foi encontrado',
+        })
+      }
+      const ownerId = found[0]?.userId
+      if (!ownerId || found.some((voucher) => voucher.userId !== ownerId)) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Só é possível unificar créditos da mesma conta',
+        })
+      }
+
+      const authUser = request.authUser
+      if (authUser && authUser.role !== 'MANAGER' && authUser.id !== ownerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Você só pode unificar os seus créditos',
+        })
+      }
+      if (bodyUserId && bodyUserId !== ownerId && authUser?.role !== 'MANAGER') {
+        return reply.status(403).send({
+          success: false,
+          error: 'Você só pode unificar os seus créditos',
+        })
+      }
+
+      const merged = await mergeReusableCredits({
+        userId: ownerId,
+        voucherIds: uniqueIds,
+      })
+      return reply.status(200).send({
+        success: true,
+        data: merged,
+        message: `Créditos unificados: R$ ${Number(merged.remainingAmount || 0).toFixed(2).replace('.', ',')}`,
+      })
+    } catch (error) {
+      if (error instanceof MergeCreditsError) {
+        return reply.status(error.statusCode).send({
+          success: false,
+          error: error.message,
+        })
+      }
+      logger.error('Erro ao unificar créditos:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao unificar créditos',
       })
     }
   })

@@ -23,6 +23,18 @@ interface ReagendarCancelarModalProps {
     origin?: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
     paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
     paymentAmount?: number
+    startTime?: Date | string
+    machineKind?: 'LASER' | 'CRYO' | null
+    cancelPolicy?: {
+      kind: 'machine' | 'standard'
+      minCancellationHours?: number
+      lateCancelHours?: number
+      lateCancelFeePercent?: number
+      text: string
+      onTimeText?: string
+      latePaidText?: string
+      latePlanText?: string
+    }
   }
 }
 
@@ -165,8 +177,32 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
   }
 
   const isCompletedOrCanceled = agendamento?.status === 'completed' || agendamento?.status === 'canceled'
-  const needsSettlement =
-    agendamento?.origin === 'SINGLE' && agendamento?.paymentStatus === 'PAID'
+  const isPaidAvulso = agendamento?.origin === 'SINGLE' && agendamento?.paymentStatus === 'PAID'
+  const minHours =
+    agendamento?.cancelPolicy?.kind === 'machine'
+      ? agendamento.cancelPolicy.lateCancelHours || 24
+      : agendamento?.cancelPolicy?.minCancellationHours || 4
+  const feePercent =
+    agendamento?.cancelPolicy?.kind === 'machine' ? agendamento.cancelPolicy.lateCancelFeePercent || 25 : 0
+  const hoursUntil = (() => {
+    if (!agendamento?.startTime) return null
+    const start = agendamento.startTime
+    if (start instanceof Date) return (start.getTime() - Date.now()) / 36e5
+    const parts = String(start).match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+    if (!parts) return (new Date(start).getTime() - Date.now()) / 36e5
+    const local = new Date(
+      Number(parts[1]),
+      Number(parts[2]) - 1,
+      Number(parts[3]),
+      Number(parts[4]),
+      Number(parts[5]),
+    )
+    return (local.getTime() - Date.now()) / 36e5
+  })()
+  const isLate = hoursUntil != null && hoursUntil < minHours
+  const isMachine = agendamento?.cancelPolicy?.kind === 'machine' || Boolean(agendamento?.machineKind)
+  const machineLateRefund = Boolean(isPaidAvulso && isMachine && isLate)
+  const needsSettlement = Boolean(isPaidAvulso && !machineLateRefund && !isLate)
   
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Gerenciar Agendamento" size="md">
@@ -417,11 +453,28 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
               rows={3}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
             />
+            {machineLateRefund && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                {agendamento?.cancelPolicy?.kind === 'machine'
+                  ? agendamento.cancelPolicy.latePaidText
+                  : `Tratamento especial: faltam menos de ${minHours}h. O estorno sai em dinheiro com multa de ${feePercent}%. Não há crédito neste caso.`}
+              </div>
+            )}
+            {isPaidAvulso && isLate && !isMachine && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                {agendamento?.cancelPolicy?.kind === 'standard'
+                  ? agendamento.cancelPolicy.latePaidText
+                  : `Faltam menos de ${minHours}h. Sem reembolso em dinheiro — o valor vira crédito.`}
+              </div>
+            )}
             {needsSettlement && (
               <div className="mt-4 space-y-2">
                 <p className="text-sm font-medium text-gray-800">
-                  Avulso pago{agendamento?.paymentAmount != null ? ` (R$ ${agendamento.paymentAmount.toFixed(2).replace('.', ',')})` : ''}. Como devolver?
+                  Avulso pago{agendamento?.paymentAmount != null ? ` (R$ ${agendamento.paymentAmount.toFixed(2).replace('.', ',')})` : ''}, com antecedência suficiente. Como devolver?
                 </p>
+                {agendamento?.cancelPolicy?.onTimeText ? (
+                  <p className="text-xs text-gray-600">{agendamento.cancelPolicy.onTimeText}</p>
+                ) : null}
                 <label className="flex items-start gap-2 text-sm text-gray-700">
                   <input
                     type="radio"

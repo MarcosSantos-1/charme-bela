@@ -107,6 +107,9 @@ export interface Appointment {
     lateCancelHours?: number
     lateCancelFeePercent?: number
     text: string
+    onTimeText?: string
+    latePaidText?: string
+    latePlanText?: string
   }
   createdAt?: string
 }

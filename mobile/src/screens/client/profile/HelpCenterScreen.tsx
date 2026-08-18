@@ -58,7 +58,7 @@ const FAQ_ITEMS: FaqCategory[] = [
         question: 'Como cancelar um agendamento?',
         keywords: ['desmarcar', 'cancelamento'],
         answer:
-          'Na Agenda, abra o horário e toque em Cancelar. A clínica define um prazo mínimo de antecedência (configurável, em geral algumas horas). No prazo, um procedimento avulso pago permite escolher reembolso em dinheiro ou crédito para outros tratamentos. Fora do prazo, o avulso vira crédito do mesmo valor; se for do plano, a sessão é perdida. Máquinas alugadas podem ter prazo e multa próprios.',
+          'Na Agenda, abra o horário e toque em Cancelar. O prazo aparece na hora (a gestora pode alterar). Com o prazo inteiro (ex.: 4h ou mais), avulso pago: reembolso em dinheiro ou crédito. Com menos que o prazo (ex.: 3h59), avulso não tem dinheiro de volta — só crédito; no plano, a sessão é perdida. Tratamento especial de máquina tem prazo maior (ex.: 24h): com menos que isso ainda há reembolso, mas com multa (ex.: 25%) e sem crédito.',
       },
       {
         id: '1-4',
@@ -121,7 +121,7 @@ const FAQ_ITEMS: FaqCategory[] = [
         question: 'Como funciona o reembolso se eu cancelar?',
         keywords: ['reembolso', 'estorno', 'crédito', 'pix'],
         answer:
-          'Cancelar libera o horário. Se o avulso foi pago e você cancelar no prazo, escolhe Pix/cartão de volta ou crédito na clínica. Fora do prazo, o valor vira crédito (não dinheiro). Pix costuma voltar rápido; cartão pode levar até 10 dias úteis. A gestora só precisa intervir se o estorno automático falhar.',
+          'O horário é liberado na hora. Avulso pago com o prazo cheio (ex.: 4h ou mais): você escolhe Pix/cartão de volta ou crédito. Com menos que o prazo (ex.: 3h59): sem dinheiro, só crédito. Máquina especial com menos que o prazo dela (ex.: 20h de 24h): reembolso com multa, sem crédito. Pix costuma voltar rápido; cartão pode levar até 10 dias úteis.',
       },
     ],
   },

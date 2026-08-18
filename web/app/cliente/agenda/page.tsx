@@ -116,13 +116,19 @@ export default function AgendaPage() {
 
     if (!onTime) {
       const confirmed = await confirm({
-        title: 'Antecedência insuficiente',
+        title: machine ? 'Tratamento especial — antecedência insuficiente' : 'Antecedência insuficiente',
         message: machine
-          ? `Faltam menos de ${minH}h. Cancelar agora implica multa de ${fee}% no estorno (política de máquina alugada).`
+          ? (appointment.cancelPolicy?.kind === 'machine'
+              ? appointment.cancelPolicy.latePaidText
+              : `Faltam menos de ${minH}h. O reembolso sai em dinheiro com multa de ${fee}% (tratamento especial). Não há crédito neste caso.`)
           : appointment.origin === 'SUBSCRIPTION'
-            ? `Faltam menos de ${minH}h. Se cancelar agora, você perde esta sessão do plano.`
+            ? (appointment.cancelPolicy?.kind === 'standard'
+                ? appointment.cancelPolicy.latePlanText
+                : `Faltam menos de ${minH}h. Se cancelar agora, você perde esta sessão do plano.`)
             : isPaidAvulso(appointment)
-              ? `Faltam menos de ${minH}h. Você não receberá o valor em dinheiro, mas ganha crédito do mesmo valor para outros procedimentos.`
+              ? (appointment.cancelPolicy?.kind === 'standard'
+                  ? appointment.cancelPolicy.latePaidText
+                  : `Faltam menos de ${minH}h. Você não receberá o valor em dinheiro, mas ganha crédito do mesmo valor para outros procedimentos.`)
               : `Faltam menos de ${minH}h para o horário. Deseja cancelar mesmo assim?`,
         confirmText: 'Sim, cancelar mesmo assim',
         cancelText: 'Não cancelar',
@@ -287,8 +293,9 @@ export default function AgendaPage() {
           <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900">Cancelar e escolher a devolução</h3>
             <p className="text-sm text-gray-600">
-              {settlementAppointment.cancelPolicy?.text ||
-                'Você está dentro do prazo. Escolha reembolso em dinheiro ou crédito para outros procedimentos.'}
+              {settlementAppointment.cancelPolicy?.onTimeText ||
+                settlementAppointment.cancelPolicy?.text ||
+                'Você está com antecedência suficiente. Escolha reembolso em dinheiro ou crédito para outros procedimentos.'}
             </p>
             {settlementAppointment.paymentAmount ? (
               <p className="text-sm font-medium text-gray-800">

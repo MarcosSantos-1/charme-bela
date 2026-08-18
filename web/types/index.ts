@@ -125,11 +125,16 @@ export type CancelPolicy =
       lateCancelHours: number
       lateCancelFeePercent: number
       text: string
+      onTimeText?: string
+      latePaidText?: string
     }
   | {
       kind: 'standard'
       minCancellationHours: number
       text: string
+      onTimeText?: string
+      latePaidText?: string
+      latePlanText?: string
     }
 
 export interface PackagePurchase {

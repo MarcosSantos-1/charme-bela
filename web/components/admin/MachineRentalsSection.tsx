@@ -250,7 +250,7 @@ export function MachineRentalsSection() {
         ))}
       </div>
       <p className="text-xs text-gray-500">
-        A janela e a multa de máquina aparecem no app ao cancelar esses serviços. No prazo, a cliente ainda escolhe reembolso ou crédito; fora do prazo o estorno é parcial com a multa.
+        Prazo da máquina (ex.: 24h): com esse tempo ou mais, a cliente escolhe reembolso integral ou crédito. Com menos (ex.: 20h), o estorno é em dinheiro com a multa — único caso sem crédito. Isso aparece no app ao cancelar o tratamento especial.
       </p>
 
       {byMonth.map(([key, list]) => {

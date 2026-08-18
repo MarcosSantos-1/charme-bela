@@ -231,24 +231,32 @@ export function AgendaScreen() {
     };
 
     if (onTime && paidAvulso) {
-      Alert.alert(
-        'Cancelar agendamento',
-        `${policyText}\n\nComo você está no prazo, escolha: reembolso em dinheiro ou crédito para outros procedimentos.`,
-        [
-          { text: 'Manter horário', style: 'cancel' },
-          { text: 'Quero crédito', onPress: () => { void run('CREDIT'); } },
-          { text: 'Reembolso', onPress: () => { void run('REFUND'); } },
-        ],
-      );
+      const choiceText =
+        appointment.cancelPolicy?.onTimeText ||
+        `${policyText}\n\nVocê está com ${minH}h ou mais de antecedência. Escolha reembolso em dinheiro ou crédito para outros procedimentos.`;
+      Alert.alert('Cancelar agendamento', choiceText, [
+        { text: 'Manter horário', style: 'cancel' },
+        { text: 'Quero crédito', onPress: () => { void run('CREDIT'); } },
+        { text: 'Reembolso', onPress: () => { void run('REFUND'); } },
+      ]);
       return;
     }
 
+    const isMachine = appointment.cancelPolicy?.kind === 'machine' || Boolean(appointment.service?.machineKind);
     const lateHint = !onTime
       ? appointment.origin === 'SUBSCRIPTION'
-        ? `Faltam menos de ${minH}h: você perde esta sessão do plano.`
-        : paidAvulso
-          ? `Faltam menos de ${minH}h: o valor vira crédito, sem reembolso em dinheiro.`
-          : policyText
+        ? (appointment.cancelPolicy?.kind === 'standard'
+            ? appointment.cancelPolicy.latePlanText
+            : `Faltam menos de ${minH}h: você perde esta sessão do plano.`)
+        : isMachine && paidAvulso
+          ? (appointment.cancelPolicy?.kind === 'machine'
+              ? appointment.cancelPolicy.latePaidText
+              : `Faltam menos de ${minH}h neste tratamento especial. O valor volta em dinheiro com multa, sem opção de crédito.`)
+          : paidAvulso
+            ? (appointment.cancelPolicy?.kind === 'standard'
+                ? appointment.cancelPolicy.latePaidText
+                : `Faltam menos de ${minH}h: não há reembolso em dinheiro. O valor vira crédito.`)
+            : policyText
       : policyText;
 
     Alert.alert('Cancelar agendamento', `${lateHint}\n\nDeseja continuar?`, [

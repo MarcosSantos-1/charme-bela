@@ -31,6 +31,9 @@ interface TodayAppointment {
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
   paymentAmount?: number
   origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
+  startTime?: string
+  machineKind?: 'LASER' | 'CRYO' | null
+  cancelPolicy?: api.Appointment['cancelPolicy']
 }
 
 interface RecentActivity {
@@ -113,7 +116,10 @@ export default function AdminDashboard() {
                   apt.status === 'COMPLETED' ? 'completed' as const : 'pending' as const,
           paymentStatus: apt.paymentStatus,
           paymentAmount: apt.paymentAmount,
-          origin: apt.origin
+          origin: apt.origin,
+          startTime: apt.startTime,
+          machineKind: apt.service?.machineKind,
+          cancelPolicy: apt.cancelPolicy,
         }
       }))
       setUpcomingBirthdays(birthdaysData.map(b => {
@@ -652,6 +658,9 @@ export default function AdminDashboard() {
           origin: selectedAppointment.origin,
           paymentStatus: selectedAppointment.paymentStatus,
           paymentAmount: selectedAppointment.paymentAmount,
+          startTime: selectedAppointment.startTime,
+          machineKind: selectedAppointment.machineKind,
+          cancelPolicy: selectedAppointment.cancelPolicy,
         } : undefined}
       />
 

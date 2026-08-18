@@ -374,7 +374,7 @@ export default function ConfiguracoesPage() {
                 placeholder="4"
               />
               <p className="text-xs text-gray-500 -mt-2">
-                Este número aparece no app e no site da cliente ao cancelar. Avulso no prazo: ela escolhe reembolso ou crédito. Fora do prazo: crédito (ou perda da sessão, se for do plano). Máquinas alugadas têm prazo próprio abaixo, na seção de aluguel.
+                Este número é o prazo mínimo. Com esse tempo ou mais (ex.: 5h se o prazo for 4h), a cliente do avulso escolhe reembolso ou crédito. Com menos (ex.: 3h59), não há dinheiro de volta — só crédito. Plano fora do prazo perde a sessão. Máquinas: prazo próprio (ex.: 24h); abaixo disso o estorno é em dinheiro com multa, sem crédito.
               </p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">

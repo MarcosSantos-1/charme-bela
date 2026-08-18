@@ -22,6 +22,8 @@ interface Appointment {
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
   paymentAmount?: number
   origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
+  machineKind?: 'LASER' | 'CRYO' | null
+  cancelPolicy?: api.Appointment['cancelPolicy']
   packageSummary?: string
 }
 
@@ -58,6 +60,9 @@ export default function AgendamentosPage() {
     origin?: Appointment['origin']
     paymentStatus?: Appointment['paymentStatus']
     paymentAmount?: number
+    startTime?: Date
+    machineKind?: Appointment['machineKind']
+    cancelPolicy?: Appointment['cancelPolicy']
   } | undefined>()
 
   const [appointments, setAppointments] = useState<Appointment[]>([])
@@ -121,6 +126,8 @@ export default function AgendamentosPage() {
           paymentStatus: apt.paymentStatus,
           paymentAmount: apt.paymentAmount,
           origin: apt.origin,
+          machineKind: apt.service?.machineKind,
+          cancelPolicy: apt.cancelPolicy,
           packageSummary: Array.isArray(apt.packagePurchase?.itemsSnapshot)
             ? apt.packagePurchase.itemsSnapshot.map((item: any) => item.name).join(' + ')
             : apt.service?.packageItems
@@ -191,6 +198,9 @@ export default function AgendamentosPage() {
       origin: apt.origin,
       paymentStatus: apt.paymentStatus,
       paymentAmount: apt.paymentAmount,
+      startTime: apt.startTime,
+      machineKind: apt.machineKind,
+      cancelPolicy: apt.cancelPolicy,
     })
     setIsReagendarOpen(true)
   }

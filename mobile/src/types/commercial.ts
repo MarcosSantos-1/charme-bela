@@ -112,6 +112,9 @@ export interface Appointment {
     lateCancelHours?: number;
     lateCancelFeePercent?: number;
     text: string;
+    onTimeText?: string;
+    latePaidText?: string;
+    latePlanText?: string;
   };
   packagePurchaseId?: string | null;
   packageSessionIndex?: number | null;

@@ -235,6 +235,10 @@ model Appointment {
   canceledBy       String?          // "client" ou "admin"
   canceledAt       DateTime?
   cancelReason     String?
+  settlementChoice SettlementChoice?
+  refundStatus     RefundStatus     @default(NOT_APPLICABLE)
+  refundError      String?
+  voucherAmountApplied Float?       // Quanto do crédito/voucher foi debitado neste agendamento
   hiddenFromHistory Boolean         @default(false) // Ocultar do histórico do cliente (soft delete)
   
   // Observações
@@ -256,6 +260,7 @@ model Appointment {
   @@index([paymentExpiresAt]) // Para encontrar agendamentos expirados
   @@index([packagePurchaseId])
   @@index([asaasPaymentId])
+  @@index([refundStatus])
 }
 
 // ============================================
@@ -330,7 +335,8 @@ model Voucher {
   
   // Para desconto
   discountPercent Float?        // 50 = 50% de desconto
-  discountAmount  Float?        // R$ 50 de desconto
+  discountAmount  Float?        // R$ 50 de desconto (valor original do crédito)
+  remainingAmount Float?        // Saldo restante em R$ (crédito reutilizável)
   
   // Para mês grátis de plano
   planId          String?       // Se for mês grátis de um plano específico
@@ -629,6 +635,18 @@ enum PaymentStatus {
   PAID          // Pago
   FAILED        // Falhou
   REFUNDED      // Estornado
+}
+
+enum SettlementChoice {
+  REFUND  // Estorno em dinheiro via Asaas
+  CREDIT  // Crédito reutilizável na clínica
+}
+
+enum RefundStatus {
+  NOT_APPLICABLE   // Sem estorno (plano, crédito, não pago)
+  PROCESSING       // Estorno solicitado no Asaas, aguardando DONE
+  DONE             // Estorno concluído
+  MANUAL_REQUIRED  // API falhou — gestora precisa estornar
 }
 
 enum VoucherType {

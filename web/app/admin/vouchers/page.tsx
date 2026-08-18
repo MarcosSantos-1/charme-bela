@@ -22,6 +22,7 @@ interface VoucherDisplay {
   serviceName?: string
   discountPercent?: number
   discountAmount?: number
+  remainingAmount?: number
   planName?: string
 }
 
@@ -54,7 +55,8 @@ export default function VouchersPage() {
         createdAt: v.createdAt,
         grantedReason: v.grantedReason,
         discountPercent: v.discountPercent,
-        discountAmount: v.discountAmount
+        discountAmount: v.discountAmount,
+        remainingAmount: v.remainingAmount,
       }))
       
       setVouchers(mapped)
@@ -322,7 +324,9 @@ export default function VouchersPage() {
                               )}
                               {voucher.discountAmount && (
                                 <span className="text-blue-600 font-medium text-xs sm:text-sm">
-                                  R$ {voucher.discountAmount.toFixed(2).replace('.', ',')} desconto
+                                  {voucher.remainingAmount != null && voucher.remainingAmount !== voucher.discountAmount
+                                    ? `Saldo R$ ${voucher.remainingAmount.toFixed(2).replace('.', ',')} de R$ ${voucher.discountAmount.toFixed(2).replace('.', ',')}`
+                                    : `R$ ${voucher.discountAmount.toFixed(2).replace('.', ',')} desconto`}
                                 </span>
                               )}
                             </div>

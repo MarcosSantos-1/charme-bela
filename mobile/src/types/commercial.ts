@@ -83,6 +83,7 @@ export interface Voucher {
   anyService: boolean;
   discountPercent?: number | null;
   discountAmount?: number | null;
+  remainingAmount?: number | null;
   isUsed: boolean;
   expiresAt?: string | null;
 }
@@ -99,9 +100,19 @@ export interface Appointment {
   paymentStatus: PaymentStatus;
   paymentAmount?: number | null;
   paymentExpiresAt?: string | null;
+  paymentMethod?: string | null;
   voucherId?: string | null;
   voucher?: Voucher | null;
   cancelReason?: string | null;
+  settlementChoice?: 'REFUND' | 'CREDIT' | null;
+  refundStatus?: 'NOT_APPLICABLE' | 'PROCESSING' | 'DONE' | 'MANUAL_REQUIRED';
+  cancelPolicy?: {
+    kind: 'machine' | 'standard';
+    minCancellationHours?: number;
+    lateCancelHours?: number;
+    lateCancelFeePercent?: number;
+    text: string;
+  };
   packagePurchaseId?: string | null;
   packageSessionIndex?: number | null;
   packagePurchase?: {

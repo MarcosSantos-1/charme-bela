@@ -104,6 +104,9 @@ export interface Appointment {
   canceledBy?: string
   canceledAt?: string
   cancelReason?: string
+  settlementChoice?: 'REFUND' | 'CREDIT' | null
+  refundStatus?: 'NOT_APPLICABLE' | 'PROCESSING' | 'DONE' | 'MANUAL_REQUIRED'
+  refundError?: string | null
   notes?: string
   adminNotes?: string
   packagePurchaseId?: string | null
@@ -112,8 +115,22 @@ export interface Appointment {
   service?: Service
   user?: User
   voucher?: Voucher
+  cancelPolicy?: CancelPolicy
   createdAt?: string
 }
+
+export type CancelPolicy =
+  | {
+      kind: 'machine'
+      lateCancelHours: number
+      lateCancelFeePercent: number
+      text: string
+    }
+  | {
+      kind: 'standard'
+      minCancellationHours: number
+      text: string
+    }
 
 export interface PackagePurchase {
   id: string
@@ -141,6 +158,7 @@ export interface Voucher {
   anyService: boolean
   discountPercent?: number
   discountAmount?: number
+  remainingAmount?: number | null
   planId?: string
   isUsed: boolean
   usedAt?: string

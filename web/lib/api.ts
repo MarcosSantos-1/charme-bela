@@ -90,6 +90,9 @@ export interface Appointment {
   canceledBy?: string
   canceledAt?: string
   cancelReason?: string
+  settlementChoice?: 'REFUND' | 'CREDIT' | null
+  refundStatus?: 'NOT_APPLICABLE' | 'PROCESSING' | 'DONE' | 'MANUAL_REQUIRED'
+  refundError?: string | null
   notes?: string
   adminNotes?: string
   packagePurchaseId?: string | null
@@ -98,6 +101,13 @@ export interface Appointment {
   service?: Service
   user?: any
   voucher?: Voucher
+  cancelPolicy?: {
+    kind: 'machine' | 'standard'
+    minCancellationHours?: number
+    lateCancelHours?: number
+    lateCancelFeePercent?: number
+    text: string
+  }
   createdAt?: string
 }
 
@@ -188,6 +198,7 @@ export interface Voucher {
   anyService: boolean
   discountPercent?: number
   discountAmount?: number
+  remainingAmount?: number | null
   planId?: string
   isUsed: boolean
   usedAt?: string
@@ -663,6 +674,7 @@ export async function getAppointments(filters?: {
   startDate?: string
   endDate?: string
   excludeHidden?: boolean
+  refundStatus?: string
 }): Promise<Appointment[]> {
   const queryParams = new URLSearchParams()
   if (filters?.userId) queryParams.append('userId', filters.userId)
@@ -670,6 +682,7 @@ export async function getAppointments(filters?: {
   if (filters?.startDate) queryParams.append('startDate', filters.startDate)
   if (filters?.endDate) queryParams.append('endDate', filters.endDate)
   if (filters?.excludeHidden) queryParams.append('excludeHidden', 'true')
+  if (filters?.refundStatus) queryParams.append('refundStatus', filters.refundStatus)
   
   const query = queryParams.toString()
   return apiRequest(`/appointments${query ? `?${query}` : ''}`, { method: 'GET' })
@@ -708,12 +721,56 @@ export async function completeAppointment(id: string, paid?: boolean): Promise<A
 
 export async function cancelAppointment(
   id: string,
-  data?: { canceledBy?: 'client' | 'admin'; cancelReason?: string; reason?: string }
+  data?: {
+    canceledBy?: 'client' | 'admin'
+    cancelReason?: string
+    reason?: string
+    settlement?: 'REFUND' | 'CREDIT'
+  }
 ): Promise<any> {
-  return apiRequest(`/appointments/${id}/cancel`, {
+  const fullUrl = `${API_URL}/appointments/${id}/cancel`
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  try {
+    const { auth } = await import('./firebase')
+    const token = await auth.currentUser?.getIdToken()
+    if (token) headers['Authorization'] = `Bearer ${token}`
+  } catch {
+    // segue sem token
+  }
+
+  const response = await fetch(fullUrl, {
     method: 'PUT',
+    headers,
     body: JSON.stringify(data || { canceledBy: 'admin' }),
   })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok || payload.success === false) {
+    const error = new Error(payload.error || payload.message || 'Erro ao cancelar agendamento') as Error & {
+      code?: string
+      options?: string[]
+      paymentAmount?: number
+    }
+    error.code = payload.code
+    error.options = payload.options
+    error.paymentAmount = payload.paymentAmount
+    throw error
+  }
+  return {
+    ...payload.data,
+    lostTreatment: payload.lostTreatment,
+    creditVoucher: payload.creditVoucher,
+    refunded: payload.refunded,
+    refundStatus: payload.refundStatus,
+    settlementChoice: payload.settlementChoice,
+    feeAmount: payload.feeAmount,
+    refundAmount: payload.refundAmount,
+    cancelPolicy: payload.cancelPolicy,
+    message: payload.message,
+  }
+}
+
+export async function retryAppointmentRefund(id: string): Promise<any> {
+  return apiRequest(`/appointments/${id}/retry-refund`, { method: 'PUT' })
 }
 
 // Liberar reserva quando o cliente desiste do checkout

@@ -4,7 +4,7 @@ import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { hoursUntilStoredStart, wallClockNowAsStoredUtc, wallClockYearMonth } from '../utils/wallClock'
 import { newPaymentHoldExpiration, releaseExpiredPaymentHolds, countActivePaymentHolds, MAX_ACTIVE_PAYMENT_HOLDS_PER_USER, PAYMENT_HOLD_MINUTES } from '../utils/paymentHolds'
-import { cancelPaymentSilent, cancelPendingByExternalReference, refundPayment } from '../lib/asaas'
+import { cancelPaymentSilent, cancelPendingByExternalReference } from '../lib/asaas'
 import { assertStartTimeOnSchedule } from '../utils/scheduleValidation'
 import {
   incrementMonthlyUsage,
@@ -19,10 +19,12 @@ import {
   notifyAppointmentCompleted,
   notifyAdminNewAppointmentRequest,
   notifyAdminClientCanceled,
-  createNotification
+  createNotification,
 } from '../utils/notifications'
-import { markVoucherUsed, releaseVoucherOnCancel, voucherHasActiveHold } from '../utils/vouchers'
+import { markVoucherUsed, releaseVoucherOnCancel, voucherHasActiveHold, isAmountCreditVoucher, creditBalance } from '../utils/vouchers'
 import { cancelUnpaidPackagePurchase, releaseSessionOnCancel } from '../utils/packages'
+import { attachCancelPolicies, resolveCancelPolicy, minHoursFromPolicy } from '../utils/cancelPolicy'
+import { settlePaidSingleCancel, retryAppointmentRefund } from '../utils/settlement'
 
 // Lançado dentro da transação quando o slot foi ocupado por outra requisição
 class SlotTakenError extends Error {
@@ -126,7 +128,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
             cancelReason
           }
         })
-        await releaseVoucherOnCancel(appointment.voucherId)
+        await releaseVoucherOnCancel(appointment.voucherId, appointment.voucherAmountApplied)
       }
 
       await notifyAppointmentCanceled(appointment.userId, {
@@ -260,12 +262,13 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       // para reservas cujo timer de pagamento já acabou.
       await releaseExpiredPaymentHolds()
 
-      const { userId, status, startDate, endDate, excludeHidden } = request.query as {
+      const { userId, status, startDate, endDate, excludeHidden, refundStatus } = request.query as {
         userId?: string
         status?: string
         startDate?: string
         endDate?: string
         excludeHidden?: string
+        refundStatus?: string
       }
       
       const wallNow = wallClockNowAsStoredUtc()
@@ -288,6 +291,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         where: {
           ...(userId && { userId }),
           ...(status && { status: status.toUpperCase() as any }),
+          ...(refundStatus && { refundStatus: refundStatus.toUpperCase() as any }),
           ...(startDate && endDate && {
             startTime: {
               gte: new Date(startDate),
@@ -332,9 +336,10 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       })
       
       logger.success(`Retornando ${appointments.length} agendamentos`)
+      const withPolicy = await attachCancelPolicies(appointments)
       return reply.status(200).send({
         success: true,
-        data: appointments
+        data: withPolicy
       })
     } catch (error) {
       logger.error('Erro ao buscar agendamentos:', error)
@@ -390,28 +395,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       
       logger.success(`Agendamento encontrado: ${appointment.id}`)
 
-      let cancelPolicy:
-        | { kind: 'machine'; lateCancelHours: number; lateCancelFeePercent: number; text: string }
-        | { kind: 'standard'; minCancellationHours: number; text: string }
-
-      if (appointment.service.machineKind) {
-        const { getLateCancelPolicyForKind } = await import('../utils/machineRental')
-        const policy = await getLateCancelPolicyForKind(appointment.service.machineKind)
-        cancelPolicy = {
-          kind: 'machine',
-          lateCancelHours: policy.lateCancelHours,
-          lateCancelFeePercent: policy.lateCancelFeePercent,
-          text: `Cancelamento com menos de ${policy.lateCancelHours}h de antecedência: estorno com multa de ${policy.lateCancelFeePercent}%. Com antecedência igual ou maior, estorno integral.`,
-        }
-      } else {
-        const config = await prisma.systemConfig.findFirst()
-        const minH = config?.minCancellationHours || 4
-        cancelPolicy = {
-          kind: 'standard',
-          minCancellationHours: minH,
-          text: `Cancelamento com menos de ${minH}h pode gerar perda do tratamento ou conversão em crédito, conforme a origem do agendamento.`,
-        }
-      }
+      let cancelPolicy = await resolveCancelPolicy(appointment.service.machineKind)
 
       return reply.status(200).send({
         success: true,
@@ -607,7 +591,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           })
         }
         
-        if (voucher.isUsed) {
+        if (voucher.isUsed && !(isAmountCreditVoucher(voucher) && creditBalance(voucher) > 0.009)) {
           return reply.status(400).send({
             success: false,
             error: 'Voucher já foi utilizado'
@@ -621,7 +605,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           })
         }
 
-        if (await voucherHasActiveHold(voucher.id)) {
+        if (!isAmountCreditVoucher(voucher) && await voucherHasActiveHold(voucher.id)) {
           return reply.status(400).send({
             success: false,
             error: 'Este voucher está suspenso em outro agendamento. Conclua o pagamento ou cancele a reserva para usá-lo novamente.'
@@ -654,7 +638,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
             if (voucher.discountPercent) {
               appliedDiscount = service.price * (voucher.discountPercent / 100)
             } else if (voucher.discountAmount) {
-              appliedDiscount = Math.min(voucher.discountAmount, service.price)
+              appliedDiscount = Math.min(creditBalance(voucher), service.price)
             }
             finalPrice = Math.max(0, service.price - appliedDiscount)
             voucherApplied = voucher
@@ -727,22 +711,34 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           // (dois agendamentos pendentes com o mesmo voucher). Cancelamento libera.
           if (voucherApplied) {
             const locked = await tx.voucher.findUnique({ where: { id: voucherApplied.id } })
-            if (!locked || locked.isUsed) {
-              throw new VoucherUnavailableError('Voucher já foi utilizado')
+            if (!locked) {
+              throw new VoucherUnavailableError('Voucher não encontrado')
             }
             if (locked.expiresAt && locked.expiresAt < new Date()) {
               throw new VoucherUnavailableError('Voucher expirado')
             }
-            const activeHold = await tx.appointment.count({
-              where: {
-                voucherId: locked.id,
-                status: { in: ['PENDING', 'CONFIRMED'] }
+            if (isAmountCreditVoucher(locked)) {
+              const remaining = creditBalance(locked)
+              if (remaining <= 0.009) {
+                throw new VoucherUnavailableError('Crédito esgotado')
               }
-            })
-            if (activeHold > 0) {
-              throw new VoucherUnavailableError(
-                'Este voucher está suspenso em outro agendamento. Conclua o pagamento ou cancele a reserva.'
-              )
+              appliedDiscount = Math.min(remaining, service.price)
+              finalPrice = Math.max(0, service.price - appliedDiscount)
+            } else {
+              if (locked.isUsed) {
+                throw new VoucherUnavailableError('Voucher já foi utilizado')
+              }
+              const activeHold = await tx.appointment.count({
+                where: {
+                  voucherId: locked.id,
+                  status: { in: ['PENDING', 'CONFIRMED'] }
+                }
+              })
+              if (activeHold > 0) {
+                throw new VoucherUnavailableError(
+                  'Este voucher está suspenso em outro agendamento. Conclua o pagamento ou cancele a reserva.'
+                )
+              }
             }
           }
           
@@ -760,6 +756,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
               paymentAmount: voucherApplied ? finalPrice : paymentAmount,
               paymentStatus: effectivePaymentStatus,
               paymentExpiresAt,
+              voucherAmountApplied: voucherApplied && appliedDiscount > 0 ? Number(appliedDiscount.toFixed(2)) : null,
               confirmedByAdmin: false,
               notes
             },
@@ -776,10 +773,23 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           })
 
           if (voucherApplied) {
-            await tx.voucher.update({
-              where: { id: voucherApplied.id },
-              data: { isUsed: true, usedAt: new Date() }
-            })
+            const locked = await tx.voucher.findUnique({ where: { id: voucherApplied.id } })
+            if (locked && isAmountCreditVoucher(locked)) {
+              const next = Number((creditBalance(locked) - appliedDiscount).toFixed(2))
+              await tx.voucher.update({
+                where: { id: voucherApplied.id },
+                data: {
+                  remainingAmount: Math.max(0, next),
+                  isUsed: next <= 0.009,
+                  usedAt: next <= 0.009 ? new Date() : null,
+                }
+              })
+            } else {
+              await tx.voucher.update({
+                where: { id: voucherApplied.id },
+                data: { isUsed: true, usedAt: new Date() }
+              })
+            }
           }
           
           // Atualiza uso mensal se for de assinatura (atômico com a criação)
@@ -979,9 +989,10 @@ export async function appointmentsRoutes(app: FastifyInstance) {
     logger.route('PUT', `/appointments/${id}/cancel`)
     
     try {
-      const { canceledBy, cancelReason } = request.body as {
+      const { canceledBy, cancelReason, settlement } = request.body as {
         canceledBy: string  // 'client' ou 'admin'
         cancelReason?: string
+        settlement?: 'REFUND' | 'CREDIT'
       }
       
       const appointment = await prisma.appointment.findUnique({
@@ -1006,166 +1017,50 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           error: 'Agendamento não encontrado'
         })
       }
-      
-      // Busca configurações
-      const config = await prisma.systemConfig.findFirst()
-      let minHours = config?.minCancellationHours || 4
-      let lateFeePercent = 0
-      let isMachineSpecial = Boolean(appointment.service.machineKind)
 
-      if (appointment.service.machineKind) {
-        const { getLateCancelPolicyForKind } = await import('../utils/machineRental')
-        const policy = await getLateCancelPolicyForKind(appointment.service.machineKind)
-        minHours = policy.lateCancelHours
-        lateFeePercent = policy.lateCancelFeePercent
+      if (appointment.status === 'CANCELED') {
+        return reply.status(400).send({
+          success: false,
+          error: 'Agendamento já está cancelado'
+        })
       }
-      
-      // Calcula diferença de horas (hora de parede, mesma convenção dos slots)
+
+      const cancelPolicy = await resolveCancelPolicy(appointment.service.machineKind)
+      const minHours = minHoursFromPolicy(cancelPolicy)
+      const lateFeePercent = cancelPolicy.kind === 'machine' ? cancelPolicy.lateCancelFeePercent : 0
+      const isMachineSpecial = cancelPolicy.kind === 'machine'
       const hoursDiff = hoursUntilStoredStart(appointment.startTime)
-      
-      // Se cliente cancelar com menos de X horas, perde o tratamento (só se for de assinatura)
+      const isLate = hoursDiff < minHours
+      const isPaidSingle =
+        appointment.origin === 'SINGLE' &&
+        appointment.paymentStatus === 'PAID' &&
+        Boolean(appointment.paymentAmount)
+
+      const needsSettlementChoice =
+        isPaidSingle &&
+        !isLate &&
+        settlement !== 'REFUND' &&
+        settlement !== 'CREDIT'
+
+      if (needsSettlementChoice) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Escolha entre reembolso em dinheiro ou crédito na clínica',
+          code: 'SETTLEMENT_REQUIRED',
+          options: ['REFUND', 'CREDIT'],
+          paymentAmount: appointment.paymentAmount,
+          paymentMethod: appointment.paymentMethod,
+          cancelPolicy,
+        })
+      }
+
       let lostTreatment = false
-      let creditVoucher = null
-      let refundAmount: number | null = null
-      let feeAmount: number | null = null
-      
-      if (canceledBy === 'client' && hoursDiff < minHours && appointment.origin === 'SUBSCRIPTION') {
+      if (canceledBy === 'client' && isLate && appointment.origin === 'SUBSCRIPTION') {
         lostTreatment = true
-        // Não remove do MonthlyUsage - cliente perdeu o tratamento
       } else if (appointment.origin === 'SUBSCRIPTION') {
         await decrementMonthlyUsage(appointment.userId, appointment.startTime)
       }
-      
-      // SISTEMA DE REEMBOLSO/CRÉDITO para tratamentos AVULSOS pagos
-      if (canceledBy === 'client' && appointment.origin === 'SINGLE' && appointment.paymentStatus === 'PAID' && appointment.paymentAmount) {
-        const paidAmount = appointment.paymentAmount
-        const isLate = hoursDiff < minHours
-        const netRefund =
-          isMachineSpecial && isLate
-            ? Math.round(paidAmount * (1 - lateFeePercent / 100) * 100) / 100
-            : isLate && !isMachineSpecial
-              ? null // política antiga: crédito integral sem estorno Stripe
-              : paidAmount
 
-        if (isMachineSpecial && isLate) {
-          feeAmount = Math.round(paidAmount * (lateFeePercent / 100) * 100) / 100
-          refundAmount = netRefund
-        } else if (!isLate) {
-          refundAmount = paidAmount
-        }
-        
-        // CASO 1: Antecedência OK, OU máquina especial tardia (estorno parcial) → Asaas refund
-        if (netRefund != null && netRefund > 0 && (!isLate || isMachineSpecial)) {
-          try {
-            logger.info(
-              `Processando reembolso de R$ ${netRefund} para ${appointment.user.name}` +
-                (feeAmount ? ` (multa R$ ${feeAmount})` : '')
-            )
-
-            if (appointment.asaasPaymentId) {
-              await refundPayment(
-                appointment.asaasPaymentId,
-                netRefund,
-                `Cancelamento de ${appointment.service.name}`,
-              )
-
-              await prisma.appointment.update({
-                where: { id: appointment.id },
-                data: { paymentStatus: 'REFUNDED' }
-              })
-
-              logger.success(`Reembolso Asaas processado: ${appointment.asaasPaymentId} - R$ ${netRefund}`)
-
-              const { createNotification } = await import('../utils/notifications')
-              const feeMsg =
-                feeAmount && feeAmount > 0
-                  ? ` Foi aplicada multa de ${lateFeePercent}% (R$ ${feeAmount.toFixed(2).replace('.', ',')}).`
-                  : ''
-              await createNotification({
-                userId: appointment.userId,
-                type: 'PAYMENT_REFUNDED',
-                title: 'Reembolso Processado',
-                message: `Seu pagamento de R$ ${netRefund.toFixed(2).replace('.', ',')} foi reembolsado.${feeMsg} Pix volta na hora; cartão pode levar até 10 dias úteis.`,
-                icon: 'CARD',
-                priority: 'HIGH',
-                actionUrl: '/cliente/pagamentos',
-                actionLabel: 'Ver Pagamentos'
-              })
-            } else {
-              throw new Error('Agendamento sem cobrança Asaas')
-            }
-          } catch (refundError: any) {
-            logger.error('❌ Erro ao processar reembolso:', refundError.message)
-            logger.warning('⚠️ Criando crédito como fallback...')
-            
-            try {
-              const expiresAt = new Date()
-              expiresAt.setMonth(expiresAt.getMonth() + 6)
-              
-              creditVoucher = await prisma.voucher.create({
-                data: {
-                  userId: appointment.userId,
-                  type: 'DISCOUNT',
-                  description: `Crédito de reembolso - ${appointment.service.name}`,
-                  discountAmount: netRefund,
-                  anyService: true,
-                  expiresAt,
-                  grantedBy: 'system',
-                  grantedReason: isLate && isMachineSpecial
-                    ? `Cancelamento com multa de ${lateFeePercent}%. Falha no Stripe — crédito do valor líquido.`
-                    : `Reembolso de cancelamento com antecedência. Falha no processamento Stripe.`
-                }
-              })
-              
-              const { notifyVoucherReceived } = await import('../utils/notifications')
-              await notifyVoucherReceived(appointment.userId, {
-                description: creditVoucher.description,
-                type: 'DISCOUNT',
-                expiresAt: creditVoucher.expiresAt || undefined
-              })
-              
-              logger.success(`💳 Crédito criado (fallback): R$ ${netRefund}`)
-            } catch (voucherError) {
-              logger.error('Erro ao criar voucher de fallback:', voucherError)
-            }
-          }
-        }
-        
-        // CASO 2: Cancelamento TARDIO serviço normal (< minHours) → CRÉDITO (política antiga)
-        else if (isLate && !isMachineSpecial) {
-          try {
-            logger.info(`⚠️ Cancelamento tardio - criando voucher de crédito...`)
-            
-            const expiresAt = new Date()
-            expiresAt.setMonth(expiresAt.getMonth() + 3)
-            
-            creditVoucher = await prisma.voucher.create({
-              data: {
-                userId: appointment.userId,
-                type: 'DISCOUNT',
-                description: `Crédito de cancelamento tardio - ${appointment.service.name}`,
-                discountAmount: paidAmount,
-                anyService: true,
-                expiresAt,
-                grantedBy: 'system',
-                grantedReason: `Cancelamento com menos de ${minHours}h de antecedência. Valor convertido em crédito.`
-              }
-            })
-            
-            const { notifyVoucherReceived } = await import('../utils/notifications')
-            await notifyVoucherReceived(appointment.userId, {
-              description: creditVoucher.description,
-              type: 'DISCOUNT',
-              expiresAt: creditVoucher.expiresAt || undefined
-            })
-            
-            logger.success(`💳 Voucher de crédito criado (tardio): R$ ${paidAmount}`)
-          } catch (voucherError) {
-            logger.error('Erro ao criar voucher de crédito:', voucherError)
-          }
-        }
-      }
-      
       const updatedAppointment = await prisma.$transaction(async (tx) => {
         if (appointment.packagePurchaseId) {
           const isUnpaidPackageHold =
@@ -1196,18 +1091,58 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         })
       })
 
-      // Cancelado sem conclusão → voucher volta a ficar disponível
       if (appointment.status !== 'COMPLETED') {
         try {
-          await releaseVoucherOnCancel(appointment.voucherId)
+          await releaseVoucherOnCancel(appointment.voucherId, appointment.voucherAmountApplied)
         } catch (voucherError) {
           logger.error('Erro ao liberar voucher no cancelamento:', voucherError)
         }
       }
-      
-      // Notifica conforme quem cancelou
+
+      let creditVoucher = null
+      let refundAmount: number | null = null
+      let feeAmount: number | null = null
+      let refunded = false
+      let refundStatus = updatedAppointment.refundStatus
+      let settlementChoice = updatedAppointment.settlementChoice
+
+      if (isPaidSingle && appointment.paymentAmount) {
+        const settled = await settlePaidSingleCancel({
+          appointmentId: appointment.id,
+          userId: appointment.userId,
+          clientName: appointment.user.name,
+          serviceName: appointment.service.name,
+          asaasPaymentId: appointment.asaasPaymentId,
+          paidAmount: appointment.paymentAmount,
+          isLate,
+          isMachineSpecial,
+          lateFeePercent,
+          minHours,
+          settlement: settlement || null,
+        })
+
+        if ('requiresSettlement' in settled && settled.requiresSettlement) {
+          return reply.status(400).send({
+            success: false,
+            error: 'Escolha entre reembolso em dinheiro ou crédito na clínica',
+            code: 'SETTLEMENT_REQUIRED',
+            options: ['REFUND', 'CREDIT'],
+            paymentAmount: settled.paymentAmount,
+            cancelPolicy,
+          })
+        }
+
+        if (!('requiresSettlement' in settled)) {
+          creditVoucher = settled.creditVoucher
+          refundAmount = settled.refundAmount
+          feeAmount = settled.feeAmount
+          refunded = settled.refunded
+          refundStatus = settled.refundStatus
+          settlementChoice = settled.settlementChoice
+        }
+      }
+
       if (canceledBy === 'client') {
-        // Notifica admin sobre cancelamento do cliente
         await notifyAdminClientCanceled({
           clientName: updatedAppointment.user.name,
           serviceName: updatedAppointment.service.name,
@@ -1215,7 +1150,6 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           cancelReason
         })
       } else {
-        // Notifica cliente sobre cancelamento
         await notifyAppointmentCanceled(updatedAppointment.userId, {
           serviceName: updatedAppointment.service.name,
           startTime: updatedAppointment.startTime,
@@ -1226,33 +1160,39 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       logger.success(`Agendamento cancelado: ${id}`)
       
       let message = 'Agendamento cancelado com sucesso'
-      let refunded = false
-      
-      if (updatedAppointment.paymentStatus === 'REFUNDED') {
+      if (refunded) {
         if (feeAmount && feeAmount > 0) {
           message = `Agendamento cancelado. Estorno de R$ ${refundAmount?.toFixed(2).replace('.', ',')} processado (multa de ${lateFeePercent}% = R$ ${feeAmount.toFixed(2).replace('.', ',')}).`
+        } else if (appointment.paymentMethod === 'pix') {
+          message = `Agendamento cancelado. O reembolso via Pix de R$ ${refundAmount?.toFixed(2).replace('.', ',')} foi solicitado e costuma cair na conta de origem em instantes.`
         } else {
-          message = `Agendamento cancelado. Seu reembolso de R$ ${appointment.paymentAmount?.toFixed(2).replace('.', ',')} foi processado e será estornado em até 10 dias úteis.`
+          message = `Agendamento cancelado. O reembolso de R$ ${refundAmount?.toFixed(2).replace('.', ',')} foi solicitado. No cartão, pode levar até 10 dias úteis.`
         }
-        refunded = true
+      } else if (refundStatus === 'MANUAL_REQUIRED') {
+        message = 'Agendamento cancelado. O estorno automático não foi concluído; a clínica vai devolver o valor em breve.'
       } else if (lostTreatment) {
-        message = `Agendamento cancelado. Como foi cancelado com menos de ${minHours}h de antecedência, o tratamento foi contabilizado.`
+        message = `Agendamento cancelado. Como foi cancelado com menos de ${minHours}h de antecedência, a sessão do plano foi contabilizada.`
       } else if (creditVoucher) {
-        const months = hoursDiff >= minHours ? 6 : 3
-        message = `Agendamento cancelado. Você recebeu um crédito de R$ ${creditVoucher.discountAmount?.toFixed(2).replace('.', ',')} válido por ${months} meses!`
+        const months = isLate ? 3 : 6
+        const creditValue = creditVoucher.remainingAmount ?? creditVoucher.discountAmount
+        message = `Agendamento cancelado. Você recebeu um crédito de R$ ${creditValue?.toFixed(2).replace('.', ',')} para usar em outros procedimentos, válido por ${months} meses.`
       }
       
       return reply.status(200).send({
         success: true,
-        data: updatedAppointment,
+        data: {
+          ...updatedAppointment,
+          refundStatus,
+          settlementChoice,
+        },
         lostTreatment,
         creditVoucher,
         refunded,
+        refundStatus,
+        settlementChoice,
         feeAmount,
         refundAmount,
-        cancelPolicy: isMachineSpecial
-          ? { lateCancelHours: minHours, lateCancelFeePercent: lateFeePercent }
-          : { minCancellationHours: minHours },
+        cancelPolicy,
         message
       })
     } catch (error) {
@@ -1260,6 +1200,30 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       return reply.status(500).send({
         success: false,
         error: 'Erro ao cancelar agendamento'
+      })
+    }
+  })
+
+  // PUT - Tentar de novo o estorno Asaas (gestora)
+  app.put('/appointments/:id/retry-refund', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    logger.route('PUT', `/appointments/${id}/retry-refund`)
+
+    try {
+      const result = await retryAppointmentRefund(id)
+      return reply.status(200).send({
+        success: true,
+        data: result,
+        message: result.refunded
+          ? `Estorno de R$ ${result.refundAmount.toFixed(2).replace('.', ',')} solicitado no Asaas.`
+          : 'Não foi possível estornar. A flag de reembolso manual permanece.',
+      })
+    } catch (error: any) {
+      const status = error?.statusCode || 500
+      logger.error('Erro ao retentar estorno:', error)
+      return reply.status(status).send({
+        success: false,
+        error: error?.message || 'Erro ao retentar estorno',
       })
     }
   })

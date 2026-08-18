@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Calendar, Clock, Plus, ChevronLeft, ChevronRight, Grid3x3, List, Loader2 } from 'lucide-react'
+import { Calendar, Clock, Plus, ChevronLeft, ChevronRight, Grid3x3, List, Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/Button'
 import { format, addDays, startOfWeek, addWeeks, subWeeks, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -20,6 +20,7 @@ interface Appointment {
   status: 'scheduled' | 'completed' | 'canceled'
   notes?: string
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
+  paymentAmount?: number
   origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
   packageSummary?: string
 }
@@ -54,9 +55,14 @@ export default function AgendamentosPage() {
     data: string
     hora: string
     status?: string
+    origin?: Appointment['origin']
+    paymentStatus?: Appointment['paymentStatus']
+    paymentAmount?: number
   } | undefined>()
 
   const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [manualRefunds, setManualRefunds] = useState<api.Appointment[]>([])
+  const [retryingId, setRetryingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   // Buscar agendamentos do backend
@@ -113,6 +119,7 @@ export default function AgendamentosPage() {
                   apt.status === 'CANCELED' ? 'canceled' as const : 'scheduled' as const,
           notes: apt.notes,
           paymentStatus: apt.paymentStatus,
+          paymentAmount: apt.paymentAmount,
           origin: apt.origin,
           packageSummary: Array.isArray(apt.packagePurchase?.itemsSnapshot)
             ? apt.packagePurchase.itemsSnapshot.map((item: any) => item.name).join(' + ')
@@ -124,6 +131,13 @@ export default function AgendamentosPage() {
       })
       
       setAppointments(parsedAppointments)
+
+      try {
+        const pending = await api.getAppointments({ refundStatus: 'MANUAL_REQUIRED' })
+        setManualRefunds(pending)
+      } catch (refundErr) {
+        console.error('Erro ao carregar reembolsos manuais:', refundErr)
+      }
     } catch (error) {
       console.error('Erro ao carregar agendamentos:', error)
       toast.error('Erro ao carregar agendamentos')
@@ -165,6 +179,35 @@ export default function AgendamentosPage() {
   
   const hours = getHoursRange()
 
+  const openManage = (apt: Appointment) => {
+    if (apt.status === 'completed' || apt.status === 'canceled') return
+    setSelectedAppointment({
+      id: apt.id,
+      cliente: apt.clientName,
+      servico: apt.service,
+      data: format(apt.startTime, 'dd/MM/yyyy'),
+      hora: format(apt.startTime, 'HH:mm'),
+      status: apt.status,
+      origin: apt.origin,
+      paymentStatus: apt.paymentStatus,
+      paymentAmount: apt.paymentAmount,
+    })
+    setIsReagendarOpen(true)
+  }
+
+  const retryRefund = async (id: string) => {
+    setRetryingId(id)
+    try {
+      const result = await api.retryAppointmentRefund(id)
+      toast.success(result?.message || 'Estorno solicitado novamente')
+      await loadAppointments()
+    } catch (error: any) {
+      toast.error(error.message || 'Não foi possível retentar o estorno')
+    } finally {
+      setRetryingId(null)
+    }
+  }
+
   const getAppointmentsForDateTime = (date: Date, hour: number) => {
     return appointments.filter(apt => {
       const aptHour = apt.startTime.getHours()
@@ -183,6 +226,42 @@ export default function AgendamentosPage() {
 
   return (
     <div className="space-y-6">
+      {manualRefunds.length > 0 && (
+        <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-amber-900 font-semibold">
+            <AlertTriangle className="w-5 h-5" />
+            Reembolso manual necessário ({manualRefunds.length})
+          </div>
+          <p className="text-sm text-amber-800">
+            O estorno automático no Asaas falhou. Cancele o horário já está feito — devolva o valor no painel Asaas ou tente de novo.
+          </p>
+          <div className="space-y-2">
+            {manualRefunds.map((item) => (
+              <div key={item.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-white/70 rounded-lg px-3 py-2 text-sm">
+                <div>
+                  <span className="font-medium text-gray-900">{item.user?.name || 'Cliente'}</span>
+                  {' · '}
+                  {item.service?.name}
+                  {item.paymentAmount != null && (
+                    <> · R$ {item.paymentAmount.toFixed(2).replace('.', ',')}</>
+                  )}
+                  {item.refundError ? (
+                    <div className="text-xs text-amber-700 mt-0.5">{item.refundError}</div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  disabled={retryingId === item.id}
+                  onClick={() => retryRefund(item.id)}
+                  className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-60"
+                >
+                  {retryingId === item.id ? 'Tentando...' : 'Tentar estorno de novo'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Header with controls */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center space-x-2 sm:space-x-4 overflow-x-auto">
@@ -399,21 +478,7 @@ export default function AgendamentosPage() {
                         return (
                         <button
                           key={apt.id}
-                          onClick={() => {
-                            // Não abre modal se concluído ou cancelado
-                            if (apt.status === 'completed' || apt.status === 'canceled') {
-                              return
-                            }
-                            setSelectedAppointment({
-                              id: apt.id,
-                              cliente: apt.clientName,
-                              servico: apt.service,
-                              data: format(apt.startTime, 'dd/MM/yyyy'),
-                              hora: format(apt.startTime, 'HH:mm'),
-                              status: apt.status
-                            })
-                            setIsReagendarOpen(true)
-                          }}
+                          onClick={() => openManage(apt)}
                             className={`w-full mb-1 p-2 border-l-2 rounded text-xs hover:opacity-80 transition-colors text-left ${bgColor} ${borderColor}`}
                           >
                             <div className={`font-medium ${textColor}`}>
@@ -541,21 +606,7 @@ export default function AgendamentosPage() {
                         return (
                         <button
                           key={apt.id}
-                          onClick={() => {
-                            // Não abre modal se concluído ou cancelado
-                            if (apt.status === 'completed' || apt.status === 'canceled') {
-                              return
-                            }
-                            setSelectedAppointment({
-                              id: apt.id,
-                              cliente: apt.clientName,
-                              servico: apt.service,
-                              data: format(apt.startTime, 'dd/MM/yyyy'),
-                              hora: format(apt.startTime, 'HH:mm'),
-                              status: apt.status
-                            })
-                            setIsReagendarOpen(true)
-                          }}
+                          onClick={() => openManage(apt)}
                             className={`w-full border-2 rounded-xl p-4 hover:shadow-md transition-all text-left ${bgColor} ${borderColor} ${hoverBorder}`}
                         >
                           <div className="flex items-center gap-3 mb-3">
@@ -724,21 +775,7 @@ export default function AgendamentosPage() {
                       return (
                         <button
                           key={apt.id}
-                          onClick={() => {
-                            // Não abre modal se concluído ou cancelado
-                            if (apt.status === 'completed' || apt.status === 'canceled') {
-                              return
-                            }
-                            setSelectedAppointment({
-                              id: apt.id,
-                              cliente: apt.clientName,
-                              servico: apt.service,
-                              data: format(apt.startTime, 'dd/MM/yyyy'),
-                              hora: format(apt.startTime, 'HH:mm'),
-                              status: apt.status
-                            })
-                            setIsReagendarOpen(true)
-                          }}
+                          onClick={() => openManage(apt)}
                           className={`w-full p-1.5 border-l-2 rounded text-[10px] hover:opacity-80 transition-colors text-left ${bgColor} ${borderColor}`}
                         >
                           <div className={`font-medium truncate ${textColor}`}>

@@ -122,6 +122,9 @@ export function VoucherBanner({ vouchers, onSelectVoucher, onVoucherActivated }:
         return 'Tratamento Grátis!'
       case 'DISCOUNT':
         if (voucher.discountPercent) return `${voucher.discountPercent}% de Desconto!`
+        if (voucher.remainingAmount != null && voucher.discountAmount) {
+          return `Crédito de R$ ${voucher.remainingAmount.toFixed(2).replace('.', ',')} (de R$ ${voucher.discountAmount.toFixed(2).replace('.', ',')})`
+        }
         if (voucher.discountAmount) return `R$ ${voucher.discountAmount.toFixed(2).replace('.', ',')} de Desconto!`
         return 'Desconto Especial!'
       case 'FREE_MONTH':

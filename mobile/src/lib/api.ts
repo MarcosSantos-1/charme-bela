@@ -177,8 +177,16 @@ export async function createAppointment(data: {
   return unwrap<Appointment>(response.data);
 }
 
-export async function cancelAppointment(id: string, cancelReason?: string): Promise<any> {
-  const response = await api.put(`/appointments/${id}/cancel`, { canceledBy: 'client', cancelReason });
+export async function cancelAppointment(
+  id: string,
+  cancelReason?: string,
+  settlement?: 'REFUND' | 'CREDIT',
+): Promise<any> {
+  const response = await api.put(`/appointments/${id}/cancel`, {
+    canceledBy: 'client',
+    cancelReason,
+    settlement,
+  });
   return response.data;
 }
 

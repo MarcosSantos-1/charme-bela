@@ -235,6 +235,10 @@ export async function vouchersRoutes(app: FastifyInstance) {
           anyService: anyService || false,
           discountPercent,
           discountAmount,
+          remainingAmount:
+            type?.toUpperCase() === 'DISCOUNT' && discountAmount && !discountPercent
+              ? discountAmount
+              : undefined,
           planId,
           expiresAt: expiresAt ? new Date(expiresAt) : null,
           grantedBy,
@@ -484,7 +488,7 @@ export async function vouchersRoutes(app: FastifyInstance) {
       }
       
       // Validações
-      if (voucher.isUsed) {
+      if (voucher.isUsed && !(voucher.type === 'DISCOUNT' && (voucher.remainingAmount ?? 0) > 0.009)) {
         return reply.status(400).send({
           success: false,
           error: 'Voucher já foi utilizado'
@@ -533,7 +537,8 @@ export async function vouchersRoutes(app: FastifyInstance) {
           if (voucher.discountPercent) {
             discount = service.price * (voucher.discountPercent / 100)
           } else if (voucher.discountAmount) {
-            discount = Math.min(voucher.discountAmount, service.price)
+            const remaining = voucher.remainingAmount ?? voucher.discountAmount
+            discount = Math.min(remaining, service.price)
           }
           finalPrice = Math.max(0, service.price - discount)
           break

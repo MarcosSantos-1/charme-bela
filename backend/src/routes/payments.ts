@@ -2033,7 +2033,7 @@ async function reviveOrRefundAppointment(
     await refundPayment(paymentId, paidAmount, 'Horário ocupado antes da confirmação do pagamento')
     await prisma.appointment.update({
       where: { id: appointment.id },
-      data: { paymentStatus: 'REFUNDED', paymentExpiresAt: null },
+      data: { paymentStatus: 'REFUNDED', paymentExpiresAt: null, refundStatus: 'PROCESSING', settlementChoice: 'REFUND' },
     })
     await createNotification({
       userId: appointment.userId,
@@ -2047,6 +2047,14 @@ async function reviveOrRefundAppointment(
     })
   } catch (refundError: any) {
     logger.error(`Falha no reembolso automático de ${appointment.id}:`, refundError.message)
+    await prisma.appointment.update({
+      where: { id: appointment.id },
+      data: {
+        refundStatus: 'MANUAL_REQUIRED',
+        refundError: refundError.message,
+        settlementChoice: 'REFUND',
+      },
+    })
     await createNotification({
       userId: null,
       type: 'SYSTEM_MESSAGE',
@@ -2190,7 +2198,7 @@ async function handleSubscriptionInvoicePaid(payment: AsaasPayment) {
 async function handlePaymentRefunded(payment: AsaasPayment) {
   await prisma.appointment.updateMany({
     where: { asaasPaymentId: payment.id },
-    data: { paymentStatus: 'REFUNDED' },
+    data: { paymentStatus: 'REFUNDED', refundStatus: 'DONE', refundError: null },
   })
   await prisma.packagePurchase.updateMany({
     where: { asaasPaymentId: payment.id },

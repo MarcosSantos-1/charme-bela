@@ -249,6 +249,9 @@ export function MachineRentalsSection() {
           </div>
         ))}
       </div>
+      <p className="text-xs text-gray-500">
+        A janela e a multa de máquina aparecem no app ao cancelar esses serviços. No prazo, a cliente ainda escolhe reembolso ou crédito; fora do prazo o estorno é parcial com a multa.
+      </p>
 
       {byMonth.map(([key, list]) => {
         const [y, m] = key.split('-').map(Number)

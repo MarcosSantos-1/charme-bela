@@ -58,7 +58,7 @@ const FAQ_ITEMS: FaqCategory[] = [
         question: 'Como cancelar um agendamento?',
         keywords: ['desmarcar', 'cancelamento'],
         answer:
-          'Na Agenda, abra o horário e toque em Cancelar. Prefira cancelar com antecedência para liberar o horário para outras clientes. Em caso de dúvida, a equipe da Charme & Bela pode ajudar pelo WhatsApp.',
+          'Na Agenda, abra o horário e toque em Cancelar. A clínica define um prazo mínimo de antecedência (configurável, em geral algumas horas). No prazo, um procedimento avulso pago permite escolher reembolso em dinheiro ou crédito para outros tratamentos. Fora do prazo, o avulso vira crédito do mesmo valor; se for do plano, a sessão é perdida. Máquinas alugadas podem ter prazo e multa próprios.',
       },
       {
         id: '1-4',
@@ -114,7 +114,14 @@ const FAQ_ITEMS: FaqCategory[] = [
         question: 'O que é um voucher?',
         keywords: ['cupom', 'benefício', 'cortesia'],
         answer:
-          'Vouchers são benefícios (como tratamento cortesia ou desconto) vinculados à sua conta. Quando disponíveis, podem ser aplicados no agendamento conforme as regras de cada voucher. Se receber um da clínica, ele aparece nas opções no fluxo de reserva.',
+          'Vouchers e créditos ficam na sua conta. Crédito em reais pode ser usado em vários procedimentos até zerar o saldo. Tratamento cortesia ou desconto percentual segue a regra de cada voucher.',
+      },
+      {
+        id: '2-6',
+        question: 'Como funciona o reembolso se eu cancelar?',
+        keywords: ['reembolso', 'estorno', 'crédito', 'pix'],
+        answer:
+          'Cancelar libera o horário. Se o avulso foi pago e você cancelar no prazo, escolhe Pix/cartão de volta ou crédito na clínica. Fora do prazo, o valor vira crédito (não dinheiro). Pix costuma voltar rápido; cartão pode levar até 10 dias úteis. A gestora só precisa intervir se o estorno automático falhar.',
       },
     ],
   },

@@ -20,6 +20,9 @@ interface ReagendarCancelarModalProps {
     data: string
     hora: string
     status?: string
+    origin?: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
+    paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
+    paymentAmount?: number
   }
 }
 
@@ -28,6 +31,7 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
   const [novaData, setNovaData] = useState<Date | undefined>(undefined)
   const [novaHora, setNovaHora] = useState('')
   const [motivo, setMotivo] = useState('')
+  const [settlement, setSettlement] = useState<'REFUND' | 'CREDIT'>('REFUND')
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
   const [bookedSlots, setBookedSlots] = useState<string[]>([])
@@ -128,7 +132,8 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
       } else if (acao === 'cancelar') {
         await api.cancelAppointment(agendamento.id, {
           canceledBy: 'admin',
-          cancelReason: motivo || 'Cancelado pelo admin'
+          cancelReason: motivo || 'Cancelado pelo admin',
+          ...(needsSettlement ? { settlement } : {}),
         })
         
         toast.success('Agendamento cancelado')
@@ -154,11 +159,14 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
     setNovaData(undefined)
     setNovaHora('')
     setMotivo('')
+    setSettlement('REFUND')
     setAvailableSlots([])
     setBookedSlots([])
   }
 
   const isCompletedOrCanceled = agendamento?.status === 'completed' || agendamento?.status === 'canceled'
+  const needsSettlement =
+    agendamento?.origin === 'SINGLE' && agendamento?.paymentStatus === 'PAID'
   
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Gerenciar Agendamento" size="md">
@@ -409,6 +417,33 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
               rows={3}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
             />
+            {needsSettlement && (
+              <div className="mt-4 space-y-2">
+                <p className="text-sm font-medium text-gray-800">
+                  Avulso pago{agendamento?.paymentAmount != null ? ` (R$ ${agendamento.paymentAmount.toFixed(2).replace('.', ',')})` : ''}. Como devolver?
+                </p>
+                <label className="flex items-start gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    name="settlement"
+                    checked={settlement === 'REFUND'}
+                    onChange={() => setSettlement('REFUND')}
+                    className="mt-1"
+                  />
+                  <span>Reembolso em dinheiro (Asaas). Sem aprovação — se falhar, aparece flag para estorno manual.</span>
+                </label>
+                <label className="flex items-start gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    name="settlement"
+                    checked={settlement === 'CREDIT'}
+                    onChange={() => setSettlement('CREDIT')}
+                    className="mt-1"
+                  />
+                  <span>Crédito na clínica para outros procedimentos (até zerar o valor).</span>
+                </label>
+              </div>
+            )}
           </div>
         )}
 

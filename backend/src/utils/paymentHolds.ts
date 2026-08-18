@@ -96,7 +96,7 @@ export async function releaseExpiredPaymentHolds(): Promise<number> {
       released += 1
 
       try {
-        await releaseVoucherOnCancel(appointment.voucherId)
+        await releaseVoucherOnCancel(appointment.voucherId, appointment.voucherAmountApplied)
       } catch (voucherError) {
         logger.error(`Erro ao liberar voucher do hold ${appointment.id}:`, voucherError)
       }

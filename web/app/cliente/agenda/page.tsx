@@ -44,6 +44,8 @@ export default function AgendaPage() {
   const [rescheduling, setRescheduling] = useState(false)
   const [showActionsModal, setShowActionsModal] = useState(false)
   const [selectedActionAppointment, setSelectedActionAppointment] = useState<Appointment | null>(null)
+  const [settlementAppointment, setSettlementAppointment] = useState<Appointment | null>(null)
+  const [settling, setSettling] = useState(false)
   
   // Filtrar futuros pela hora de parede (mesmo critério do admin / slots .000Z)
   const upcomingAppointments = appointments.filter(apt => 
@@ -92,63 +94,88 @@ export default function AgendaPage() {
     return hoursUntilAppointment(startTime)
   }
   
-  // Verificar se pode cancelar (mínimo 4h — ou política de máquina)
-  const cancelHoursFor = (appointment: Appointment) =>
-    appointment.service?.machineKind ? 24 : 4
+  const policyHours = (appointment: Appointment) => {
+    if (appointment.cancelPolicy?.kind === 'machine') return appointment.cancelPolicy.lateCancelHours
+    if (appointment.cancelPolicy?.kind === 'standard') return appointment.cancelPolicy.minCancellationHours
+    return appointment.service?.machineKind ? 24 : 4
+  }
 
-  const canCancel = (appointment: Appointment) => {
-    return getHoursUntilAppointment(appointment.startTime) >= cancelHoursFor(appointment)
+  const isPaidAvulso = (appointment: Appointment) =>
+    appointment.origin === 'SINGLE' && appointment.paymentStatus === 'PAID'
+
+  const submitCancel = async (appointment: Appointment, settlement?: 'REFUND' | 'CREDIT') => {
+    await hookCancelAppointment(appointment.id, 'Cancelado pelo cliente', settlement)
   }
-  
-  // Verificar se pode reagendar (mínimo 4h de antecedência)
-  const canReschedule = (startTime: string) => {
-    return getHoursUntilAppointment(startTime) >= 4
-  }
-  
-  // Cancelar agendamento
+
   const handleCancelAppointment = async (appointment: Appointment) => {
     const hoursUntil = getHoursUntilAppointment(appointment.startTime)
-    const minH = cancelHoursFor(appointment)
-    const isMachine = Boolean(appointment.service?.machineKind)
-    
-    if (hoursUntil < minH) {
+    const minH = policyHours(appointment)
+    const onTime = hoursUntil >= minH
+    const machine = appointment.cancelPolicy?.kind === 'machine' || Boolean(appointment.service?.machineKind)
+    const fee = appointment.cancelPolicy?.kind === 'machine' ? appointment.cancelPolicy.lateCancelFeePercent : 25
+
+    if (!onTime) {
       const confirmed = await confirm({
-        title: 'Atenção!',
-        message: isMachine
-          ? `Faltam menos de ${minH}h. Cancelar agora implica multa de ~25% no estorno (política de máquina alugada).`
-          : `Faltam menos de 4 horas para o agendamento. Se cancelar agora, você perderá ${appointment.origin === 'SUBSCRIPTION' ? 'a sessão do seu plano' : 'o pagamento'}.`,
+        title: 'Antecedência insuficiente',
+        message: machine
+          ? `Faltam menos de ${minH}h. Cancelar agora implica multa de ${fee}% no estorno (política de máquina alugada).`
+          : appointment.origin === 'SUBSCRIPTION'
+            ? `Faltam menos de ${minH}h. Se cancelar agora, você perde esta sessão do plano.`
+            : isPaidAvulso(appointment)
+              ? `Faltam menos de ${minH}h. Você não receberá o valor em dinheiro, mas ganha crédito do mesmo valor para outros procedimentos.`
+              : `Faltam menos de ${minH}h para o horário. Deseja cancelar mesmo assim?`,
         confirmText: 'Sim, cancelar mesmo assim',
         cancelText: 'Não cancelar',
         type: 'danger'
       })
-      
       if (!confirmed) return
-    } else {
-      const confirmed = await confirm({
-        title: 'Cancelar Agendamento',
-        message: `Deseja cancelar ${appointment.service?.name} em ${new Date(appointment.startTime).toLocaleDateString('pt-BR')}?`,
-        confirmText: 'Sim, cancelar',
-        cancelText: 'Não',
-        type: 'danger'
-      })
-      
-      if (!confirmed) return
+      try {
+        await submitCancel(appointment)
+      } catch (error: any) {
+        console.error('❌ Erro ao cancelar:', error)
+      }
+      return
     }
-    
+
+    if (isPaidAvulso(appointment)) {
+      setSettlementAppointment(appointment)
+      return
+    }
+
+    const confirmed = await confirm({
+      title: 'Cancelar Agendamento',
+      message: `${appointment.cancelPolicy?.text || `Cancele com pelo menos ${minH}h de antecedência.`} Deseja cancelar ${appointment.service?.name}?`,
+      confirmText: 'Sim, cancelar',
+      cancelText: 'Não',
+      type: 'danger'
+    })
+    if (!confirmed) return
+
     try {
-      console.log('🗑️ Cancelando agendamento:', appointment.id)
-      
-      // Usa a função do hook que já trata toasts e atualiza a lista
-      await hookCancelAppointment(appointment.id, 'Cancelado pelo cliente')
-      
-      console.log('✅ Cancelamento concluído')
+      await submitCancel(appointment)
     } catch (error: any) {
       console.error('❌ Erro ao cancelar:', error)
-      // O hook já mostra o toast de erro
+    }
+  }
+
+  const handleSettlementChoice = async (choice: 'REFUND' | 'CREDIT') => {
+    if (!settlementAppointment) return
+    setSettling(true)
+    try {
+      await submitCancel(settlementAppointment, choice)
+      setSettlementAppointment(null)
+    } catch (error: any) {
+      console.error('❌ Erro ao cancelar:', error)
+    } finally {
+      setSettling(false)
     }
   }
   
   // Abrir modal de reagendamento
+  const canReschedule = (startTime: string) => {
+    return getHoursUntilAppointment(startTime) >= 4
+  }
+
   const handleOpenReschedule = (appointment: Appointment) => {
     const hoursUntil = getHoursUntilAppointment(appointment.startTime)
     
@@ -255,6 +282,49 @@ export default function AgendaPage() {
   return (
     <ProtectedRoute requiredRole="CLIENT">
       {ConfirmDialogComponent}
+      {settlementAppointment && (
+        <div className="fixed inset-0 z-[80] bg-black/40 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900">Cancelar e escolher a devolução</h3>
+            <p className="text-sm text-gray-600">
+              {settlementAppointment.cancelPolicy?.text ||
+                'Você está dentro do prazo. Escolha reembolso em dinheiro ou crédito para outros procedimentos.'}
+            </p>
+            {settlementAppointment.paymentAmount ? (
+              <p className="text-sm font-medium text-gray-800">
+                Valor: R$ {settlementAppointment.paymentAmount.toFixed(2).replace('.', ',')}
+                {settlementAppointment.paymentMethod === 'pix' ? ' (Pix)' : settlementAppointment.paymentMethod === 'credit_card' ? ' (cartão)' : ''}
+              </p>
+            ) : null}
+            <div className="space-y-2">
+              <Button
+                variant="primary"
+                className="w-full"
+                disabled={settling}
+                onClick={() => handleSettlementChoice('REFUND')}
+              >
+                {settling ? 'Cancelando...' : 'Reembolso em dinheiro'}
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                disabled={settling}
+                onClick={() => handleSettlementChoice('CREDIT')}
+              >
+                Receber crédito na clínica
+              </Button>
+              <button
+                type="button"
+                className="w-full text-sm text-gray-500 py-2"
+                disabled={settling}
+                onClick={() => setSettlementAppointment(null)}
+              >
+                Manter agendamento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <ClientLayout title="Minha Agenda">
         <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
           {loading ? (
@@ -263,6 +333,11 @@ export default function AgendaPage() {
             </div>
           ) : (
             <>
+          {upcomingAppointments[0]?.cancelPolicy?.text ? (
+            <div className="bg-pink-50 border border-pink-100 rounded-xl px-4 py-3 text-sm text-pink-900">
+              {upcomingAppointments[0].cancelPolicy.text}
+            </div>
+          ) : null}
           {/* Calendar */}
           <div className="bg-white rounded-2xl p-6">
             {/* Month Navigation */}

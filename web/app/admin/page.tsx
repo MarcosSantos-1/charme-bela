@@ -29,6 +29,7 @@ interface TodayAppointment {
   service: string
   status: 'pending' | 'confirmed' | 'completed'
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
+  paymentAmount?: number
   origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
 }
 
@@ -111,6 +112,7 @@ export default function AdminDashboard() {
                   apt.status === 'CONFIRMED' ? 'confirmed' as const :
                   apt.status === 'COMPLETED' ? 'completed' as const : 'pending' as const,
           paymentStatus: apt.paymentStatus,
+          paymentAmount: apt.paymentAmount,
           origin: apt.origin
         }
       }))
@@ -646,7 +648,10 @@ export default function AdminDashboard() {
           cliente: selectedAppointment.clientName,
           servico: selectedAppointment.service,
           data: new Date().toLocaleDateString('pt-BR'),
-          hora: selectedAppointment.time
+          hora: selectedAppointment.time,
+          origin: selectedAppointment.origin,
+          paymentStatus: selectedAppointment.paymentStatus,
+          paymentAmount: selectedAppointment.paymentAmount,
         } : undefined}
       />
 

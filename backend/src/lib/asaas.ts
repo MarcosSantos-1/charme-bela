@@ -12,10 +12,12 @@ export function isAsaasConfigured() {
 
 export class AsaasError extends Error {
   statusCode: number
-  constructor(message: string, statusCode = 500) {
+  code?: string
+  constructor(message: string, statusCode = 500, code?: string) {
     super(message)
     this.name = 'AsaasError'
     this.statusCode = statusCode
+    this.code = code
   }
 }
 
@@ -145,7 +147,7 @@ async function asaasFetch<T>(path: string, init?: RequestInit): Promise<T> {
     const description =
       body?.errors?.[0]?.description || body?.message || `Asaas HTTP ${response.status}`
     logger.error(`Asaas ${init?.method || 'GET'} ${path} falhou: ${description}`)
-    throw new AsaasError(description, response.status)
+    throw new AsaasError(description, response.status, body?.errors?.[0]?.code)
   }
 
   return json as T
@@ -455,6 +457,40 @@ export async function refundPayment(paymentId: string, value?: number, descripti
       ...(description ? { description: description.slice(0, 255) } : {}),
     }),
   })
+}
+
+/**
+ * Tenta estornar o valor pedido. Se o Asaas recusar por saldo (taxas do PIX
+ * não voltam), tenta `netValue` da cobrança — só quando o pedido é o valor cheio.
+ */
+export async function refundPaymentWithFallback(
+  paymentId: string,
+  requestedValue: number,
+  description?: string,
+  options?: { allowNetValueFallback?: boolean },
+): Promise<{ payment: AsaasPayment; refundedValue: number; usedNetValue: boolean }> {
+  const amount = Number(requestedValue.toFixed(2))
+  try {
+    const payment = await refundPayment(paymentId, amount, description)
+    return { payment, refundedValue: amount, usedNetValue: false }
+  } catch (error) {
+    const allowFallback = options?.allowNetValueFallback !== false
+    if (!allowFallback || !(error instanceof AsaasError) || error.statusCode !== 400) {
+      throw error
+    }
+
+    const current = await getPayment(paymentId)
+    const net = current.netValue != null ? Number(current.netValue.toFixed(2)) : null
+    if (net == null || net <= 0 || net >= amount - 0.009) {
+      throw error
+    }
+
+    logger.warning(
+      `Estorno de R$ ${amount.toFixed(2)} recusado para ${paymentId}. Tentando líquido R$ ${net.toFixed(2)}.`,
+    )
+    const payment = await refundPayment(paymentId, net, description)
+    return { payment, refundedValue: net, usedNetValue: true }
+  }
 }
 
 export async function cancelPendingByExternalReference(

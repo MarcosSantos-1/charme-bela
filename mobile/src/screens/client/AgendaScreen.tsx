@@ -204,18 +204,56 @@ export function AgendaScreen() {
   );
 
   const handleCancel = (appointment: Appointment) => {
-    Alert.alert('Cancelar agendamento', 'A regra de antecedência e eventual reembolso serão aplicados pela clínica. Deseja continuar?', [
+    const minH =
+      appointment.cancelPolicy?.kind === 'machine'
+        ? appointment.cancelPolicy.lateCancelHours || 24
+        : appointment.cancelPolicy?.minCancellationHours || 4;
+    const start = new Date(
+      Number(appointment.startTime.slice(0, 4)),
+      Number(appointment.startTime.slice(5, 7)) - 1,
+      Number(appointment.startTime.slice(8, 10)),
+      Number(appointment.startTime.slice(11, 13)),
+      Number(appointment.startTime.slice(14, 16)),
+    );
+    const onTime = (start.getTime() - Date.now()) / 36e5 >= minH;
+    const paidAvulso = appointment.origin === 'SINGLE' && appointment.paymentStatus === 'PAID';
+    const policyText = appointment.cancelPolicy?.text || `A antecedência mínima é de ${minH}h.`;
+
+    const run = async (settlement?: 'REFUND' | 'CREDIT') => {
+      try {
+        const result = await cancelAppointment(appointment.id, 'Cancelado pelo aplicativo', settlement);
+        setSelected(null);
+        await refresh();
+        Alert.alert('Agendamento cancelado', result.message || 'Seu horário foi cancelado.');
+      } catch (requestError) {
+        Alert.alert('Não foi possível cancelar', getApiErrorMessage(requestError));
+      }
+    };
+
+    if (onTime && paidAvulso) {
+      Alert.alert(
+        'Cancelar agendamento',
+        `${policyText}\n\nComo você está no prazo, escolha: reembolso em dinheiro ou crédito para outros procedimentos.`,
+        [
+          { text: 'Manter horário', style: 'cancel' },
+          { text: 'Quero crédito', onPress: () => { void run('CREDIT'); } },
+          { text: 'Reembolso', onPress: () => { void run('REFUND'); } },
+        ],
+      );
+      return;
+    }
+
+    const lateHint = !onTime
+      ? appointment.origin === 'SUBSCRIPTION'
+        ? `Faltam menos de ${minH}h: você perde esta sessão do plano.`
+        : paidAvulso
+          ? `Faltam menos de ${minH}h: o valor vira crédito, sem reembolso em dinheiro.`
+          : policyText
+      : policyText;
+
+    Alert.alert('Cancelar agendamento', `${lateHint}\n\nDeseja continuar?`, [
       { text: 'Voltar', style: 'cancel' },
-      { text: 'Cancelar horário', style: 'destructive', onPress: async () => {
-        try {
-          const result = await cancelAppointment(appointment.id, 'Cancelado pelo aplicativo');
-          setSelected(null);
-          await refresh();
-          Alert.alert('Agendamento cancelado', result.message || 'Seu horário foi cancelado.');
-        } catch (requestError) {
-          Alert.alert('Não foi possível cancelar', getApiErrorMessage(requestError));
-        }
-      } },
+      { text: 'Cancelar horário', style: 'destructive', onPress: () => { void run(); } },
     ]);
   };
 

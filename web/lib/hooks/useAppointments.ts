@@ -60,17 +60,22 @@ export function useAppointments(userId?: string) {
     }
   }
 
-  const cancelAppointment = async (appointmentId: string, reason?: string) => {
+  const cancelAppointment = async (
+    appointmentId: string,
+    reason?: string,
+    settlement?: 'REFUND' | 'CREDIT',
+  ) => {
     try {
       const result = await api.cancelAppointment(appointmentId, {
         canceledBy: 'client',
         cancelReason: reason,
+        settlement,
       })
       
       if (result.lostTreatment) {
         toast.error(result.message || 'Agendamento cancelado. Tratamento foi contabilizado.')
       } else {
-        toast.success('Agendamento cancelado com sucesso!')
+        toast.success(result.message || 'Agendamento cancelado com sucesso!')
       }
       
       await fetchAppointments()

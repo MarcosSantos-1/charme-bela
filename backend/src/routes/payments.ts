@@ -41,6 +41,7 @@ import {
   updateSubscriptionCreditCard,
 } from '../lib/asaas'
 import { cancelUnpaidPackagePurchase, markPackagePurchasePaid } from '../utils/packages'
+import { markVoucherUsed, ensureVoucherConsumedForPackage } from '../utils/vouchers'
 import {
   notifyPaymentSucceeded,
   notifyPaymentFailed,
@@ -276,6 +277,7 @@ async function ensureCardInvoice(opts: {
     description: opts.description,
     externalReference: opts.externalReference,
     billingType: 'CREDIT_CARD',
+    notificationDisabled: true,
   })
 }
 
@@ -287,46 +289,82 @@ async function reuseOrCreateCharge(opts: {
   existingPaymentId?: string | null
   expiresAt?: Date | null
 }) {
-  let pix: AsaasPayment | null = null
+  let card: AsaasPayment | null = null
   if (opts.existingPaymentId) {
     try {
       const existing = await getPayment(opts.existingPaymentId)
-      if (existing.status === 'PENDING' || existing.status === 'OVERDUE') {
-        pix = existing
+      if (
+        (existing.status === 'PENDING' || existing.status === 'OVERDUE') &&
+        !existing.deleted &&
+        existing.billingType !== 'PIX'
+      ) {
+        card = existing
       }
     } catch (error: any) {
       logger.warning(`Cobrança Asaas anterior indisponível (${opts.existingPaymentId}): ${error.message}`)
     }
   }
 
-  if (!pix) {
-    pix = await createPayment({
-      customer: opts.customerId,
-      value: opts.value,
-      description: opts.description,
-      externalReference: opts.externalReference,
-      billingType: 'PIX',
-    })
-  }
-
-  let cardInvoiceUrl: string | null = null
-  try {
-    const card = await ensureCardInvoice({
+  if (!card) {
+    card = await ensureCardInvoice({
       customerId: opts.customerId,
       value: opts.value,
       description: opts.description,
       externalReference: opts.externalReference,
     })
-    cardInvoiceUrl = card.invoiceUrl || null
-  } catch (error: any) {
-    logger.warning(`Fatura de cartão indisponível para ${opts.externalReference}: ${error.message}`)
   }
 
-  return toCheckoutPayload(pix, {
+  return toCheckoutPayload(card, {
     expiresAt: opts.expiresAt,
     description: opts.description,
-    invoiceUrl: cardInvoiceUrl,
+    invoiceUrl: card.invoiceUrl || null,
   })
+}
+
+async function ensurePixCharge(opts: {
+  customerId: string
+  value: number
+  description: string
+  externalReference: string
+}) {
+  const listed = await listPayments({
+    customer: opts.customerId,
+    externalReference: opts.externalReference,
+    limit: 10,
+  })
+  const pending = (listed.data || []).find(
+    (item) =>
+      item.billingType === 'PIX' &&
+      (item.status === 'PENDING' || item.status === 'OVERDUE') &&
+      !item.deleted,
+  )
+  if (pending) return pending
+  return createPayment({
+    customer: opts.customerId,
+    value: opts.value,
+    description: opts.description,
+    externalReference: opts.externalReference,
+    billingType: 'PIX',
+    notificationDisabled: true,
+  })
+}
+
+/** Cancela Pix pendente da mesma reserva para o Asaas não reenviar e-mail/SMS ao reabrir o checkout. */
+async function cancelPendingPixCharges(externalReference: string) {
+  try {
+    const listed = await listPayments({
+      externalReference,
+      limit: 20,
+    })
+    for (const item of listed.data || []) {
+      if (item.billingType !== 'PIX' || item.deleted) continue
+      if (item.status === 'PENDING' || item.status === 'OVERDUE') {
+        await cancelPaymentSilent(item.id)
+      }
+    }
+  } catch (error: any) {
+    logger.warning(`Não foi possível cancelar Pix pendente de ${externalReference}: ${error.message}`)
+  }
 }
 
 async function listCardMethods(userId: string) {
@@ -394,21 +432,16 @@ async function persistSavedCard(payment: AsaasPayment) {
   const existing = await prisma.savedCard.findFirst({
     where: {
       userId: user.id,
-      OR: [
-        { asaasToken: token },
-        ...(digits !== '****' && brand ? [{ last4: digits, brand }] : []),
-      ],
+      asaasToken: token,
     },
   })
 
+  let shouldSyncSubscription = false
   await prisma.$transaction(async (tx) => {
-    const makeDefault = kind === 'credit'
-    if (makeDefault) {
-      await tx.savedCard.updateMany({
-        where: { userId: user.id },
-        data: { isDefault: false },
-      })
-    }
+    const hasDefault = await tx.savedCard.findFirst({
+      where: { userId: user.id, isDefault: true },
+    })
+    const makeDefault = kind === 'credit' && !hasDefault
     if (existing) {
       await tx.savedCard.update({
         where: { id: existing.id },
@@ -417,9 +450,9 @@ async function persistSavedCard(payment: AsaasPayment) {
           brand,
           last4: digits,
           kind,
-          isDefault: makeDefault ? true : existing.isDefault,
         },
       })
+      shouldSyncSubscription = kind === 'credit' && existing.isDefault
       return
     }
     await tx.savedCard.create({
@@ -432,9 +465,10 @@ async function persistSavedCard(payment: AsaasPayment) {
         isDefault: makeDefault,
       },
     })
+    shouldSyncSubscription = kind === 'credit' && makeDefault
   })
 
-  if (kind === 'credit') {
+  if (shouldSyncSubscription) {
     try {
       await syncSubscriptionDefaultCard({ userId: user.id, asaasToken: token })
     } catch {
@@ -618,6 +652,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
       let appointmentId = body.appointmentId || ''
       let expiresAt: Date | null = null
       let existingPaymentId: string | null = null
+      let packageCheckoutAmount: number | null = null
 
       if (body.packagePurchaseId) {
         const purchase = await prisma.packagePurchase.findUnique({
@@ -639,6 +674,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
         appointmentId = purchase.appointments.find((item) => item.status === 'PENDING' && item.paymentStatus === 'PENDING')?.id || appointmentId
         expiresAt = purchase.paymentExpiresAt
         existingPaymentId = purchase.asaasPaymentId
+        packageCheckoutAmount = purchase.pricePaid
       } else if (body.appointmentId) {
         const appointment = await prisma.appointment.findUnique({
           where: { id: body.appointmentId },
@@ -670,7 +706,20 @@ export async function paymentsRoutes(app: FastifyInstance) {
         existingPaymentId = appointment.asaasPaymentId
       }
 
-      const finalAmount = body.customAmount !== undefined ? body.customAmount : service.price
+      if (resolvedPackagePurchaseId && packageCheckoutAmount == null) {
+        const linked = await prisma.packagePurchase.findUnique({
+          where: { id: resolvedPackagePurchaseId },
+          select: { pricePaid: true },
+        })
+        if (linked) packageCheckoutAmount = linked.pricePaid
+      }
+
+      const finalAmount =
+        packageCheckoutAmount != null
+          ? packageCheckoutAmount
+          : body.customAmount !== undefined
+            ? body.customAmount
+            : service.price
       const isPackageCheckout = Boolean(resolvedPackagePurchaseId) || service.category === 'COMBO'
       const description = isPackageCheckout
         ? `Pacote ${service.name} - Charme & Bela`
@@ -693,6 +742,8 @@ export async function paymentsRoutes(app: FastifyInstance) {
       const externalReference = resolvedPackagePurchaseId
         ? `pkg_${resolvedPackagePurchaseId}`
         : `apt_${appointmentId || service.id}`
+
+      await cancelPendingPixCharges(externalReference)
 
       const checkout = await reuseOrCreateCharge({
         customerId,
@@ -717,6 +768,113 @@ export async function paymentsRoutes(app: FastifyInstance) {
       return reply.status(status >= 400 && status < 600 ? status : 500).send({
         success: false,
         error: 'Erro ao criar sessão de pagamento',
+        details: error.message,
+      })
+    }
+  })
+
+  app.post('/payments/checkout/pix', async (request, reply) => {
+    logger.route('POST', '/payments/checkout/pix')
+    try {
+      if (!isAsaasConfigured()) {
+        return reply.status(503).send({ success: false, error: 'Asaas não configurado (ASAAS_API_KEY)' })
+      }
+      const body = request.body as {
+        userId?: string
+        serviceId?: string
+        appointmentId?: string
+        packagePurchaseId?: string
+        customAmount?: number
+        cpf?: string
+      }
+      const resolved = resolveUserId(request, body.userId)
+      if (resolved.error === 'forbidden') {
+        return reply.status(403).send({ success: false, error: 'Você só pode pagar as próprias reservas' })
+      }
+      if (!resolved.userId) {
+        return reply.status(400).send({ success: false, error: 'Usuário não autenticado' })
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: resolved.userId } })
+      if (!user) {
+        return reply.status(404).send({ success: false, error: 'Usuário não encontrado' })
+      }
+
+      let resolvedPackagePurchaseId = body.packagePurchaseId || ''
+      let appointmentId = body.appointmentId || ''
+      let amount = body.customAmount
+      let expiresAt: Date | null = null
+      let serviceName = 'Charme & Bela'
+
+      if (body.packagePurchaseId) {
+        const purchase = await prisma.packagePurchase.findUnique({
+          where: { id: body.packagePurchaseId },
+          include: { packageService: { select: { name: true, price: true } } },
+        })
+        if (!purchase || purchase.userId !== user.id) {
+          return reply.status(404).send({ success: false, error: 'Compra de pacote não encontrada' })
+        }
+        if (purchase.status !== 'PENDING' || purchase.paymentStatus !== 'PENDING') {
+          return reply.status(409).send({ success: false, error: 'Esta compra não está mais aguardando pagamento.' })
+        }
+        amount = purchase.pricePaid
+        expiresAt = purchase.paymentExpiresAt
+        serviceName = purchase.packageService.name
+      } else if (body.appointmentId) {
+        const appointment = await prisma.appointment.findUnique({
+          where: { id: body.appointmentId },
+          include: { service: { select: { name: true, price: true } } },
+        })
+        if (!appointment || appointment.userId !== user.id) {
+          return reply.status(404).send({ success: false, error: 'Agendamento não encontrado' })
+        }
+        if (appointment.status !== 'PENDING' || appointment.paymentStatus !== 'PENDING') {
+          return reply.status(409).send({ success: false, error: 'Esta reserva não está mais aguardando pagamento.' })
+        }
+        if (appointment.packagePurchaseId) resolvedPackagePurchaseId = appointment.packagePurchaseId
+        amount = appointment.paymentAmount ?? appointment.service.price
+        expiresAt = appointment.paymentExpiresAt
+        serviceName = appointment.service.name
+      }
+
+      if (amount == null || amount <= 0) {
+        return reply.status(400).send({ success: false, error: 'Valor inválido para Pix' })
+      }
+
+      const cpfCnpj = normalizeCpfCnpj(body.cpf) || normalizeCpfCnpj(user.cpf)
+      if (!cpfCnpj) {
+        return reply.status(400).send({ success: false, error: 'Informe o CPF para emitir o Pix.' })
+      }
+      const payer = await loadAsaasPayer(user.id)
+      const customerPhone = pickAsaasPhone(payer.anamnesisPhone, user.phone)
+      const customerId = await ensureAsaasCustomer(user, cpfCnpj, payer.address, customerPhone)
+      const externalReference = resolvedPackagePurchaseId
+        ? `pkg_${resolvedPackagePurchaseId}`
+        : `apt_${appointmentId || body.serviceId || user.id}`
+      const isPackage = Boolean(resolvedPackagePurchaseId)
+      const description = isPackage
+        ? `Pacote ${serviceName} - Charme & Bela`
+        : `${serviceName} - Charme & Bela`
+
+      const pix = await ensurePixCharge({
+        customerId,
+        value: amount,
+        description,
+        externalReference,
+      })
+      const payload = await toCheckoutPayload(pix, {
+        expiresAt,
+        description,
+        invoiceUrl: pix.invoiceUrl || null,
+      })
+      logger.success(`Pix Asaas emitido sob demanda: ${pix.id}`)
+      return reply.status(200).send({ success: true, data: payload })
+    } catch (error: any) {
+      logger.error('Erro ao emitir Pix Asaas:', error)
+      const status = error instanceof AsaasError ? Math.min(error.statusCode, 502) || 502 : 500
+      return reply.status(status >= 400 && status < 600 ? status : 500).send({
+        success: false,
+        error: 'Erro ao gerar Pix',
         details: error.message,
       })
     }
@@ -1879,6 +2037,13 @@ async function confirmPackagePayment(
   }
   if (purchase.paymentStatus === 'PAID') {
     logger.info(`Pacote ${packagePurchaseId} já estava pago`)
+    if (purchase.voucherId) {
+      try {
+        await ensureVoucherConsumedForPackage(purchase.voucherId, purchase.voucherAmountApplied)
+      } catch (voucherError) {
+        logger.error('Erro ao consumir voucher de pacote já pago:', voucherError)
+      }
+    }
     return
   }
 
@@ -1889,6 +2054,14 @@ async function confirmPackagePayment(
       data: { asaasPaymentId: paymentId },
     })
   })
+
+  if (purchase.voucherId) {
+    try {
+      await ensureVoucherConsumedForPackage(purchase.voucherId, purchase.voucherAmountApplied)
+    } catch (voucherError) {
+      logger.error('Erro ao consumir voucher após pagamento do pacote:', voucherError)
+    }
+  }
 
   await notifyPaymentSucceeded(purchase.userId, {
     amount: paidAmount,

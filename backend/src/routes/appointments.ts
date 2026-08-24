@@ -21,7 +21,7 @@ import {
   notifyAdminClientCanceled,
   createNotification,
 } from '../utils/notifications'
-import { markVoucherUsed, releaseVoucherOnCancel, voucherHasActiveHold, isAmountCreditVoucher, creditBalance } from '../utils/vouchers'
+import { markVoucherUsed, releaseVoucherOnCancel, VoucherUnavailableError, assertVoucherUsable, lockVoucherForApply, debitLockedVoucher } from '../utils/vouchers'
 import { cancelUnpaidPackagePurchase, releaseSessionOnCancel } from '../utils/packages'
 import { attachCancelPolicies, resolveCancelPolicy, minHoursFromPolicy } from '../utils/cancelPolicy'
 import { settlePaidSingleCancel, retryAppointmentRefund } from '../utils/settlement'
@@ -31,13 +31,6 @@ class SlotTakenError extends Error {
   constructor() {
     super('Slot ocupado')
     this.name = 'SlotTakenError'
-  }
-}
-
-class VoucherUnavailableError extends Error {
-  constructor(message = 'Voucher indisponível') {
-    super(message)
-    this.name = 'VoucherUnavailableError'
   }
 }
 
@@ -580,78 +573,24 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       let voucherApplied = null
       
       if (origin === 'VOUCHER' && voucherId) {
-        const voucher = await prisma.voucher.findUnique({
-          where: { id: voucherId }
-        })
-        
-        if (!voucher) {
-          return reply.status(404).send({
-            success: false,
-            error: 'Voucher não encontrado'
+        try {
+          const resolved = await assertVoucherUsable({
+            voucherId,
+            userId,
+            serviceId,
+            price: service.price,
           })
+          finalPrice = resolved.finalPrice
+          appliedDiscount = resolved.appliedDiscount
+          voucherApplied = resolved.voucher
+          logger.info(`💳 Voucher aplicado: ${resolved.voucher.description} - Desconto: R$ ${appliedDiscount.toFixed(2)}`)
+        } catch (voucherError) {
+          if (voucherError instanceof VoucherUnavailableError) {
+            const status = voucherError.message.includes('não encontrado') ? 404 : 400
+            return reply.status(status).send({ success: false, error: voucherError.message })
+          }
+          throw voucherError
         }
-        
-        if (voucher.isUsed && !(isAmountCreditVoucher(voucher) && creditBalance(voucher) > 0.009)) {
-          return reply.status(400).send({
-            success: false,
-            error: 'Voucher já foi utilizado'
-          })
-        }
-        
-        if (voucher.expiresAt && voucher.expiresAt < new Date()) {
-          return reply.status(400).send({
-            success: false,
-            error: 'Voucher expirado'
-          })
-        }
-
-        if (!isAmountCreditVoucher(voucher) && await voucherHasActiveHold(voucher.id)) {
-          return reply.status(400).send({
-            success: false,
-            error: 'Este voucher está suspenso em outro agendamento. Conclua o pagamento ou cancele a reserva para usá-lo novamente.'
-          })
-        }
-        
-        if (voucher.userId !== userId) {
-          return reply.status(400).send({
-            success: false,
-            error: 'Voucher não pertence a este usuário'
-          })
-        }
-        
-        // Aplicar desconto/gratuidade
-        switch (voucher.type) {
-          case 'FREE_TREATMENT':
-            if (voucher.anyService || voucher.serviceId === serviceId) {
-              finalPrice = 0
-              appliedDiscount = service.price
-              voucherApplied = voucher
-            } else {
-              return reply.status(400).send({
-                success: false,
-                error: 'Voucher não é válido para este serviço'
-              })
-            }
-            break
-            
-          case 'DISCOUNT':
-            if (voucher.discountPercent) {
-              appliedDiscount = service.price * (voucher.discountPercent / 100)
-            } else if (voucher.discountAmount) {
-              appliedDiscount = Math.min(creditBalance(voucher), service.price)
-            }
-            finalPrice = Math.max(0, service.price - appliedDiscount)
-            voucherApplied = voucher
-            break
-            
-          case 'FREE_MONTH':
-            return reply.status(400).send({
-              success: false,
-              error: 'Voucher de mês grátis não pode ser usado em agendamentos'
-            })
-        }
-        
-        logger.info(`💳 Voucher aplicado: ${voucher.description} - Desconto: R$ ${appliedDiscount.toFixed(2)}`)
       }
       
       // 9. Status de pagamento efetivo + hold de checkout online.
@@ -710,36 +649,9 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           // Consome o voucher NA MESMA transação do create — evita reuso em race
           // (dois agendamentos pendentes com o mesmo voucher). Cancelamento libera.
           if (voucherApplied) {
-            const locked = await tx.voucher.findUnique({ where: { id: voucherApplied.id } })
-            if (!locked) {
-              throw new VoucherUnavailableError('Voucher não encontrado')
-            }
-            if (locked.expiresAt && locked.expiresAt < new Date()) {
-              throw new VoucherUnavailableError('Voucher expirado')
-            }
-            if (isAmountCreditVoucher(locked)) {
-              const remaining = creditBalance(locked)
-              if (remaining <= 0.009) {
-                throw new VoucherUnavailableError('Crédito esgotado')
-              }
-              appliedDiscount = Math.min(remaining, service.price)
-              finalPrice = Math.max(0, service.price - appliedDiscount)
-            } else {
-              if (locked.isUsed) {
-                throw new VoucherUnavailableError('Voucher já foi utilizado')
-              }
-              const activeHold = await tx.appointment.count({
-                where: {
-                  voucherId: locked.id,
-                  status: { in: ['PENDING', 'CONFIRMED'] }
-                }
-              })
-              if (activeHold > 0) {
-                throw new VoucherUnavailableError(
-                  'Este voucher está suspenso em outro agendamento. Conclua o pagamento ou cancele a reserva.'
-                )
-              }
-            }
+            const locked = await lockVoucherForApply(tx, voucherApplied.id, service.price, serviceId)
+            appliedDiscount = locked.appliedDiscount
+            finalPrice = locked.finalPrice
           }
           
           const created = await tx.appointment.create({
@@ -773,23 +685,7 @@ export async function appointmentsRoutes(app: FastifyInstance) {
           })
 
           if (voucherApplied) {
-            const locked = await tx.voucher.findUnique({ where: { id: voucherApplied.id } })
-            if (locked && isAmountCreditVoucher(locked)) {
-              const next = Number((creditBalance(locked) - appliedDiscount).toFixed(2))
-              await tx.voucher.update({
-                where: { id: voucherApplied.id },
-                data: {
-                  remainingAmount: Math.max(0, next),
-                  isUsed: next <= 0.009,
-                  usedAt: next <= 0.009 ? new Date() : null,
-                }
-              })
-            } else {
-              await tx.voucher.update({
-                where: { id: voucherApplied.id },
-                data: { isUsed: true, usedAt: new Date() }
-              })
-            }
+            await debitLockedVoucher(tx, voucherApplied.id, appliedDiscount)
           }
           
           // Atualiza uso mensal se for de assinatura (atômico com a criação)
@@ -1022,6 +918,15 @@ export async function appointmentsRoutes(app: FastifyInstance) {
         return reply.status(400).send({
           success: false,
           error: 'Agendamento já está cancelado'
+        })
+      }
+
+      const isPaidPackageSession =
+        Boolean(appointment.packagePurchaseId) && appointment.paymentStatus === 'PAID'
+      if (canceledBy === 'client' && isPaidPackageSession) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Sessões de pacote não podem ser canceladas. Reagende o horário.',
         })
       }
 

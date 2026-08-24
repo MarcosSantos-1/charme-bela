@@ -30,7 +30,9 @@ if (__DEV__) {
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 15000,
+  // Fly dorme sem tráfego (min_machines_running = 0): o primeiro request
+  // depois do sono paga o cold start da máquina + Prisma.
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -349,6 +351,35 @@ export async function createPaymentSession(
   }>(response.data);
 }
 
+export async function createPixSession(
+  userId: string,
+  serviceId: string,
+  appointmentId?: string,
+  customAmount?: number,
+  packagePurchaseId?: string,
+  cpf?: string,
+) {
+  const response = await api.post('/payments/checkout/pix', {
+    userId,
+    serviceId,
+    appointmentId,
+    customAmount,
+    packagePurchaseId,
+    cpf,
+  });
+  return unwrap<{
+    paymentId: string;
+    sessionId: string;
+    url: string | null;
+    invoiceUrl: string | null;
+    pixCopyPaste: string | null;
+    pixQrBase64: string | null;
+    expiresAt?: string | null;
+    amount: number;
+    description: string;
+  }>(response.data);
+}
+
 export async function getPackagePurchases(userId?: string, status?: string) {
   try {
     const response = await api.get('/packages/purchases', { params: { userId, status } });
@@ -373,6 +404,7 @@ export async function createPackagePurchase(data: {
   slots?: Array<{ startTime: string } | string>;
   paidAtClinic?: boolean;
   notes?: string;
+  voucherId?: string;
 }) {
   const response = await api.post('/packages/purchases', data);
   return unwrap<PackagePurchase>(response.data);

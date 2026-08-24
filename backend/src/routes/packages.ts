@@ -16,6 +16,12 @@ import {
   remainingSessions,
   snapshotFromItems,
 } from '../utils/packages'
+import {
+  VoucherUnavailableError,
+  assertVoucherUsable,
+  debitLockedVoucher,
+  lockVoucherForApply,
+} from '../utils/vouchers'
 
 class SlotTakenError extends Error {
   constructor() {
@@ -97,9 +103,10 @@ export async function packagesRoutes(app: FastifyInstance) {
         slots?: SlotInput[] | string[]
         paidAtClinic?: boolean
         notes?: string
+        voucherId?: string
       }
 
-      const { userId, serviceId, paidAtClinic, notes } = body
+      const { userId, serviceId, paidAtClinic, notes, voucherId } = body
       if (!userId || !serviceId) {
         return reply.status(400).send({ success: false, error: 'userId e serviceId são obrigatórios' })
       }
@@ -164,7 +171,22 @@ export async function packagesRoutes(app: FastifyInstance) {
         })
       }
 
-      if (!paidAtClinic) {
+      let finalPrice = service.price
+      let appliedDiscount = 0
+      if (!paidAtClinic && voucherId) {
+        const resolved = await assertVoucherUsable({
+          voucherId,
+          userId,
+          serviceId,
+          price: service.price,
+        })
+        finalPrice = resolved.finalPrice
+        appliedDiscount = resolved.appliedDiscount
+        logger.info(`💳 Voucher no pacote: ${resolved.voucher.description} - Desconto: R$ ${appliedDiscount.toFixed(2)}`)
+      }
+      const isFreeWithVoucher = Boolean(!paidAtClinic && voucherId && finalPrice === 0)
+
+      if (!paidAtClinic && !isFreeWithVoucher) {
         const activeHolds = await countActivePaymentHolds(userId)
         if (activeHolds >= 2) {
           return reply.status(429).send({
@@ -177,7 +199,7 @@ export async function packagesRoutes(app: FastifyInstance) {
       const duration = service.duration
       const config = await prisma.systemConfig.findFirst()
       const maxSimultaneous = config?.maxSimultaneous || 1
-      const paymentExpiresAt = paidAtClinic ? null : newPaymentHoldExpiration()
+      const paymentExpiresAt = paidAtClinic || isFreeWithVoucher ? null : newPaymentHoldExpiration()
       const origin = paidAtClinic ? 'ADMIN_CREATED' : 'PACKAGE'
       const snapshot = snapshotFromItems(service.packageItems)
 
@@ -213,22 +235,34 @@ export async function packagesRoutes(app: FastifyInstance) {
             }
           }
 
+          let txPrice = finalPrice
+          let txDiscount = appliedDiscount
+          if (!paidAtClinic && voucherId) {
+            const locked = await lockVoucherForApply(tx, voucherId, service.price, serviceId)
+            txPrice = locked.finalPrice
+            txDiscount = locked.appliedDiscount
+          }
+          const paidNow = Boolean(paidAtClinic || txPrice === 0)
+
           const created = await tx.packagePurchase.create({
             data: {
               userId,
               packageServiceId: serviceId,
               sessionCount: service.packageSessionCount!,
               sessionsScheduled: slots.length,
-              pricePaid: service.price,
-              paymentStatus: paidAtClinic ? 'PAID' : 'PENDING',
-              status: paidAtClinic
+              pricePaid: txPrice,
+              paymentStatus: paidNow ? 'PAID' : 'PENDING',
+              status: paidNow
                 ? slots.length >= service.packageSessionCount!
                   ? 'COMPLETED'
                   : 'ACTIVE'
                 : 'PENDING',
               itemsSnapshot: snapshot as any,
               installmentsAllowed: service.installmentsAllowed,
-              paymentExpiresAt,
+              paymentExpiresAt: paidNow ? null : paymentExpiresAt,
+              voucherId: !paidAtClinic && voucherId ? voucherId : null,
+              voucherAmountApplied:
+                !paidAtClinic && voucherId && txDiscount > 0 ? Number(txDiscount.toFixed(2)) : null,
             },
           })
 
@@ -243,14 +277,18 @@ export async function packagesRoutes(app: FastifyInstance) {
                 endTime: end,
                 status: 'PENDING',
                 origin: origin as any,
-                paymentStatus: paidAtClinic ? 'PAID' : 'PENDING',
-                paymentAmount: i === 0 ? service.price : 0,
-                paymentExpiresAt,
+                paymentStatus: paidNow ? 'PAID' : 'PENDING',
+                paymentAmount: i === 0 ? txPrice : 0,
+                paymentExpiresAt: paidNow ? null : paymentExpiresAt,
                 notes,
                 packagePurchaseId: created.id,
                 packageSessionIndex: i + 1,
               },
             })
+          }
+
+          if (!paidAtClinic && voucherId) {
+            await debitLockedVoucher(tx, voucherId, txDiscount)
           }
 
           return tx.packagePurchase.findUniqueOrThrow({
@@ -265,6 +303,9 @@ export async function packagesRoutes(app: FastifyInstance) {
             error: 'Um dos horários acabou de ser reservado. Escolha outras datas.',
           })
         }
+        if (txError instanceof VoucherUnavailableError) {
+          return reply.status(400).send({ success: false, error: txError.message })
+        }
         throw txError
       }
 
@@ -275,7 +316,7 @@ export async function packagesRoutes(app: FastifyInstance) {
           startTime: purchase.appointments[0].startTime,
           appointmentId: purchase.appointments[0].id,
         })
-        if (paymentExpiresAt) {
+        if (paymentExpiresAt && purchase.paymentStatus === 'PENDING') {
           await createNotification({
             userId,
             type: 'SYSTEM_MESSAGE',
@@ -299,13 +340,16 @@ export async function packagesRoutes(app: FastifyInstance) {
       return reply.status(201).send({
         success: true,
         data: serializePurchase(purchase),
-        message: paidAtClinic
+        message: paidAtClinic || purchase.paymentStatus === 'PAID'
           ? 'Pacote registrado. Sessões restantes podem ser agendadas.'
           : 'Reserva criada. Conclua o pagamento para confirmar o pacote.',
       })
     } catch (error) {
       if (error instanceof PackageError) {
         return reply.status(error.statusCode).send({ success: false, error: error.message })
+      }
+      if (error instanceof VoucherUnavailableError) {
+        return reply.status(400).send({ success: false, error: error.message })
       }
       logger.error('Erro ao comprar pacote:', error)
       return reply.status(500).send({ success: false, error: 'Erro ao comprar pacote' })

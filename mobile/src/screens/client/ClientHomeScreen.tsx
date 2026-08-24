@@ -4,11 +4,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../contexts/AuthContext';
-import { NotificationsPanel } from '../../components/NotificationsPanel';
+import { NotificationsPanel, resolveNotificationNav } from '../../components/NotificationsPanel';
+import { usePushNotificationHandlers } from '../../lib/pushNotifications';
 import { ClinicInfoPanel } from '../../components/ClinicInfoPanel';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useCommercial } from '../../contexts/CommercialContext';
-import { CATEGORY_META, isExpiredUnpaidHold, isOnlinePaymentHold, type ServiceCategory } from '../../types/commercial';
+import {
+  CATEGORY_META,
+  isExpiredUnpaidHold,
+  isOnlinePaymentHold,
+  type PackagePurchase,
+  type ServiceCategory,
+} from '../../types/commercial';
 import { displayUserFirstName } from '../../lib/userDisplay';
 import { getCategoryIllustrations, logoSource } from '../../assets/brandAssets';
 import { getUnreadNotificationsCount } from '../../lib/api';
@@ -23,6 +30,31 @@ const { width } = Dimensions.get('window');
 const NO_PLAN_CARD = {
   gradientColors: ['#ec4899', '#be185d'] as const,
 };
+
+const CATEGORY_GRADIENT: Record<ServiceCategory, readonly [string, string]> = {
+  COMBO: ['#f472b6', '#db2777'],
+  FACIAL: ['#a78bfa', '#7c3aed'],
+  CORPORAL: ['#60a5fa', '#2563eb'],
+  MASSAGEM: ['#34d399', '#059669'],
+};
+
+function isVisibleHomePackage(purchase: PackagePurchase) {
+  if (purchase.paymentStatus !== 'PAID') return false;
+  if (purchase.status === 'CANCELED' || purchase.status === 'REFUNDED') return false;
+  if (purchase.remainingSessions > 0) return true;
+  return (purchase.appointments ?? []).some(
+    (item) => item.status === 'PENDING' || item.status === 'CONFIRMED',
+  );
+}
+
+function packageCardSubtitle(purchase: PackagePurchase) {
+  const done = purchase.sessionCount - purchase.remainingSessions;
+  if (purchase.remainingSessions > 0) {
+    return `${done}/${purchase.sessionCount} · agendar próxima`;
+  }
+  const completed = (purchase.appointments ?? []).filter((item) => item.status === 'COMPLETED').length;
+  return `${completed}/${purchase.sessionCount} concluídas`;
+}
 
 function nextBillingLabel(startDate: string) {
   const start = new Date(startDate);
@@ -94,6 +126,35 @@ export function ClientHomeScreen() {
   const refreshHome = useCallback(async () => {
     await Promise.all([refresh(), refreshUnread()]);
   }, [refresh, refreshUnread]);
+
+  const navigateToNotificationTarget = useCallback(
+    (target: NonNullable<ReturnType<typeof resolveNotificationNav>>) => {
+      if (target.stack === 'Plan') {
+        navigation.navigate('Plan');
+        return;
+      }
+      if (target.tab === 'Profile' && target.profileScreen) {
+        navigation.navigate('Profile', { openScreen: target.profileScreen as 'history' });
+        return;
+      }
+      if (target.tab) {
+        navigation.navigate(target.tab);
+      }
+    },
+    [navigation],
+  );
+
+  usePushNotificationHandlers({
+    onReceived: () => {
+      void refreshUnread();
+    },
+    onOpened: (payload) => {
+      void refreshUnread();
+      const target = resolveNotificationNav(payload.actionUrl ?? undefined);
+      if (target) navigateToNotificationTarget(target);
+      else setNotificationsVisible(true);
+    },
+  });
 
   // Home só consome banners já preparados no loading — sem refetch no focus
   useFocusEffect(
@@ -260,32 +321,29 @@ export function ClientHomeScreen() {
           </View>
         ) : (
           <>
-            {packagePurchases.filter((item) => item.paymentStatus === 'PAID' && item.remainingSessions > 0).length > 0 ? (
+            {packagePurchases.filter(isVisibleHomePackage).length > 0 ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Seus pacotes</Text>
-                {packagePurchases
-                  .filter((item) => item.paymentStatus === 'PAID' && item.remainingSessions > 0)
-                  .map((purchase) => (
-                    <TouchableOpacity
-                      key={purchase.id}
-                      onPress={() => navigation.navigate('PackageTimeline', { purchaseId: purchase.id })}
-                      style={{
-                        backgroundColor: '#fff1f2',
-                        borderRadius: 18,
-                        padding: 16,
-                        marginTop: 10,
-                        borderWidth: 1,
-                        borderColor: '#fecdd3',
-                      }}
+                {packagePurchases.filter(isVisibleHomePackage).map((purchase) => (
+                  <TouchableOpacity
+                    key={purchase.id}
+                    onPress={() => navigation.navigate('PackageTimeline', { purchaseId: purchase.id })}
+                    style={styles.packageCard}
+                    activeOpacity={0.88}
+                  >
+                    <LinearGradient
+                      colors={['#fb7185', '#e11d48']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.packageCardFill}
                     >
-                      <Text style={{ color: '#111827', fontSize: 16, fontWeight: '800' }}>
+                      <Text style={styles.packageCardName}>
                         {purchase.packageService?.name || 'Pacote'}
                       </Text>
-                      <Text style={{ color: '#be185d', marginTop: 4, fontWeight: '700' }}>
-                        {purchase.sessionCount - purchase.remainingSessions}/{purchase.sessionCount} · agendar próxima
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                      <Text style={styles.packageCardMeta}>{packageCardSubtitle(purchase)}</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                ))}
               </View>
             ) : null}
 
@@ -382,19 +440,7 @@ export function ClientHomeScreen() {
         onClose={() => setNotificationsVisible(false)}
         userId={user?.id}
         onUnreadCountChange={setUnreadNotifications}
-        onNavigate={(target) => {
-          if (target.stack === 'Plan') {
-            navigation.navigate('Plan');
-            return;
-          }
-          if (target.tab === 'Profile' && target.profileScreen) {
-            navigation.navigate('Profile', { openScreen: target.profileScreen as 'history' });
-            return;
-          }
-          if (target.tab) {
-            navigation.navigate(target.tab);
-          }
-        }}
+        onNavigate={navigateToNotificationTarget}
       />
       <ClinicInfoPanel
         visible={clinicInfoVisible}
@@ -439,7 +485,7 @@ function CategoriesSkeleton() {
   return (
     <View style={styles.categoriesGrid}>
       {[0, 1, 2, 3].map((key) => (
-        <View key={key} style={styles.categoryCard}>
+        <View key={key} style={[styles.categoryCard, { backgroundColor: '#f3f4f6', padding: 16 }]}>
           <SkeletonBlock style={{ width: 82, height: 82, borderRadius: 41, marginBottom: 12 }} />
           <SkeletonBlock style={{ width: '70%', height: 16, marginBottom: 8 }} />
           <SkeletonBlock style={{ width: '50%', height: 12 }} />
@@ -500,7 +546,7 @@ function NoPlanCard({ onPress, embedded }: { onPress: () => void; embedded?: boo
   const card = (
       <LinearGradient
         colors={[...NO_PLAN_CARD.gradientColors]}
-        style={[styles.planCard, embedded && styles.planCardEmbedded]}
+        style={[styles.planCard, styles.planCardNoPlan, embedded && styles.planCardEmbedded]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
@@ -516,8 +562,7 @@ function NoPlanCard({ onPress, embedded }: { onPress: () => void; embedded?: boo
         <View style={styles.noPlanContent}>
           <Text style={styles.noPlanText}>
             Até 6 procedimentos por mês{'\n'}
-            Valor fixo e previsível{'\n'}
-            Sem taxas ocultas
+            Valor fixo e previsível
           </Text>
           <TouchableOpacity style={styles.subscribeCTA} onPress={onPress}>
             <Text style={styles.subscribeCTAText}>Assinar Agora</Text>
@@ -542,19 +587,19 @@ function CategoryCard({
   illustration: any;
   onPress: () => void;
 }) {
+  const colors = CATEGORY_GRADIENT[category.id as ServiceCategory] || [category.color, category.color];
   return (
-    <TouchableOpacity
-      style={[styles.categoryCard, { borderColor: category.color }]}
-      onPress={onPress}
-    >
-      <View style={styles.categoryIconContainer}>
-        <View style={[styles.categoryIconCircle, { backgroundColor: `${category.color}20` }]} />
-        <Image source={illustration} style={styles.categoryIllustration} resizeMode="contain" />
-      </View>
-      <Text style={styles.categoryName}>{category.name}</Text>
-      <Text style={styles.categoryCount}>
-        {hasPlan ? '✓ Inclusos no plano' : `${category.count} serviços`}
-      </Text>
+    <TouchableOpacity style={styles.categoryCard} onPress={onPress} activeOpacity={0.9}>
+      <LinearGradient colors={[...colors]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.categoryCardFill}>
+        <View style={styles.categoryIconContainer}>
+          <View style={styles.categoryIconCircle} />
+          <Image source={illustration} style={styles.categoryIllustration} resizeMode="contain" />
+        </View>
+        <Text style={styles.categoryName}>{category.name}</Text>
+        <Text style={styles.categoryCount}>
+          {hasPlan ? 'Inclusos no plano' : `${category.count} serviços`}
+        </Text>
+      </LinearGradient>
     </TouchableOpacity>
   );
 }
@@ -782,6 +827,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
     elevation: 0,
   },
+  planCardNoPlan: {
+    justifyContent: 'flex-start',
+  },
   /** Overlay de imagem futura: cover dentro do mesmo aspect 2:1. */
   planCardImage: {
     ...StyleSheet.absoluteFillObject,
@@ -860,13 +908,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   noPlanContent: {
-    marginTop: 4,
+    marginTop: 10,
+    gap: 10,
   },
   noPlanText: {
     fontSize: 13,
     color: 'rgba(255,255,255,0.9)',
     lineHeight: 18,
-    marginBottom: 10,
   },
   subscribeCTA: {
     flexDirection: 'row',
@@ -910,13 +958,19 @@ const styles = StyleSheet.create({
   },
   categoryCard: {
     width: (width - 52) / 2,
-    backgroundColor: 'white',
     borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  categoryCardFill: {
     paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 16,
-    borderWidth: 1.5,
-    borderColor: '#e5e7eb',
+    minHeight: 168,
   },
   categoryIconContainer: {
     width: 82,
@@ -930,6 +984,7 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 35,
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
   categoryIllustration: {
     width: 82,
@@ -938,12 +993,35 @@ const styles = StyleSheet.create({
   categoryName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#111827',
+    color: '#ffffff',
     marginBottom: 4,
   },
   categoryCount: {
     fontSize: 12,
-    color: '#6b7280',
+    color: 'rgba(255,255,255,0.82)',
+  },
+  packageCard: {
+    marginTop: 10,
+    borderRadius: 18,
+    overflow: 'hidden',
+    shadowColor: '#e11d48',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  packageCardFill: {
+    padding: 16,
+  },
+  packageCardName: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  packageCardMeta: {
+    color: 'rgba(255,255,255,0.88)',
+    marginTop: 4,
+    fontWeight: '700',
   },
   appointmentsList: {
     gap: 12,

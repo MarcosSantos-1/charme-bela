@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
+import { sendPushForUserNotification } from '../utils/expoPush'
 
 export async function notificationRoutes(app: FastifyInstance) {
   // ============================================
@@ -210,7 +211,20 @@ export async function notificationRoutes(app: FastifyInstance) {
       })
       
       logger.success(`✅ Notificação criada: ${notification.id}`)
-      
+
+      // Mesmo comportamento do helper createNotification: push no aparelho
+      // sem bloquear a resposta. Notificação de admin (userId null) não tem push.
+      if (notification.userId) {
+        void sendPushForUserNotification({
+          userId: notification.userId,
+          notificationId: notification.id,
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          actionUrl: notification.actionUrl,
+        })
+      }
+
       return reply.status(201).send({
         success: true,
         data: notification

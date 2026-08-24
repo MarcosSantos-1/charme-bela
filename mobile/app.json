@@ -48,6 +48,12 @@
           "defaultChannel": "default"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4b9dd07f-b0d0-4e0a-935c-4b3b73361ee1"
+      }
+    },
+    "owner": "marcossantos-1"
   }
 }

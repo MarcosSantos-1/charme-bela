@@ -51,6 +51,8 @@ export interface PackagePurchase {
   pricePaid: number;
   paymentStatus: Exclude<PaymentStatus, null>;
   status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELED' | 'REFUNDED';
+  voucherId?: string | null;
+  voucherAmountApplied?: number | null;
   itemsSnapshot?: PackageItemSnapshot[];
   items?: PackageItemSnapshot[];
   appointments?: Appointment[];

@@ -25,6 +25,7 @@ import {
   chargeSavedCard,
   createCheckoutSession,
   createPaymentSession,
+  createPixSession,
   createUpgradeCheckout,
   getPaymentMethods,
   getPaymentStatus,
@@ -81,22 +82,33 @@ export function CheckoutScreen({ route, navigation }: Props) {
   const [savedCards, setSavedCards] = useState<PaymentMethod[]>([]);
   const [chargingSavedId, setChargingSavedId] = useState<string | null>(null);
   const [nicknameCard, setNicknameCard] = useState<PaymentMethod | null>(null);
+  const [pixOpen, setPixOpen] = useState(false);
+  const [pixLoading, setPixLoading] = useState(false);
+  const [pixError, setPixError] = useState<string | null>(null);
   const abandoning = useRef(false);
   const startedRef = useRef(false);
   const cpfRef = useRef(cpf);
   const browserOpenRef = useRef(false);
+  const pixRequestedRef = useRef(false);
   cpfRef.current = cpf;
+
+  const filterSavedCards = useCallback(
+    (methods: PaymentMethod[]) =>
+      methods.filter((method) => method.last4 && (!isPlan || method.kind !== 'debit')),
+    [isPlan],
+  );
 
   const offerNicknameIfNeeded = useCallback(async () => {
     if (!user || browserOpenRef.current) return;
     try {
       const methods = await getPaymentMethods(user.id);
+      setSavedCards(filterSavedCards(methods));
       const unnamed = unnamedSavedCard(methods);
       if (unnamed) setNicknameCard(unnamed);
     } catch {
       // apelido pode ser dado depois em Meu Plano
     }
-  }, [user]);
+  }, [filterSavedCards, user]);
 
   const loadCheckout = useCallback(async () => {
     if (!user) return;
@@ -108,6 +120,11 @@ export function CheckoutScreen({ route, navigation }: Props) {
     }
     setPhase('loading');
     setError(null);
+    setPixOpen(false);
+    setPixCopy(null);
+    setPixQr(null);
+    setPixError(null);
+    pixRequestedRef.current = false;
     try {
       const checkout = params.upgrade && params.planId
         ? await createUpgradeCheckout(user.id, params.planId, document)
@@ -124,16 +141,12 @@ export function CheckoutScreen({ route, navigation }: Props) {
           );
       setPaymentId(checkout.paymentId);
       setInvoiceUrl(checkout.invoiceUrl || checkout.url);
-      setPixCopy(isPlan ? null : checkout.pixCopyPaste);
-      setPixQr(isPlan ? null : checkout.pixQrBase64);
       setAmount(checkout.amount);
       setDescription(checkout.description);
       if (checkout.expiresAt && !isPlan) setExpiresAt(new Date(checkout.expiresAt).getTime());
       try {
         const methods = await getPaymentMethods(user.id);
-        setSavedCards(
-          methods.filter((method) => method.last4 && (!isPlan || method.kind !== 'debit')),
-        );
+        setSavedCards(filterSavedCards(methods));
       } catch {
         setSavedCards([]);
       }
@@ -142,7 +155,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       setError(getApiErrorMessage(requestError, 'Não foi possível abrir o pagamento'));
       setPhase('error');
     }
-  }, [params.amount, params.appointmentId, params.customDescription, params.packagePurchaseId, params.planId, params.serviceId, params.upgrade, user?.id]);
+  }, [filterSavedCards, params.amount, params.appointmentId, params.customDescription, params.packagePurchaseId, params.planId, params.serviceId, params.upgrade, user?.id]);
 
   useEffect(() => {
     if (!user) return;
@@ -181,8 +194,6 @@ export function CheckoutScreen({ route, navigation }: Props) {
       try {
         const status = await getPaymentStatus(paymentId);
         if (cancelled) return;
-        if (status.pixQrBase64 && !isPlan) setPixQr(status.pixQrBase64);
-        if (status.pixCopyPaste && !isPlan) setPixCopy(status.pixCopyPaste);
         if (status.invoiceUrl) {
           setInvoiceUrl((current) => {
             if (current && /checkoutSession/i.test(current) && !/checkoutSession/i.test(status.invoiceUrl || '')) {
@@ -208,13 +219,47 @@ export function CheckoutScreen({ route, navigation }: Props) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [isPlan, phase, paymentId, refresh, offerNicknameIfNeeded]);
+  }, [phase, paymentId, refresh, offerNicknameIfNeeded]);
 
   const qrSource = useMemo(() => {
     if (!pixQr) return null;
     const uri = pixQr.startsWith('data:') ? pixQr : `data:image/png;base64,${pixQr}`;
     return { uri };
   }, [pixQr]);
+
+  const emitPix = useCallback(async () => {
+    if (!user || isPlan) return;
+    if (pixCopy || pixQr) return;
+    if (pixRequestedRef.current) return;
+    pixRequestedRef.current = true;
+    setPixLoading(true);
+    setPixError(null);
+    try {
+      const pix = await createPixSession(
+        user.id,
+        params.serviceId || '',
+        params.appointmentId,
+        amount || params.amount,
+        params.packagePurchaseId,
+        cpfRef.current.replace(/\D/g, ''),
+      );
+      setPixCopy(pix.pixCopyPaste);
+      setPixQr(pix.pixQrBase64);
+    } catch (requestError) {
+      pixRequestedRef.current = false;
+      setPixError(getApiErrorMessage(requestError, 'Não foi possível gerar o Pix'));
+    } finally {
+      setPixLoading(false);
+    }
+  }, [amount, isPlan, params.amount, params.appointmentId, params.packagePurchaseId, params.serviceId, pixCopy, pixQr, user]);
+
+  const togglePix = useCallback(() => {
+    setPixOpen((open) => {
+      const next = !open;
+      if (next) void emitPix();
+      return next;
+    });
+  }, [emitPix]);
 
   const leave = useCallback(() => {
     setNicknameCard(null);
@@ -368,7 +413,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       {phase === 'loading' ? (
         <View style={styles.centered}>
           <ActivityIndicator color={brand.rose} size="large" />
-          <Text style={styles.muted}>{isUpgrade ? 'Preparando a diferença do plano…' : isPlan ? 'Preparando o cartão…' : 'Gerando Pix seguro…'}</Text>
+          <Text style={styles.muted}>{isUpgrade ? 'Preparando a diferença do plano…' : isPlan ? 'Preparando o cartão…' : 'Preparando o pagamento…'}</Text>
         </View>
       ) : null}
 
@@ -437,31 +482,51 @@ export function CheckoutScreen({ route, navigation }: Props) {
 
           {!isPlan ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Pague com Pix</Text>
-            <Text style={styles.cardHint}>O pagamento cai na hora. Não compartilhe este QR fora do app.</Text>
-            {qrSource ? (
-              <Image source={qrSource} style={styles.qr} />
-            ) : pixCopy ? (
-              <View style={styles.qrPlaceholder}>
-                <Ionicons name="qr-code-outline" size={42} color={brand.rose} />
-                <Text style={styles.muted}>Copie o código Pix abaixo para pagar no banco.</Text>
+            <TouchableOpacity style={styles.accordionHeader} onPress={togglePix} activeOpacity={0.85}>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={styles.cardTitle}>Pagar com Pix</Text>
+                <Text style={styles.cardHintLeft}>
+                  {pixOpen
+                    ? 'O pagamento cai na hora. Não compartilhe este QR fora do app.'
+                    : 'Toque para gerar o QR. Só então o Asaas envia e-mail ou SMS do Pix.'}
+                </Text>
               </View>
-            ) : (
-              <View style={styles.qrPlaceholder}>
-                <ActivityIndicator color={brand.rose} />
-                <Text style={styles.muted}>Gerando QR Pix…</Text>
+              <Ionicons name={pixOpen ? 'chevron-up' : 'chevron-down'} size={20} color={brand.muted} />
+            </TouchableOpacity>
+            {pixOpen ? (
+              <View style={styles.accordionBody}>
+                {pixError ? (
+                  <>
+                    <Text style={styles.errorText}>{pixError}</Text>
+                    <TouchableOpacity style={styles.copyButton} onPress={() => void emitPix()}>
+                      <Text style={styles.copyText}>Tentar de novo</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : qrSource ? (
+                  <Image source={qrSource} style={styles.qr} />
+                ) : pixCopy ? (
+                  <View style={styles.qrPlaceholder}>
+                    <Ionicons name="qr-code-outline" size={42} color={brand.rose} />
+                    <Text style={styles.muted}>Copie o código Pix abaixo para pagar no banco.</Text>
+                  </View>
+                ) : (
+                  <View style={styles.qrPlaceholder}>
+                    <ActivityIndicator color={brand.rose} />
+                    <Text style={styles.muted}>{pixLoading ? 'Gerando QR Pix…' : 'Abrindo Pix…'}</Text>
+                  </View>
+                )}
+                {pixCopy ? (
+                  <TouchableOpacity style={styles.copyButton} onPress={() => void copyPix()}>
+                    <Ionicons name="copy-outline" size={18} color={brand.roseDeep} />
+                    <Text style={styles.copyText}>Copiar código Pix</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {pixCopy ? (
+                  <Text selectable style={styles.pixPayload} numberOfLines={3}>
+                    {pixCopy}
+                  </Text>
+                ) : null}
               </View>
-            )}
-            {pixCopy ? (
-              <TouchableOpacity style={styles.copyButton} onPress={() => void copyPix()}>
-                <Ionicons name="copy-outline" size={18} color={brand.roseDeep} />
-                <Text style={styles.copyText}>Copiar código Pix</Text>
-              </TouchableOpacity>
-            ) : null}
-            {pixCopy ? (
-              <Text selectable style={styles.pixPayload} numberOfLines={3}>
-                {pixCopy}
-              </Text>
             ) : null}
           </View>
           ) : null}
@@ -501,7 +566,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
           })}
 
           <TouchableOpacity style={styles.cardCta} onPress={() => void openCard()} activeOpacity={0.9}>
-            <LinearGradient colors={['#3a1d2c', brand.roseDeep]} style={styles.cardCtaInner}>
+            <LinearGradient colors={['#f4faf6', '#e8f3ec']} style={styles.cardCtaInner}>
               <Image source={creditCard3dSource} style={styles.cardCtaArt} resizeMode="contain" />
               <View style={{ flex: 1, gap: 4 }}>
                 <Text style={styles.cardCtaKicker}>
@@ -518,13 +583,13 @@ export function CheckoutScreen({ route, navigation }: Props) {
                 </Text>
                 <Text style={styles.cardCtaHint}>
                   {isUpgrade
-                    ? 'Pode pagar com o cartão salvo acima. Se preferir outro cartão, abre o Asaas no navegador — a diferença é cobrada agora e o plano troca na hora.'
+                    ? 'Pode pagar com qualquer cartão salvo acima. Se preferir outro, abre o Asaas no navegador — a diferença é cobrada agora e o plano troca na hora. Depois você escolhe um apelido.'
                     : isPlan
-                    ? 'Abre o Asaas no navegador — captcha e cartão funcionam melhor lá. Ao voltar, esta tela confirma sozinha. Depois você escolhe um apelido para o cartão.'
-                    : 'Abre o Asaas no navegador. Crédito ou débito. Depois você escolhe um apelido para aparecer na hora de pagar.'}
+                    ? 'Abre o Asaas no navegador. Cada cartão novo fica salvo com o apelido que você escolher. Ao voltar, esta tela confirma sozinha.'
+                    : 'Abre o Asaas no navegador. Crédito ou débito. Cada cartão fica salvo com um apelido para usar nas próximas compras.'}
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.85)" />
+              <Ionicons name="chevron-forward" size={18} color="#3d6b55" />
             </LinearGradient>
           </TouchableOpacity>
         </ScrollView>
@@ -540,6 +605,9 @@ export function CheckoutScreen({ route, navigation }: Props) {
           const card = nicknameCard;
           setNicknameCard(null);
           if (!user || !card) return;
+          setSavedCards((current) =>
+            current.map((item) => (item.id === card.id ? { ...item, nickname } : item)),
+          );
           void updateSavedCard(card.id, { userId: user.id, nickname }).catch(() => {
             Alert.alert('Apelido', 'O pagamento já está ok. Você pode apelidar o cartão em Meu Plano.');
           });
@@ -600,6 +668,9 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 18, fontWeight: '800', color: brand.ink },
   cardHint: { color: brand.muted, fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  cardHintLeft: { color: brand.muted, fontSize: 13, lineHeight: 18 },
+  accordionHeader: { width: '100%', alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 10 },
+  accordionBody: { width: '100%', alignSelf: 'stretch', alignItems: 'center', gap: 10, paddingTop: 8 },
   qr: { width: 220, height: 220, borderRadius: 16, backgroundColor: 'white' },
   qrPlaceholder: { height: 220, width: 220, alignItems: 'center', justifyContent: 'center', gap: 8 },
   copyButton: {
@@ -623,7 +694,12 @@ const styles = StyleSheet.create({
   },
   savedCardTitle: { color: 'white', fontWeight: '800', fontSize: 15 },
   savedCardHint: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
-  cardCta: { borderRadius: 24, overflow: 'hidden' },
+  cardCta: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(61, 107, 85, 0.14)',
+  },
   cardCtaInner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -633,9 +709,9 @@ const styles = StyleSheet.create({
     minHeight: 108,
   },
   cardCtaArt: { width: 64, height: 64 },
-  cardCtaKicker: { color: brand.goldSoft, fontWeight: '700', fontSize: 11, letterSpacing: 0.4 },
-  cardCtaTitle: { color: 'white', fontWeight: '800', fontSize: 16 },
-  cardCtaHint: { color: 'rgba(255,255,255,0.82)', fontSize: 12, lineHeight: 17 },
+  cardCtaKicker: { color: '#5d8a74', fontWeight: '700', fontSize: 11, letterSpacing: 0.4 },
+  cardCtaTitle: { color: '#1d3f32', fontWeight: '800', fontSize: 16 },
+  cardCtaHint: { color: '#4a6b5c', fontSize: 12, lineHeight: 17 },
   primaryButton: {
     marginTop: 8,
     backgroundColor: brand.rose,

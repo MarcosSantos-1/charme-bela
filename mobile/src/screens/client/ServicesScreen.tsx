@@ -94,6 +94,7 @@ export function ServicesScreen() {
   const [selectedCategory, setSelectedCategory] = useState<ServiceCategory | null>(null);
   const [machineFilter, setMachineFilter] = useState<'LASER' | 'CRYO' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [planOnly, setPlanOnly] = useState(false);
   const [appliedVoucherId, setAppliedVoucherId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -163,6 +164,7 @@ export function ServicesScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setPlanOnly(false);
       const category = route.params?.category;
       const machine = route.params?.machine;
       if (machine === 'LASER' || machine === 'CRYO') {
@@ -195,6 +197,7 @@ export function ServicesScreen() {
   }, []);
 
   const filteredServices = services.filter((service) => {
+    if (planOnly && !isServiceInPlan(service, subscription)) return false;
     const query = searchQuery.trim().toLowerCase();
     const matchesSearch =
       !query ||
@@ -227,10 +230,6 @@ export function ServicesScreen() {
         : {}),
     });
   };
-
-  const activePackages = packagePurchases.filter(
-    (item) => item.paymentStatus === 'PAID' && item.remainingSessions > 0 && item.status !== 'CANCELED' && item.status !== 'REFUNDED',
-  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -269,59 +268,22 @@ export function ServicesScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#ec4899" />}
       >
-        {clientBanners.length > 0 ? (
-          <View style={styles.promoCarouselWrap}>
-            <HomePromoCarousel
-              banners={clientBanners}
-              onBannerPress={(banner) => {
-                if (banner.machineKind === 'LASER' || banner.machineKind === 'CRYO') {
-                  setMachineFilter(banner.machineKind);
-                  setSelectedCategory(null);
-                  setSearchQuery('');
-                  return;
-                }
-                if (banner.linkPath?.includes('machine=LASER')) {
-                  setMachineFilter('LASER');
-                  setSelectedCategory(null);
-                  setSearchQuery('');
-                } else if (banner.linkPath?.includes('machine=CRYO')) {
-                  setMachineFilter('CRYO');
-                  setSelectedCategory(null);
-                  setSearchQuery('');
-                }
-              }}
-            />
-          </View>
-        ) : null}
-
-        {activePackages.length > 0 ? (
-          <View style={{ paddingHorizontal: 4, marginBottom: 16, gap: 10 }}>
-            {activePackages.map((purchase) => (
-              <TouchableOpacity
-                key={purchase.id}
-                onPress={() => navigation.navigate('PackageTimeline', { purchaseId: purchase.id })}
-                style={{
-                  backgroundColor: '#fff1f2',
-                  borderRadius: 18,
-                  padding: 16,
-                  borderWidth: 1,
-                  borderColor: '#fecdd3',
-                }}
-              >
-                <Text style={{ color: '#9f1239', fontSize: 12, fontWeight: '700' }}>Seu pacote</Text>
-                <Text style={{ color: '#111827', fontSize: 18, fontWeight: '800', marginTop: 2 }}>
-                  {purchase.packageService?.name || 'Pacote'}
-                </Text>
-                <Text style={{ color: '#be185d', marginTop: 4, fontWeight: '700' }}>
-                  {purchase.sessionCount - purchase.remainingSessions}/{purchase.sessionCount} · agendar próxima
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : null}
-
-        {/* Filtros — todos visíveis, sem scroll horizontal */}
         <View style={styles.categoriesWrap}>
+          <TouchableOpacity
+            style={[styles.categoryChip, planOnly && styles.categoryChipActive]}
+            onPress={() => setPlanOnly((current) => !current)}
+          >
+            <Ionicons
+              name={planOnly ? 'ribbon' : 'ribbon-outline'}
+              size={13}
+              color={planOnly ? 'white' : '#6b7280'}
+              style={styles.categoryIcon}
+            />
+            <Text style={[styles.categoryChipText, planOnly && styles.categoryChipTextActive]}>
+              Apenas do plano
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={[styles.categoryChip, !selectedCategory && !machineFilter && styles.categoryChipActive]}
             onPress={() => {
@@ -348,14 +310,14 @@ export function ServicesScreen() {
             >
               <MaterialCommunityIcons
                 name={category.icon as any}
-                size={16}
-                color={selectedCategory === category.id ? 'white' : '#6b7280'}
+                size={13}
+                color={selectedCategory === category.id && !machineFilter ? 'white' : '#6b7280'}
                 style={styles.categoryIcon}
               />
               <Text
                 style={[
                   styles.categoryChipText,
-                  selectedCategory === category.id && styles.categoryChipTextActive,
+                  selectedCategory === category.id && !machineFilter && styles.categoryChipTextActive,
                 ]}
               >
                 {category.label}
@@ -363,6 +325,31 @@ export function ServicesScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {clientBanners.length > 0 ? (
+          <View style={styles.promoCarouselWrap}>
+            <HomePromoCarousel
+              banners={clientBanners}
+              onBannerPress={(banner) => {
+                if (banner.machineKind === 'LASER' || banner.machineKind === 'CRYO') {
+                  setMachineFilter(banner.machineKind);
+                  setSelectedCategory(null);
+                  setSearchQuery('');
+                  return;
+                }
+                if (banner.linkPath?.includes('machine=LASER')) {
+                  setMachineFilter('LASER');
+                  setSelectedCategory(null);
+                  setSearchQuery('');
+                } else if (banner.linkPath?.includes('machine=CRYO')) {
+                  setMachineFilter('CRYO');
+                  setSelectedCategory(null);
+                  setSearchQuery('');
+                }
+              }}
+            />
+          </View>
+        ) : null}
 
         {amountCredits.length >= 2 ? (
           <TouchableOpacity
@@ -609,8 +596,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 24,
-    paddingTop: 18,
-    paddingBottom: 8,
+    paddingTop: 14,
+    paddingBottom: 6,
     gap: 8,
   },
   promoCarouselWrap: {
@@ -620,19 +607,26 @@ const styles = StyleSheet.create({
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 20,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    shadowColor: '#111827',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   categoryChipActive: {
     backgroundColor: '#ec4899',
+    shadowColor: '#ec4899',
+    shadowOpacity: 0.28,
   },
   categoryIcon: {
-    marginRight: 6,
+    marginRight: 5,
   },
   categoryChipText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#6b7280',
   },
@@ -641,7 +635,7 @@ const styles = StyleSheet.create({
   },
   voucherBannerWrap: {
     paddingHorizontal: 24,
-    paddingTop: 8,
+    paddingTop: 16,
     paddingBottom: 12,
   },
   mergeCreditsButton: {

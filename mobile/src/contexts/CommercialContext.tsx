@@ -36,16 +36,31 @@ interface CommercialContextValue {
 
 const CommercialContext = createContext<CommercialContextValue | null>(null);
 
-/** Esconde voucher de uso único já vinculado a agendamento ativo. Crédito em R$ com saldo continua visível. */
-function filterAvailableVouchers(vouchers: Voucher[], appointments: Appointment[]): Voucher[] {
+/** Esconde voucher de uso único já vinculado a agendamento ou compra de pacote pendente. Crédito em R$ com saldo continua visível. */
+function filterAvailableVouchers(
+  vouchers: Voucher[],
+  appointments: Appointment[],
+  purchases: PackagePurchase[] = [],
+): Voucher[] {
   const heldIds = new Set(
-    appointments
-      .filter(
-        (apt) =>
-          Boolean(apt.voucherId) &&
-          (apt.status === 'PENDING' || apt.status === 'CONFIRMED'),
-      )
-      .map((apt) => apt.voucherId as string),
+    [
+      ...appointments
+        .filter(
+          (apt) =>
+            Boolean(apt.voucherId) &&
+            (apt.status === 'PENDING' || apt.status === 'CONFIRMED'),
+        )
+        .map((apt) => apt.voucherId as string),
+      ...purchases
+        .filter(
+          (purchase) =>
+            Boolean(purchase.voucherId) &&
+            purchase.status !== 'CANCELED' &&
+            purchase.status !== 'REFUNDED' &&
+            (purchase.paymentStatus === 'PENDING' || purchase.paymentStatus === 'PAID'),
+        )
+        .map((purchase) => purchase.voucherId as string),
+    ],
   );
   return vouchers.filter((voucher) => {
     if (!isVoucherAvailable(voucher)) return false;
@@ -102,7 +117,7 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
       setAppointments(nextAppointments);
       setPlans(nextPlans);
       setSubscription(nextSubscription);
-      setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments));
+      setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments, nextPurchases));
       setPackagePurchases(nextPurchases);
 
       // Pull-to-refresh: força rede nos banners (sem limpar UI antes)
@@ -150,7 +165,7 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
       setAppointments(nextAppointments);
       setPlans(nextPlans);
       setSubscription(nextSubscription);
-      setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments));
+      setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments, nextPurchases));
       setPackagePurchases(nextPurchases);
     } catch (requestError) {
       setError(getApiErrorMessage(requestError, 'Não foi possível carregar seus dados'));
@@ -195,7 +210,7 @@ export function CommercialProvider({ children }: { children: React.ReactNode }) 
           setAppointments(nextAppointments);
           setPlans(nextPlans);
           setSubscription(nextSubscription);
-          setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments));
+          setVouchers(filterAvailableVouchers(nextVouchers, nextAppointments, nextPurchases));
           setPackagePurchases(nextPurchases);
 
           if (!isBannerCacheFresh(bannersFetchedAtRef.current)) {

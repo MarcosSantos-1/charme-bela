@@ -479,7 +479,21 @@ function AppointmentDetail({ appointment, onClose, onCancel, onReschedule, onRef
             </View>
           ) : null}
         </View>
-        <Text style={styles.detailService}>{appointment.service.name}</Text>
+        <Text
+          style={[
+            styles.detailService,
+            !(appointment.packageSessionIndex && appointment.packagePurchase?.sessionCount) && { marginBottom: 20 },
+          ]}
+        >
+          {appointment.service.name}
+        </Text>
+        {appointment.packageSessionIndex && appointment.packagePurchase?.sessionCount ? (
+          <View style={styles.sessionBadge}>
+            <Text style={styles.sessionBadgeText}>
+              Sessão {appointment.packageSessionIndex} de {appointment.packagePurchase.sessionCount}
+            </Text>
+          </View>
+        ) : null}
         <Detail icon="calendar-outline" text={longDate(datePart(appointment.startTime))} />
         <Detail icon="time-outline" text={`${timePart(appointment.startTime)} • ${appointment.service.duration} minutos`} />
         <Detail
@@ -502,7 +516,18 @@ function AppointmentDetail({ appointment, onClose, onCancel, onReschedule, onRef
             </Text>
           </View>
         ) : null}
-        {actionable && !hold ? <View style={styles.actions}><TouchableOpacity style={styles.reschedule} onPress={() => onReschedule(appointment)}><Text style={styles.rescheduleText}>Reagendar</Text></TouchableOpacity><TouchableOpacity style={styles.cancel} onPress={() => onCancel(appointment)}><Text style={styles.cancelText}>Cancelar</Text></TouchableOpacity></View> : null}
+        {actionable && !hold ? (
+          <View style={styles.actions}>
+            <TouchableOpacity style={styles.reschedule} onPress={() => onReschedule(appointment)}>
+              <Text style={styles.rescheduleText}>Reagendar</Text>
+            </TouchableOpacity>
+            {!(appointment.packagePurchaseId && appointment.paymentStatus === 'PAID') ? (
+              <TouchableOpacity style={styles.cancel} onPress={() => onCancel(appointment)}>
+                <Text style={styles.cancelText}>Cancelar</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
       </View></View>
     </Modal>
   );
@@ -530,6 +555,7 @@ function originLabel(
   }
   if (origin === 'SUBSCRIPTION') return 'Descontado do plano';
   if (origin === 'VOUCHER') return 'Voucher aplicado';
+  if (origin === 'PACKAGE') return payment === 'PAID' ? 'Sessão do pacote' : 'Pagamento do pacote pendente';
   if (origin === 'SINGLE') return payment === 'PAID' ? 'Pagamento confirmado' : 'Pagamento pendente';
   if (origin === 'ADMIN_CREATED' && payment === 'PENDING') return 'Pagar na clínica';
   return 'Criado pela clínica';
@@ -587,7 +613,18 @@ const styles = StyleSheet.create({
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sheetTitle: { fontSize: 20, fontWeight: '800', color: '#111827' },
   statusBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 12 },
-  detailService: { fontSize: 23, fontWeight: '800', color: '#111827', marginVertical: 20 },
+  detailService: { fontSize: 23, fontWeight: '800', color: '#111827', marginTop: 20, marginBottom: 8 },
+  sessionBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#fdf2f8',
+    borderWidth: 1,
+    borderColor: '#f9a8d4',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginBottom: 16,
+  },
+  sessionBadgeText: { color: '#be185d', fontSize: 13, fontWeight: '800' },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   detailText: { color: '#4b5563', fontSize: 15 },
   actions: { flexDirection: 'row', gap: 12, marginTop: 16 },

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
@@ -24,6 +25,17 @@ function resolveEasProjectId(): string | undefined {
   );
 }
 
+/** Motivo pelo qual o push não está ativo, para exibir/logar em diagnóstico. */
+export type PushUnavailableReason =
+  | 'simulator'
+  | 'permission-denied'
+  | 'missing-project-id'
+  | 'token-error';
+
+export type PushRegistration =
+  | { token: string; reason?: undefined }
+  | { token: null; reason: PushUnavailableReason; detail?: string };
+
 async function ensureAndroidChannel() {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(DEFAULT_PUSH_CHANNEL, {
@@ -35,51 +47,74 @@ async function ensureAndroidChannel() {
 }
 
 /**
- * Pede permissão e retorna o ExpoPushToken, ou null se indisponível.
- * Emuladores / permissão negada → null (sem throw).
+ * Pede permissão e retorna o ExpoPushToken, ou o motivo da indisponibilidade.
+ * Emuladores / permissão negada / projeto EAS ausente → token null (sem throw).
  */
-export async function registerForPushNotificationsAsync(): Promise<string | null> {
+export async function registerForPushNotificationsAsync(): Promise<PushRegistration> {
+  if (!Device.isDevice) {
+    // Simulador iOS e emulador Android não recebem push remoto da APNs/FCM.
+    return { token: null, reason: 'simulator' };
+  }
+
+  await ensureAndroidChannel();
+
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  let finalStatus = existing;
+  if (existing !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+  if (finalStatus !== 'granted') {
+    return { token: null, reason: 'permission-denied' };
+  }
+
+  // O serviço de push da Expo precisa do projectId para achar as credenciais
+  // APNs/FCM. Sem ele, getExpoPushTokenAsync falha em build nativo.
+  const projectId = resolveEasProjectId();
+  if (!projectId) {
+    return { token: null, reason: 'missing-project-id' };
+  }
+
   try {
-    if (!Device.isDevice) {
-      if (__DEV__) {
-        console.log('[push] Simulador/emulador — push desabilitado');
-      }
-      return null;
+    const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
+    if (!tokenResponse.data) {
+      return { token: null, reason: 'token-error', detail: 'resposta sem token' };
     }
-
-    await ensureAndroidChannel();
-
-    const { status: existing } = await Notifications.getPermissionsAsync();
-    let finalStatus = existing;
-    if (existing !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    if (finalStatus !== 'granted') {
-      if (__DEV__) {
-        console.log('[push] Permissão negada');
-      }
-      return null;
-    }
-
-    const projectId = resolveEasProjectId();
-    const tokenResponse = projectId
-      ? await Notifications.getExpoPushTokenAsync({ projectId })
-      : await Notifications.getExpoPushTokenAsync();
-
-    return tokenResponse.data ?? null;
+    return { token: tokenResponse.data };
   } catch (error) {
-    console.warn('[push] Falha ao registrar:', error);
-    return null;
+    return {
+      token: null,
+      reason: 'token-error',
+      detail: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
+const UNAVAILABLE_HINTS: Record<PushUnavailableReason, string> = {
+  simulator:
+    'Simulador/emulador não recebe push remoto. Teste em aparelho físico (ou use sendLocalTestNotification para validar a UI).',
+  'permission-denied':
+    'Permissão de notificações negada. Ative em Ajustes > Charme & Bela > Notificações.',
+  'missing-project-id':
+    'Sem EAS projectId. Rode `npx eas init` no diretório mobile e refaça o build — sem isso o Expo não emite push token.',
+  'token-error': 'Falha ao obter o Expo push token.',
+};
+
 /** Salva o token no backend para o usuário logado. */
 export async function syncPushTokenToBackend(userId: string): Promise<void> {
-  const token = await registerForPushNotificationsAsync();
-  if (!token) return;
+  const result = await registerForPushNotificationsAsync();
+  if (result.token === null) {
+    console.log(
+      `[push] Token não obtido (${result.reason}): ${UNAVAILABLE_HINTS[result.reason]}` +
+        (result.detail ? ` — ${result.detail}` : ''),
+    );
+    return;
+  }
   try {
-    await updateUser(userId, { expoPushToken: token });
+    await updateUser(userId, { expoPushToken: result.token });
+    if (__DEV__) {
+      console.log(`[push] Token registrado: ${result.token}`);
+    }
   } catch (error) {
     console.warn('[push] Falha ao salvar token no backend:', error);
   }
@@ -92,4 +127,74 @@ export async function clearPushTokenOnBackend(userId: string): Promise<void> {
   } catch {
     // logout não deve falhar por causa disso
   }
+}
+
+/** Payload que o backend envia em `data` (ver backend/src/utils/expoPush.ts). */
+export type PushPayload = {
+  notificationId?: string;
+  type?: string;
+  actionUrl?: string | null;
+};
+
+function readPayload(request: Notifications.NotificationRequest): PushPayload {
+  return (request.content.data ?? {}) as PushPayload;
+}
+
+/**
+ * Assina os eventos de push: chegada em foreground e toque na notificação
+ * (inclusive quando o app estava fechado).
+ */
+export function usePushNotificationHandlers(handlers: {
+  onReceived?: (payload: PushPayload) => void;
+  onOpened?: (payload: PushPayload) => void;
+}) {
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
+
+  useEffect(() => {
+    const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+      handlersRef.current.onReceived?.(readPayload(notification.request));
+    });
+
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      handlersRef.current.onOpened?.(readPayload(response.notification.request));
+    });
+
+    // App aberto a partir de um push com o processo encerrado: o toque já
+    // aconteceu antes do listener existir.
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        handlersRef.current.onOpened?.(readPayload(response.notification.request));
+      }
+    });
+
+    return () => {
+      receivedSub.remove();
+      responseSub.remove();
+    };
+  }, []);
+}
+
+/**
+ * Dispara uma notificação local — único jeito de validar a UI de notificação
+ * no simulador, onde push remoto não funciona.
+ */
+export async function sendLocalTestNotification(): Promise<void> {
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status !== 'granted') {
+    const requested = await Notifications.requestPermissionsAsync();
+    if (requested.status !== 'granted') {
+      console.log('[push] Teste local abortado: permissão negada');
+      return;
+    }
+  }
+  await ensureAndroidChannel();
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Teste de notificação 🔔',
+      body: 'Se você está vendo isso, o handler de notificações está funcionando.',
+      data: { type: 'SYSTEM_MESSAGE', actionUrl: '/cliente/agenda' } satisfies PushPayload,
+    },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 2 },
+  });
 }

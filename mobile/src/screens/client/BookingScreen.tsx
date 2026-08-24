@@ -54,7 +54,7 @@ const SHIFT_META = [
 export function BookingScreen({ route, navigation }: Props) {
   const { user } = useAuth();
   const categoryIllustrations = getCategoryIllustrations(user?.anamnesisForm?.personalData?.sex);
-  const { services, plans, subscription, vouchers, packagePurchases, refresh } = useCommercial();
+  const { services, plans, subscription, vouchers, packagePurchases, appointments, refresh } = useCommercial();
   const service = services.find((item) => item.id === route.params.serviceId);
   const isRescheduling = Boolean(route.params.appointmentId);
   const isPackage = Boolean(service && isPackageService(service));
@@ -67,6 +67,17 @@ export function BookingScreen({ route, navigation }: Props) {
       item.status !== 'REFUNDED',
   ) as PackagePurchase | undefined;
   const schedulingPurchaseId = route.params.packagePurchaseId || activePurchase?.id;
+  const isSchedulingPaidSession = Boolean(
+    isPackage &&
+    !isRescheduling &&
+    schedulingPurchaseId &&
+    (activePurchase?.paymentStatus === 'PAID' || Boolean(route.params.packagePurchaseId)),
+  );
+  const rescheduleRecord = appointments.find((item) => item.id === route.params.appointmentId);
+  const isPackageSessionReview = Boolean(
+    isSchedulingPaidSession ||
+    (isRescheduling && (rescheduleRecord?.origin === 'PACKAGE' || rescheduleRecord?.packagePurchaseId)),
+  );
   const [step, setStep] = useState<Step>(isRescheduling || route.params.packagePurchaseId ? 'date' : 'details');
   const [draftSlots, setDraftSlots] = useState<Array<{ date: string; time: string }>>([]);
   const [date, setDate] = useState('');
@@ -146,13 +157,13 @@ export function BookingScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     if (originInitialized || !service) return;
-    // Veio da lista de serviços com "Usar voucher" → força origem VOUCHER
-    if (preferredVoucherId && matchingVoucher && !isPackage) setBookingOrigin('VOUCHER');
-    else if (matchingVoucher && !isPackage) setBookingOrigin('VOUCHER');
+    if (isSchedulingPaidSession) setBookingOrigin('SINGLE');
+    else if (preferredVoucherId && matchingVoucher) setBookingOrigin('VOUCHER');
+    else if (matchingVoucher) setBookingOrigin('VOUCHER');
     else if (canUsePlan && !isPackage) setBookingOrigin('SUBSCRIPTION');
     else setBookingOrigin('SINGLE');
     setOriginInitialized(true);
-  }, [canUsePlan, matchingVoucher, originInitialized, preferredVoucherId, service]);
+  }, [canUsePlan, isPackage, isSchedulingPaidSession, matchingVoucher, originInitialized, preferredVoucherId, service]);
 
   useEffect(() => {
     if (!date || !service) return;
@@ -251,6 +262,38 @@ export function BookingScreen({ route, navigation }: Props) {
     (bookingOrigin === 'VOUCHER' && Boolean(matchingVoucher)) ||
     (bookingOrigin === 'SUBSCRIPTION' && canUsePlan);
 
+  const sessionCount =
+    rescheduleRecord?.packagePurchase?.sessionCount ||
+    activePurchase?.sessionCount ||
+    service.packageSessionCount ||
+    1;
+  const scheduledAppointments = (activePurchase?.appointments ?? []).filter(
+    (item) => item.status !== 'CANCELED' && item.packageSessionIndex != null,
+  );
+  const usedSessionIndexes = new Set(
+    scheduledAppointments.map((item) => item.packageSessionIndex as number),
+  );
+  const slotCount = Math.max(1, draftSlots.length + (date && time ? 1 : 0));
+  const nextIndexes: number[] = [];
+  for (let i = 1; i <= sessionCount && nextIndexes.length < slotCount; i++) {
+    if (!usedSessionIndexes.has(i)) nextIndexes.push(i);
+  }
+  const sessionStartIndex =
+    rescheduleRecord?.packageSessionIndex ||
+    (scheduledAppointments.length > 0 ? nextIndexes[0] : undefined) ||
+    (activePurchase ? activePurchase.sessionsScheduled + 1 : 1);
+  const sessionEndIndex = isRescheduling
+    ? sessionStartIndex
+    : scheduledAppointments.length > 0
+      ? nextIndexes[nextIndexes.length - 1] || sessionStartIndex
+      : sessionStartIndex + slotCount - 1;
+  const sessionBadge =
+    isPackageSessionReview && sessionCount
+      ? sessionEndIndex > sessionStartIndex
+        ? `Sessão ${sessionStartIndex}–${sessionEndIndex}/${sessionCount}`
+        : `Sessão ${sessionStartIndex}/${sessionCount}`
+      : undefined;
+
   const summaryValue =
     bookingOrigin === 'SUBSCRIPTION'
       ? 'Incluso'
@@ -297,12 +340,25 @@ export function BookingScreen({ route, navigation }: Props) {
           userId: user.id,
           serviceId: service.id,
           slots: isoSlots,
+          voucherId: bookingOrigin === 'VOUCHER' ? matchingVoucher?.id : undefined,
         });
+        if (bookingOrigin === 'VOUCHER' && finalPrice === 0) {
+          await refresh();
+          Alert.alert('Pacote confirmado', 'Voucher aplicado. A clínica confirmará seus horários em breve.', [
+            { text: 'Ver agenda', onPress: () => navigation.navigate('ClientTabs', { screen: 'Agenda' }) },
+            {
+              text: 'Ver pacote',
+              onPress: () => navigation.navigate('PackageTimeline', { purchaseId: purchase.id }),
+            },
+          ]);
+          return;
+        }
         navigation.navigate('Checkout', {
           serviceId: service.id,
           appointmentId: purchase.appointments?.[0]?.id,
           packagePurchaseId: purchase.id,
-          amount: service.price,
+          amount: finalPrice,
+          customDescription: finalPrice < service.price ? 'Voucher aplicado no app' : undefined,
           description: `Pacote ${service.name}`,
         });
         return;
@@ -445,16 +501,33 @@ export function BookingScreen({ route, navigation }: Props) {
               </View>
             ) : null}
 
-            {isPackage ? (
-              <PaymentOption
-                selected
-                icon="gift-outline"
-                title="Pacote à vista"
-                subtitle={`${currency(service.price)} · ${service.packageSessionCount || 1} sessões`}
-                accent="#ec4899"
-                onPress={() => setBookingOrigin('SINGLE')}
-              />
-            ) : (
+            {isPackage && !isSchedulingPaidSession ? (
+              <>
+                <Text style={styles.paymentSectionTitle}>Forma de pagamento</Text>
+                {matchingVoucher ? (
+                  <PaymentOption
+                    selected={bookingOrigin === 'VOUCHER'}
+                    icon="gift-outline"
+                    title={voucherPrice === 0 ? 'Usar Voucher — Grátis' : 'Usar Voucher'}
+                    subtitle={
+                      voucherPrice === 0
+                        ? 'Pacote totalmente gratuito'
+                        : `${currency(voucherPrice!)} · de ${currency(service.price)}`
+                    }
+                    accent="#10b981"
+                    onPress={() => setBookingOrigin('VOUCHER')}
+                  />
+                ) : null}
+                <PaymentOption
+                  selected={bookingOrigin === 'SINGLE'}
+                  icon="gift-outline"
+                  title="Pacote à vista"
+                  subtitle={`${currency(service.price)} · ${service.packageSessionCount || 1} sessões`}
+                  accent="#ec4899"
+                  onPress={() => setBookingOrigin('SINGLE')}
+                />
+              </>
+            ) : !isPackage ? (
               <>
             <Text style={styles.paymentSectionTitle}>Forma de pagamento</Text>
 
@@ -502,7 +575,7 @@ export function BookingScreen({ route, navigation }: Props) {
               onPress={() => setBookingOrigin('SINGLE')}
             />
               </>
-            )}
+            ) : null}
 
             <PrimaryButton
               title={isPackage ? 'Escolher datas' : 'Escolher data'}
@@ -719,9 +792,16 @@ export function BookingScreen({ route, navigation }: Props) {
 
         {step === 'review' && (
           <>
-            <Text style={styles.sectionTitle}>Revise antes de confirmar</Text>
+            <Text style={styles.sectionTitle}>
+              {isPackageSessionReview && !isRescheduling ? 'Confirmar agendamento' : 'Revise antes de confirmar'}
+            </Text>
             <View style={styles.reviewCard}>
-              <ReviewRow icon="flower-outline" label="Tratamento" value={service.name} />
+              <ReviewRow
+                icon="flower-outline"
+                label="Tratamento"
+                value={service.name}
+                badge={sessionBadge}
+              />
               <ReviewRow
                 icon="calendar-outline"
                 label="Data"
@@ -729,7 +809,7 @@ export function BookingScreen({ route, navigation }: Props) {
                 suffix={date === localDateKey(new Date()) ? '(Hoje)' : undefined}
               />
               <ReviewRow icon="time-outline" label="Horário" value={time} />
-              {!isRescheduling && (
+              {!isRescheduling && !isPackageSessionReview && (
                 <ReviewRow
                   icon="wallet-outline"
                   label="Pagamento"
@@ -740,7 +820,7 @@ export function BookingScreen({ route, navigation }: Props) {
                   }
                 />
               )}
-              {!isRescheduling && bookingOrigin !== 'SUBSCRIPTION' && (
+              {!isRescheduling && !isPackageSessionReview && bookingOrigin !== 'SUBSCRIPTION' && (
                 <ReviewRow icon="cash-outline" label="Total" value={currency(finalPrice)} />
               )}
             </View>
@@ -749,9 +829,11 @@ export function BookingScreen({ route, navigation }: Props) {
               title={
                 isRescheduling
                   ? 'Confirmar novo horário'
-                  : bookingOrigin === 'SINGLE' || (bookingOrigin === 'VOUCHER' && finalPrice > 0)
-                    ? 'Ir para pagamento'
-                    : 'Confirmar agendamento'
+                  : isSchedulingPaidSession ||
+                      bookingOrigin === 'SUBSCRIPTION' ||
+                      (bookingOrigin === 'VOUCHER' && finalPrice === 0)
+                    ? 'Confirmar agendamento'
+                    : 'Ir para pagamento'
               }
               onPress={submit}
               loading={submitting}
@@ -869,21 +951,30 @@ function ReviewRow({
   label,
   value,
   suffix,
+  badge,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
   suffix?: string;
+  badge?: string;
 }) {
   return (
     <View style={styles.reviewRow}>
       <Ionicons name={icon} size={21} color="#ec4899" />
       <View style={{ flex: 1 }}>
         <Text style={styles.reviewLabel}>{label}</Text>
-        <Text style={styles.reviewValue}>
-          {value}
-          {suffix ? <Text style={styles.reviewValueSuffix}> {suffix}</Text> : null}
-        </Text>
+        <View style={styles.reviewValueRow}>
+          <Text style={styles.reviewValue}>
+            {value}
+            {suffix ? <Text style={styles.reviewValueSuffix}> {suffix}</Text> : null}
+          </Text>
+          {badge ? (
+            <View style={styles.sessionBadge}>
+              <Text style={styles.sessionBadgeText}>{badge}</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
     </View>
   );
@@ -1280,8 +1371,18 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e5e7eb',
   },
   reviewLabel: { fontSize: 12, color: '#6b7280' },
-  reviewValue: { fontSize: 15, color: '#111827', fontWeight: '700', marginTop: 2 },
+  reviewValueRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 2 },
+  reviewValue: { fontSize: 15, color: '#111827', fontWeight: '700' },
   reviewValueSuffix: { color: '#ec4899', fontWeight: '800' },
+  sessionBadge: {
+    backgroundColor: '#fdf2f8',
+    borderWidth: 1,
+    borderColor: '#f9a8d4',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  sessionBadgeText: { color: '#be185d', fontSize: 12, fontWeight: '800' },
   error: {
     color: '#b91c1c',
     backgroundColor: '#fee2e2',

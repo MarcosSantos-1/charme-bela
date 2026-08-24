@@ -1,7 +1,10 @@
+import { Prisma, type PrismaClient, type Voucher } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { logger } from './logger'
 
 const ACTIVE_APPOINTMENT_STATUSES = ['PENDING', 'CONFIRMED'] as const
+
+type Tx = Prisma.TransactionClient | PrismaClient
 
 type VoucherLike = {
   type: string
@@ -10,6 +13,15 @@ type VoucherLike = {
   remainingAmount?: number | null
   isUsed?: boolean
   expiresAt?: Date | null
+  anyService?: boolean
+  serviceId?: string | null
+}
+
+export class VoucherUnavailableError extends Error {
+  constructor(message = 'Voucher indisponível') {
+    super(message)
+    this.name = 'VoucherUnavailableError'
+  }
 }
 
 export function isAmountCreditVoucher(voucher: VoucherLike): boolean {
@@ -30,6 +42,171 @@ export function isCurrentlyAvailableVoucher(voucher: VoucherLike): boolean {
   if (voucher.expiresAt && voucher.expiresAt < new Date()) return false
   if (isAmountCreditVoucher(voucher)) return creditBalance(voucher) > 0.009
   return !voucher.isUsed
+}
+
+export function computeVoucherDiscount(
+  voucher: VoucherLike,
+  price: number,
+  catalogServiceId: string,
+): { finalPrice: number; appliedDiscount: number } {
+  if (voucher.type === 'FREE_MONTH') {
+    throw new VoucherUnavailableError('Voucher de mês grátis não pode ser usado em agendamentos')
+  }
+
+  if (voucher.type === 'FREE_TREATMENT') {
+    if (!(voucher.anyService || voucher.serviceId === catalogServiceId)) {
+      throw new VoucherUnavailableError('Voucher não é válido para este serviço')
+    }
+    return { finalPrice: 0, appliedDiscount: price }
+  }
+
+  if (voucher.type === 'DISCOUNT') {
+    let appliedDiscount = 0
+    if (voucher.discountPercent) {
+      appliedDiscount = price * (voucher.discountPercent / 100)
+    } else if (voucher.discountAmount) {
+      appliedDiscount = Math.min(creditBalance(voucher), price)
+    }
+    return {
+      appliedDiscount,
+      finalPrice: Math.max(0, price - appliedDiscount),
+    }
+  }
+
+  throw new VoucherUnavailableError('Tipo de voucher inválido')
+}
+
+/** Valida voucher (dono, validade, hold, serviço) e calcula o desconto. Não consome. */
+export async function assertVoucherUsable(params: {
+  voucherId: string
+  userId: string
+  serviceId: string
+  price: number
+}): Promise<{ voucher: Voucher; finalPrice: number; appliedDiscount: number }> {
+  const voucher = await prisma.voucher.findUnique({ where: { id: params.voucherId } })
+  if (!voucher) {
+    throw new VoucherUnavailableError('Voucher não encontrado')
+  }
+  if (voucher.userId !== params.userId) {
+    throw new VoucherUnavailableError('Voucher não pertence a este usuário')
+  }
+  if (voucher.isUsed && !(isAmountCreditVoucher(voucher) && creditBalance(voucher) > 0.009)) {
+    throw new VoucherUnavailableError('Voucher já foi utilizado')
+  }
+  if (voucher.expiresAt && voucher.expiresAt < new Date()) {
+    throw new VoucherUnavailableError('Voucher expirado')
+  }
+  if (!isAmountCreditVoucher(voucher)) {
+    if (await voucherHasActiveHold(voucher.id)) {
+      throw new VoucherUnavailableError(
+        'Este voucher está suspenso em outro agendamento. Conclua o pagamento ou cancele a reserva para usá-lo novamente.',
+      )
+    }
+    if (await voucherConsumedByPackage(voucher.id)) {
+      throw new VoucherUnavailableError('Voucher já foi utilizado em um pacote')
+    }
+  }
+
+  const { finalPrice, appliedDiscount } = computeVoucherDiscount(voucher, params.price, params.serviceId)
+  return { voucher, finalPrice, appliedDiscount }
+}
+
+/** Trava o voucher na transação e recalcula o desconto (crédito pode ter mudado). */
+export async function lockVoucherForApply(
+  tx: Tx,
+  voucherId: string,
+  price: number,
+  catalogServiceId: string,
+): Promise<{ appliedDiscount: number; finalPrice: number }> {
+  const locked = await tx.voucher.findUnique({ where: { id: voucherId } })
+  if (!locked) {
+    throw new VoucherUnavailableError('Voucher não encontrado')
+  }
+  if (locked.expiresAt && locked.expiresAt < new Date()) {
+    throw new VoucherUnavailableError('Voucher expirado')
+  }
+  if (isAmountCreditVoucher(locked)) {
+    const remaining = creditBalance(locked)
+    if (remaining <= 0.009) {
+      throw new VoucherUnavailableError('Crédito esgotado')
+    }
+    const appliedDiscount = Math.min(remaining, price)
+    return { appliedDiscount, finalPrice: Math.max(0, price - appliedDiscount) }
+  }
+
+  if (locked.isUsed) {
+    throw new VoucherUnavailableError('Voucher já foi utilizado')
+  }
+  const held = await voucherHasActiveHold(voucherId, tx)
+  if (held) {
+    throw new VoucherUnavailableError(
+      'Este voucher está suspenso em outro agendamento. Conclua o pagamento ou cancele a reserva.',
+    )
+  }
+  if (await voucherConsumedByPackage(voucherId, tx)) {
+    throw new VoucherUnavailableError('Voucher já foi utilizado em um pacote')
+  }
+  return computeVoucherDiscount(locked, price, catalogServiceId)
+}
+
+/** Debita crédito ou marca voucher como usado — na mesma transação do create. */
+export async function debitLockedVoucher(
+  tx: Tx,
+  voucherId: string,
+  appliedDiscount: number,
+): Promise<void> {
+  const locked = await tx.voucher.findUnique({ where: { id: voucherId } })
+  if (!locked) return
+  if (isAmountCreditVoucher(locked)) {
+    const next = Number((creditBalance(locked) - appliedDiscount).toFixed(2))
+    await tx.voucher.update({
+      where: { id: voucherId },
+      data: {
+        remainingAmount: Math.max(0, next),
+        isUsed: next <= 0.009,
+        usedAt: next <= 0.009 ? new Date() : null,
+      },
+    })
+    return
+  }
+  await tx.voucher.update({
+    where: { id: voucherId },
+    data: { isUsed: true, usedAt: new Date() },
+  })
+}
+
+/**
+ * Garante consumo do voucher de um pacote (idempotente).
+ * Cobre o caso em que o desconto entrou no pricePaid mas o débito não persistiu —
+ * o voucher continuava disponível para outros pacotes.
+ */
+export async function ensureVoucherConsumedForPackage(
+  voucherId: string | null | undefined,
+  amountApplied?: number | null,
+): Promise<void> {
+  if (!voucherId) return
+  const voucher = await prisma.voucher.findUnique({ where: { id: voucherId } })
+  if (!voucher) return
+
+  if (isAmountCreditVoucher(voucher)) {
+    const applied = Number(amountApplied || 0)
+    if (applied <= 0.009) return
+    const remaining = creditBalance(voucher)
+    const original = Number(voucher.discountAmount || 0)
+    const alreadyDebited =
+      voucher.remainingAmount != null && remaining <= Number((original - applied + 0.05).toFixed(2))
+    if (alreadyDebited) {
+      if (remaining <= 0.009) await markVoucherUsed(voucherId)
+      return
+    }
+    await debitLockedVoucher(prisma, voucherId, applied)
+    logger.success(`🎫 Crédito ${voucherId} debitado no pacote: R$ ${applied.toFixed(2)}`)
+    return
+  }
+
+  if (!voucher.isUsed) {
+    await markVoucherUsed(voucherId)
+  }
 }
 
 export class MergeCreditsError extends Error {
@@ -101,6 +278,10 @@ export async function mergeReusableCredits(params: {
         where: { voucherId: other.id },
         data: { voucherId: survivor.id },
       })
+      await tx.packagePurchase.updateMany({
+        where: { voucherId: other.id },
+        data: { voucherId: survivor.id },
+      })
       await tx.voucher.update({
         where: { id: other.id },
         data: {
@@ -135,15 +316,34 @@ export async function repairReusableCredits(userId?: string): Promise<number> {
   return result.count
 }
 
-/** Há agendamento ativo (pendente/confirmado) segurando este voucher? */
-export async function voucherHasActiveHold(voucherId: string): Promise<boolean> {
-  const count = await prisma.appointment.count({
+/** Pacote não cancelado já usou este voucher (pago ou ainda pendente). */
+export async function voucherConsumedByPackage(voucherId: string, db: Tx = prisma): Promise<boolean> {
+  const purchaseCount = await db.packagePurchase.count({
     where: {
       voucherId,
-      status: { in: [...ACTIVE_APPOINTMENT_STATUSES] }
-    }
+      status: { notIn: ['CANCELED', 'REFUNDED'] },
+    },
   })
-  return count > 0
+  return purchaseCount > 0
+}
+
+/** Há agendamento ou compra de pacote pendente segurando este voucher? */
+export async function voucherHasActiveHold(voucherId: string, db: Tx = prisma): Promise<boolean> {
+  const appointmentCount = await db.appointment.count({
+    where: {
+      voucherId,
+      status: { in: [...ACTIVE_APPOINTMENT_STATUSES] },
+    },
+  })
+  if (appointmentCount > 0) return true
+  const purchaseCount = await db.packagePurchase.count({
+    where: {
+      voucherId,
+      status: 'PENDING',
+      paymentStatus: 'PENDING',
+    },
+  })
+  return purchaseCount > 0
 }
 
 /** Marca voucher como consumido (pagamento aprovado / tratamento concluído). */
@@ -174,15 +374,16 @@ export async function markVoucherUsed(voucherId: string): Promise<void> {
 export async function releaseVoucherOnCancel(
   voucherId: string | null | undefined,
   amountApplied?: number | null,
+  db: Tx = prisma,
 ): Promise<void> {
   if (!voucherId) return
 
-  const voucher = await prisma.voucher.findUnique({ where: { id: voucherId } })
+  const voucher = await db.voucher.findUnique({ where: { id: voucherId } })
   if (!voucher) return
 
   if (isAmountCreditVoucher(voucher) && amountApplied && amountApplied > 0) {
     const next = Number((creditBalance(voucher) + amountApplied).toFixed(2))
-    await prisma.voucher.update({
+    await db.voucher.update({
       where: { id: voucherId },
       data: {
         remainingAmount: next,
@@ -194,18 +395,18 @@ export async function releaseVoucherOnCancel(
     return
   }
 
-  const stillHeld = await voucherHasActiveHold(voucherId)
+  const stillHeld = await voucherHasActiveHold(voucherId, db)
   if (stillHeld) {
     logger.info(`🎫 Voucher ${voucherId} ainda vinculado a outro agendamento ativo — não liberado`)
     return
   }
 
-  await prisma.voucher.update({
+  await db.voucher.update({
     where: { id: voucherId },
     data: {
       isUsed: false,
-      usedAt: null
-    }
+      usedAt: null,
+    },
   })
   logger.success(`🎫 Voucher ${voucherId} liberado após cancelamento`)
 }

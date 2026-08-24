@@ -2,9 +2,34 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { notifyVoucherReceived } from '../utils/notifications'
-import { isAmountCreditVoucher, isCurrentlyAvailableVoucher, mergeReusableCredits, MergeCreditsError, repairReusableCredits } from '../utils/vouchers'
+import { isAmountCreditVoucher, isCurrentlyAvailableVoucher, mergeReusableCredits, MergeCreditsError, repairReusableCredits, ensureVoucherConsumedForPackage } from '../utils/vouchers'
 
 export async function vouchersRoutes(app: FastifyInstance) {
+  async function healConsumedPackageVouchers(userId?: string) {
+    const purchases = await prisma.packagePurchase.findMany({
+      where: {
+        ...(userId ? { userId } : {}),
+        voucherId: { not: null },
+        status: { notIn: ['CANCELED', 'REFUNDED'] },
+      },
+      select: {
+        voucherId: true,
+        voucherAmountApplied: true,
+        pricePaid: true,
+        packageService: { select: { price: true } },
+      },
+    })
+    for (const purchase of purchases) {
+      try {
+        const stored = Number(purchase.voucherAmountApplied || 0)
+        const inferred = Math.max(0, Number(purchase.packageService?.price || 0) - Number(purchase.pricePaid || 0))
+        await ensureVoucherConsumedForPackage(purchase.voucherId, stored > 0.009 ? stored : inferred)
+      } catch (error) {
+        logger.error('Erro ao reconcilcar voucher de pacote:', error)
+      }
+    }
+  }
+
   // GET - Listar vouchers (com filtros)
   app.get('/vouchers', async (request, reply) => {
     logger.route('GET', '/vouchers')
@@ -16,6 +41,7 @@ export async function vouchersRoutes(app: FastifyInstance) {
       }
 
       await repairReusableCredits(userId)
+      await healConsumedPackageVouchers(userId)
       
       const vouchers = await prisma.voucher.findMany({
         where: {
@@ -55,6 +81,7 @@ export async function vouchersRoutes(app: FastifyInstance) {
     
     try {
       await repairReusableCredits(userId)
+      await healConsumedPackageVouchers(userId)
 
       // Cura holds de vouchers de uso único (cortesia / % ). Crédito em R$ com
       // saldo restante continua disponível — o valor já foi debitado no booking.
@@ -73,6 +100,18 @@ export async function vouchersRoutes(app: FastifyInstance) {
             .filter((id): id is string => Boolean(id))
         )
       ]
+      const pendingPackages = await prisma.packagePurchase.findMany({
+        where: {
+          userId,
+          voucherId: { not: null },
+          status: 'PENDING',
+          paymentStatus: 'PENDING',
+        },
+        select: { voucherId: true },
+      })
+      for (const purchase of pendingPackages) {
+        if (purchase.voucherId) heldIds.push(purchase.voucherId)
+      }
       if (heldIds.length > 0) {
         const heldVouchers = await prisma.voucher.findMany({
           where: { id: { in: heldIds }, isUsed: false },

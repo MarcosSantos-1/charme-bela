@@ -297,6 +297,10 @@ model PackagePurchase {
   paymentExpiresAt    DateTime?
   asaasPaymentId      String?
 
+  voucherId            String?
+  voucher              Voucher?              @relation(fields: [voucherId], references: [id])
+  voucherAmountApplied Float?
+
   appointments        Appointment[]
 
   createdAt           DateTime               @default(now())
@@ -306,6 +310,7 @@ model PackagePurchase {
   @@index([packageServiceId])
   @@index([paymentExpiresAt])
   @@index([asaasPaymentId])
+  @@index([voucherId])
 }
 
 model ProcessedWebhookEvent {
@@ -347,7 +352,8 @@ model Voucher {
   expiresAt       DateTime?     // Data de expiração
   
   // Relacionamentos
-  appointments    Appointment[]
+  appointments     Appointment[]
+  packagePurchases PackagePurchase[]
   
   // Observações
   grantedBy       String        // ID do admin que concedeu

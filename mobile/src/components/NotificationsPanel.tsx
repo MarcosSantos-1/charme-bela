@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
+  AppState,
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -94,6 +95,10 @@ export function resolveNotificationNav(
   return null;
 }
 
+const POLL_INTERVAL_MS = 30_000;
+/** Teto do backoff: 30s → 4min enquanto a rede estiver fora. */
+const MAX_BACKOFF_STEPS = 3;
+
 interface NotificationsPanelProps {
   visible: boolean;
   onClose: () => void;
@@ -112,6 +117,7 @@ export function NotificationsPanel({
   const [items, setItems] = useState<UiNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const failuresRef = useRef(0);
 
   const unreadCount = items.filter((n) => !n.read).length;
 
@@ -124,6 +130,7 @@ export function NotificationsPanel({
     if (!silent) setLoading(true);
     try {
       const data = await getNotifications({ userId, limit: 50 });
+      failuresRef.current = 0;
       const sorted = [...data].sort(
         (a: AppNotification, b: AppNotification) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
@@ -141,7 +148,15 @@ export function NotificationsPanel({
       setItems(formatted);
       onUnreadCountChange?.(formatted.filter((n) => !n.read).length);
     } catch (error) {
-      console.error('Erro ao carregar notificações:', error);
+      failuresRef.current += 1;
+      // Poll contínuo: sem isso uma queda de rede enche o console com a
+      // mesma linha até o app ser reiniciado.
+      if (failuresRef.current === 1 || failuresRef.current % 10 === 0) {
+        console.error(
+          `Erro ao carregar notificações (falha ${failuresRef.current}):`,
+          error instanceof Error ? error.message : error,
+        );
+      }
       if (!silent) setItems([]);
     } finally {
       setLoading(false);
@@ -151,9 +166,35 @@ export function NotificationsPanel({
 
   useEffect(() => {
     if (!userId) return;
-    void load(true);
-    const interval = setInterval(() => void load(true), 30000);
-    return () => clearInterval(interval);
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const schedule = () => {
+      const steps = Math.min(failuresRef.current, MAX_BACKOFF_STEPS);
+      timer = setTimeout(tick, POLL_INTERVAL_MS * 2 ** steps);
+    };
+
+    const tick = async () => {
+      if (cancelled) return;
+      // Em background o poll não serve para nada (e o push cobre o aviso).
+      if (AppState.currentState === 'active') await load(true);
+      if (!cancelled) schedule();
+    };
+
+    void tick();
+
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' || cancelled) return;
+      failuresRef.current = 0;
+      void load(true);
+    });
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      appStateSub.remove();
+    };
   }, [userId, load]);
 
   useEffect(() => {

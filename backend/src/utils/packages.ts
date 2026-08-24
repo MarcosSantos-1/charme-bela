@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { prisma } from '../lib/prisma'
+import { releaseVoucherOnCancel } from './vouchers'
 
 export type PackageItemSnapshot = {
   serviceId: string
@@ -177,6 +178,7 @@ export async function cancelUnpaidPackagePurchase(tx: Tx, purchaseId: string, ca
   })
   if (!purchase) return
   if (purchase.paymentStatus === 'PAID') return
+  if (purchase.status === 'CANCELED' || purchase.status === 'REFUNDED') return
 
   await tx.packagePurchase.update({
     where: { id: purchaseId },
@@ -201,6 +203,8 @@ export async function cancelUnpaidPackagePurchase(tx: Tx, purchaseId: string, ca
       },
     })
   }
+
+  await releaseVoucherOnCancel(purchase.voucherId, purchase.voucherAmountApplied, tx)
 }
 
 export async function markPackagePurchasePaid(

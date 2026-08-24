@@ -396,6 +396,7 @@ export async function createPayment(input: {
   description: string
   externalReference: string
   billingType?: AsaasBillingType
+  notificationDisabled?: boolean
 }) {
   return asaasFetch<AsaasPayment>('/payments', {
     method: 'POST',
@@ -407,6 +408,7 @@ export async function createPayment(input: {
       description: input.description.slice(0, 500),
       externalReference: input.externalReference.slice(0, 100),
       postalService: false,
+      notificationDisabled: input.notificationDisabled ?? false,
     }),
   })
 }

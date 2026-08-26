@@ -1,4 +1,5 @@
 import { cpfDigits, maskCpf } from '../../lib/cpf';
+import { normalizePersonName } from '../../lib/userDisplay';
 
 export type SexValue = 'female' | 'male' | 'other' | 'prefer_not';
 export type YesNo = 'yes' | 'no';
@@ -96,7 +97,8 @@ export function createInitialState(prefill?: {
 }): AnamnesisFormState {
   const looksPhone = (v?: string) => Boolean(v && /^\+?\d[\d\s().-]{7,}$/.test(v.trim()));
   return {
-    fullName: prefill?.name && !looksPhone(prefill.name) ? prefill.name : '',
+    fullName:
+      prefill?.name && !looksPhone(prefill.name) ? normalizePersonName(prefill.name) : '',
     birthDate: '',
     sex: null,
     phone: prefill?.phone || '',
@@ -229,7 +231,7 @@ export function toBackendPayload(state: AnamnesisFormState) {
   return {
     schemaVersion: 2,
     personalData: {
-      fullName: state.fullName.trim(),
+      fullName: normalizePersonName(state.fullName),
       birthDate: state.birthDate.trim(),
       sex: state.sex,
       phone: state.phone.trim(),
@@ -323,7 +325,7 @@ export function fromBackendForm(
 
   return {
     ...base,
-    fullName: p.fullName || p.name || base.fullName,
+    fullName: normalizePersonName(p.fullName || p.name || base.fullName),
     birthDate: p.birthDate || '',
     sex: p.sex || null,
     phone: p.phone || base.phone,

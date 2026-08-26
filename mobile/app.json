@@ -20,7 +20,8 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "br.com.charmebela.app",
-      "googleServicesFile": "./GoogleService-Info.plist"
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "com.charmebela.app",
@@ -40,6 +41,7 @@
     },
     "plugins": [
       "expo-web-browser",
+      "expo-apple-authentication",
       "./plugins/withWindowsCmakeObjectPathMax",
       [
         "expo-notifications",

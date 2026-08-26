@@ -12,8 +12,7 @@ import {
   assertSubscriptionCapacity,
   PlanQuotaError,
 } from '../utils/planUsage'
-import {
-  notifyAppointmentConfirmed,
+import { notifyAppointmentConfirmed,
   notifyAppointmentCanceled,
   notifyAppointmentRescheduled,
   notifyAppointmentCompleted,
@@ -25,6 +24,7 @@ import { markVoucherUsed, releaseVoucherOnCancel, VoucherUnavailableError, asser
 import { cancelUnpaidPackagePurchase, releaseSessionOnCancel } from '../utils/packages'
 import { attachCancelPolicies, resolveCancelPolicy, minHoursFromPolicy } from '../utils/cancelPolicy'
 import { settlePaidSingleCancel, retryAppointmentRefund } from '../utils/settlement'
+import { normalizePersonName } from '../utils/names'
 
 // Lançado dentro da transação quando o slot foi ocupado por outra requisição
 class SlotTakenError extends Error {
@@ -332,7 +332,17 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       const withPolicy = await attachCancelPolicies(appointments)
       return reply.status(200).send({
         success: true,
-        data: withPolicy
+        data: withPolicy.map((apt) =>
+          apt.user
+            ? {
+                ...apt,
+                user: {
+                  ...apt.user,
+                  name: normalizePersonName(apt.user.name) || apt.user.name,
+                },
+              }
+            : apt
+        )
       })
     } catch (error) {
       logger.error('Erro ao buscar agendamentos:', error)

@@ -12,13 +12,15 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   updateProfile as firebaseUpdateProfile,
-  sendEmailVerification
+  sendEmailVerification,
+  getAdditionalUserInfo
 } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 import { User } from '@/types'
 import toast from 'react-hot-toast'
 import { saveAccount } from '@/lib/accountStorage'
 import { getUserByFirebaseUid, getOrCreateUserFromFirebase } from '@/lib/api'
+import { normalizePersonName } from '@/lib/names'
 
 interface AuthContextType {
   user: User | null
@@ -71,6 +73,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         if (firebaseUser) {
           setFirebaseUser(firebaseUser)
+
+          const email = firebaseUser.email
+          if (!email) {
+            toast.error('Não foi possível obter o e-mail desta conta. Tente outro método de login.')
+            setLoading(false)
+            return
+          }
           
           try {
             // 🚀 INTEGRAÇÃO COM BACKEND POSTGRESQL
@@ -78,8 +87,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             
             const backendUser = await getOrCreateUserFromFirebase({
               uid: firebaseUser.uid,
-              email: firebaseUser.email!,
-              displayName: firebaseUser.displayName || firebaseUser.email!.split('@')[0],
+              email,
+              displayName: normalizePersonName(firebaseUser.displayName) || email.split('@')[0],
               photoURL: firebaseUser.photoURL || undefined
             })
             
@@ -193,23 +202,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const provider = new OAuthProvider('apple.com')
       provider.addScope('email')
       provider.addScope('name')
-      
+      provider.setCustomParameters({ locale: 'pt_BR' })
+
       const result = await signInWithPopup(auth, provider)
+      const extra = getAdditionalUserInfo(result)
+      const profile = extra?.profile as
+        | { name?: { firstName?: string; lastName?: string } }
+        | undefined
+      const appleName = normalizePersonName(
+        [profile?.name?.firstName, profile?.name?.lastName].filter(Boolean).join(' ')
+      )
+
+      const firebaseName = normalizePersonName(result.user.displayName)
+      const nameToSave = appleName || firebaseName
+      if (nameToSave && result.user.displayName !== nameToSave) {
+        try {
+          await firebaseUpdateProfile(result.user, { displayName: nameToSave })
+        } catch {
+          // nome é opcional; o backend usa fallback
+        }
+      }
+
       console.log('✅ Login com Apple realizado:', result.user.email)
       toast.success('Login com Apple realizado!')
     } catch (error: any) {
       console.error('❌ Erro ao fazer login com Apple:', error)
-      
+
       if (error.code === 'auth/operation-not-allowed') {
-        toast.error('Login com Apple não está ativado. Entre em contato com o suporte.')
+        toast.error('Login com Apple ainda não está ativado no Firebase.')
       } else if (error.code === 'auth/popup-closed-by-user') {
         toast.error('Login cancelado.')
       } else if (error.code === 'auth/popup-blocked') {
         toast.error('Popup bloqueado. Permita popups para este site.')
       } else if (error.code === 'auth/unauthorized-domain') {
         toast.error('Domínio não autorizado. Configure o Firebase primeiro.')
+      } else if (error.code === 'auth/account-exists-with-different-credential') {
+        toast.error('Já existe uma conta com este e-mail. Entre com Google ou e-mail/senha.')
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        return
       } else {
-        toast.error('Login com Apple temporariamente indisponível. Tente login com Google ou email.')
+        toast.error('Erro ao fazer login com Apple. Tente novamente.')
       }
       throw error
     }

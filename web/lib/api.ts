@@ -1,5 +1,7 @@
 // Cliente da API - centraliza todas as chamadas ao backend
 
+import { normalizePersonName } from '@/lib/names'
+
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333').replace(/\/$/, '')
 
 // ============================================
@@ -1108,24 +1110,27 @@ export async function getOrCreateUserFromFirebase(firebaseUser: {
   displayName: string
   photoURL?: string
 }): Promise<User> {
+  const cleanedDisplayName = normalizePersonName(firebaseUser.displayName)
+
   try {
-    // Tenta buscar usuário pelo Firebase UID
     const user = await getUserByFirebaseUid(firebaseUser.uid)
+    const cleanedExisting = normalizePersonName(user.name)
+    if (cleanedExisting && cleanedExisting !== user.name) {
+      return await updateUser(user.id, { name: cleanedExisting })
+    }
     return user
   } catch (error) {
-    // Se não encontrar, cria novo usuário
     console.log('Usuário não encontrado, criando novo...')
     
-    // Pegar dados pendentes do sessionStorage (se houver)
     let phone = ''
-    let name = firebaseUser.displayName || firebaseUser.email.split('@')[0]
+    let name = cleanedDisplayName || firebaseUser.email.split('@')[0]
     
     try {
       const pendingData = sessionStorage.getItem('pendingUserData')
       if (pendingData) {
         const parsed = JSON.parse(pendingData)
         phone = parsed.phone || ''
-        name = parsed.name || name
+        name = normalizePersonName(parsed.name) || name
       }
     } catch (e) {
       console.log('Sem dados pendentes no sessionStorage')

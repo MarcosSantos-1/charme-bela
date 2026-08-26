@@ -298,8 +298,6 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
           </div>
         </div>
 
-        </div>
-
         {isPackage ? (
           <div className="rounded-xl border-2 border-orange-200 bg-orange-50/60 p-4 space-y-4">
             <div className="flex items-center gap-2">

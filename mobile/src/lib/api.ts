@@ -14,7 +14,7 @@ import type {
   Voucher,
   PackagePurchase,
 } from '../types/commercial';
-import { looksLikePhoneName } from './userDisplay';
+import { looksLikePhoneName, normalizePersonName } from './userDisplay';
 
 // Base do backend (rotas são "flat", sem prefixo /api).
 // Dev: iOS simulator usa localhost; em device físico/Android troque por IP da máquina.
@@ -140,15 +140,22 @@ export async function getOrCreateUserFromFirebase(firebaseUser: {
   displayName?: string;
   phone?: string;
 }): Promise<User> {
+  const name = (() => {
+    const raw = normalizePersonName(firebaseUser.displayName);
+    return raw && !looksLikePhoneName(raw) ? raw : 'Cliente';
+  })();
+
   try {
-    return await getUserByFirebaseUid(firebaseUser.uid);
+    const existing = await getUserByFirebaseUid(firebaseUser.uid);
+    const existingName = normalizePersonName(existing.name);
+    if (existingName && existingName !== existing.name) {
+      return await updateUser(existing.id, { name: existingName });
+    }
+    return existing;
   } catch (error: any) {
     if (error?.response?.status && error.response.status !== 404) {
       throw error;
     }
-    const rawName = firebaseUser.displayName?.trim();
-    const name =
-      rawName && !looksLikePhoneName(rawName) ? rawName : 'Cliente';
     return await createUser({
       name,
       email: firebaseUser.email,

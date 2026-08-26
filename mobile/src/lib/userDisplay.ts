@@ -6,6 +6,28 @@ export function isPhoneLocalEmail(email?: string | null): boolean {
   return Boolean(email && email.endsWith(PHONE_LOCAL_SUFFIX));
 }
 
+/**
+ * Apple/Firebase OAuth às vezes envia o nome em x-www-form-urlencoded
+ * ("Marcos+Vinicius+Silva") em vez de espaços.
+ */
+export function normalizePersonName(value?: string | null): string {
+  if (!value) return '';
+  let name = value.trim();
+  if (!name) return '';
+
+  if (/%[0-9A-Fa-f]{2}/.test(name)) {
+    try {
+      name = decodeURIComponent(name);
+    } catch {
+      // mantém o valor atual
+    }
+  }
+
+  // Apple/Firebase: espaço vira '+' — inclusive misturado ("Marcos+Vinicius Silva+dos")
+  name = name.replace(/\+/g, ' ');
+  return name.replace(/\s+/g, ' ').trim();
+}
+
 /** True when a string looks like a phone number (E.164 or digits-only), not a person name. */
 export function looksLikePhoneName(value?: string | null): boolean {
   if (!value) return false;
@@ -59,7 +81,7 @@ export function formatPhoneDisplay(phone?: string | null): string {
 
 /** Prefer real name; never show raw phone as "name". */
 export function displayUserName(user?: { name?: string | null } | null, fallback = 'Usuária'): string {
-  const name = user?.name?.trim();
+  const name = normalizePersonName(user?.name);
   if (!name || looksLikePhoneName(name)) return fallback;
   return name;
 }

@@ -396,10 +396,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'white',
     marginBottom: 4,
+    textAlign: 'center',
+    alignSelf: 'stretch',
+    paddingHorizontal: 8,
   },
   userEmail: {
     fontSize: 14,
     color: '#fce7f3',
+    textAlign: 'center',
   },
   clinicButton: {
     flexDirection: 'row',

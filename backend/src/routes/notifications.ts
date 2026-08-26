@@ -2,6 +2,26 @@ import { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { sendPushForUserNotification } from '../utils/expoPush'
+import { normalizePersonName, normalizePlusInText } from '../utils/names'
+
+function presentNotification<T extends { type: string; title: string; message: string; user?: { name: string } | null }>(
+  item: T
+): T {
+  let title = normalizePlusInText(item.title)
+  let message = normalizePlusInText(item.message)
+  if (item.type === 'WELCOME') {
+    title = title.replace(/^Bem-vinda,/, 'Bem-vinda(o),')
+    message = message.replace('Charme & Bela Club', 'Charme & Bela')
+  }
+  return {
+    ...item,
+    title,
+    message,
+    user: item.user
+      ? { ...item.user, name: normalizePersonName(item.user.name) || item.user.name }
+      : item.user,
+  }
+}
 
 export async function notificationRoutes(app: FastifyInstance) {
   // ============================================
@@ -51,7 +71,7 @@ export async function notificationRoutes(app: FastifyInstance) {
       
       return reply.status(200).send({
         success: true,
-        data: notifications
+        data: notifications.map((item) => presentNotification(item))
       })
     } catch (error: any) {
       logger.error('Erro ao buscar notificações:', error)
@@ -135,7 +155,14 @@ export async function notificationRoutes(app: FastifyInstance) {
       
       return reply.status(200).send({
         success: true,
-        data: notification
+        data: {
+          ...notification,
+          title: normalizePlusInText(notification.title),
+          message: normalizePlusInText(notification.message),
+          user: notification.user
+            ? { ...notification.user, name: normalizePersonName(notification.user.name) || notification.user.name }
+            : notification.user,
+        }
       })
     } catch (error: any) {
       logger.error('Erro ao buscar notificação:', error)

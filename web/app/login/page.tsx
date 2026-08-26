@@ -19,7 +19,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([])
   const [showAccountSelector, setShowAccountSelector] = useState(true)
-  const { signIn, signInWithGoogle, user, firebaseUser } = useAuth()
+  const { signIn, signInWithGoogle, signInWithApple, user, firebaseUser } = useAuth()
   const router = useRouter()
 
   // Redirecionar se já estiver logado
@@ -59,6 +59,16 @@ export default function LoginPage() {
       localStorage.removeItem('adminSession')
       
       await signInWithGoogle()
+      router.push('/cliente')
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  const handleAppleLogin = async () => {
+    try {
+      localStorage.removeItem('adminSession')
+      await signInWithApple()
       router.push('/cliente')
     } catch (error) {
       console.error(error)
@@ -286,23 +296,6 @@ export default function LoginPage() {
               </span>
             </button>
 
-            {/* 
-              BOTÕES DESABILITADOS - Precisam de configuração externa
-              
-              🍎 Apple Sign-In:
-              - Requer Apple Developer Account ($99/ano)
-              - Configurar Service ID em https://developer.apple.com
-              - Adicionar callback: https://charme-bela-33906.firebaseapp.com/__/auth/handler
-              
-              📘 Facebook Login:
-              - Criar app em https://developers.facebook.com
-              - Pegar App ID e App Secret
-              - Adicionar redirect URI: https://charme-bela-33906.firebaseapp.com/__/auth/handler
-              
-              Para ativar: descomente o código abaixo e configure as contas
-            */}
-            
-            {/* 
             <button
               type="button"
               onClick={handleAppleLogin}
@@ -315,7 +308,6 @@ export default function LoginPage() {
                 Continuar com Apple
               </span>
             </button>
-            */}
           </div>
 
           {/* Divider */}

@@ -6,6 +6,8 @@
  * (hoje o wizard web ainda grava o shape v1).
  */
 
+import { normalizePersonName } from '@/lib/names'
+
 export interface FrontendAnamnesisData {
   // Step 1: Dados Pessoais
   fullName?: string
@@ -142,7 +144,7 @@ export function frontendToBackend(
     userId,
     schemaVersion: 1,
     personalData: {
-      fullName: frontendData.fullName || '',
+      fullName: normalizePersonName(frontendData.fullName),
       birthDate: frontendData.birthDate?.toISOString() || '',
       phone: frontendData.phone || '',
       email: frontendData.email || '',
@@ -237,7 +239,7 @@ export function backendToFrontend(backendData: any): FrontendAnamnesisData {
       : boolToYesNo(h.pregnantOrBreastfeeding)
 
   return {
-    fullName: p.fullName || p.name || '',
+    fullName: normalizePersonName(p.fullName || p.name || ''),
     birthDate: p.birthDate
       ? // DD/MM/YYYY from mobile or ISO from web
         /^\d{2}\/\d{2}\/\d{4}$/.test(p.birthDate)

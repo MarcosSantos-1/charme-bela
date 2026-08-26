@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma'
 import { logger } from './logger'
 import { sendPushForUserNotification } from './expoPush'
+import { normalizePersonName } from './names'
 
 // ============================================
 // TIPOS E INTERFACES
@@ -540,7 +541,7 @@ export async function notifyAdminNewClientRegistered(clientData: {
     userId: null, // Admin
     type: 'NEW_CLIENT_REGISTERED',
     title: 'Novo Cliente Cadastrado',
-    message: `${clientData.clientName} (${clientData.email}) acabou de se cadastrar no sistema!`,
+    message: `${normalizePersonName(clientData.clientName) || clientData.clientName} (${clientData.email}) acabou de se cadastrar no sistema!`,
     icon: 'USER',
     priority: 'NORMAL',
     actionUrl: '/admin/atividades',
@@ -554,11 +555,12 @@ export async function notifyAdminNewClientRegistered(clientData: {
 // ============================================
 
 export async function notifyWelcome(userId: string, userName: string) {
+  const name = normalizePersonName(userName) || userName
   return createNotification({
     userId,
     type: 'WELCOME',
-    title: `Bem-vinda, ${userName}! 💖`,
-    message: 'Estamos felizes em ter você no Charme & Bela Club! Explore nossos tratamentos e agende seu primeiro horário.',
+    title: `Bem-vinda(o), ${name}! 💖`,
+    message: 'Estamos felizes em ter você no Charme & Bela! Explore nossos tratamentos e agende seu primeiro horário.',
     icon: 'SPARKLES',
     priority: 'HIGH',
     actionUrl: '/cliente/servicos',

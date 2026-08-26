@@ -4,6 +4,16 @@ import { prisma } from '../lib/prisma'
 import { logger } from '../utils/logger'
 import { notifyAdminNewClientRegistered, notifyWelcome } from '../utils/notifications'
 import { buildRemainingByMonth } from '../utils/planUsage'
+import { normalizePersonName } from '../utils/names'
+
+function presentUser<T extends { id: string; name: string }>(user: T): T {
+  const name = normalizePersonName(user.name)
+  if (name && name !== user.name) {
+    void prisma.user.update({ where: { id: user.id }, data: { name } }).catch(() => {})
+    return { ...user, name }
+  }
+  return user
+}
 
 export async function usersRoutes(app: FastifyInstance) {
   // GET - Buscar aniversariantes do mês
@@ -66,7 +76,7 @@ export async function usersRoutes(app: FastifyInstance) {
           
           return {
             id: user.id,
-            name: user.name,
+            name: normalizePersonName(user.name) || user.name,
             email: user.email,
             birthDate: personalData.birthDate,
             birthDay: birthDate.getDate(),
@@ -131,7 +141,7 @@ export async function usersRoutes(app: FastifyInstance) {
       logger.success(`Retornando ${users.length} usuários`)
       return reply.status(200).send({
         success: true,
-        data: users
+        data: users.map((user) => presentUser(user))
       })
     } catch (error) {
       logger.error('Erro ao buscar usuários:', error)
@@ -195,7 +205,7 @@ export async function usersRoutes(app: FastifyInstance) {
       logger.success(`Usuário encontrado: ${user.name}`)
       return reply.status(200).send({
         success: true,
-        data: user
+        data: presentUser(user)
       })
     } catch (error) {
       logger.error('Erro ao buscar usuário:', error)
@@ -280,7 +290,7 @@ export async function usersRoutes(app: FastifyInstance) {
       logger.success(`Usuário encontrado: ${user.name}`)
       return reply.status(200).send({
         success: true,
-        data: userData
+        data: presentUser(userData)
       })
     } catch (error) {
       logger.error('Erro ao buscar usuário:', error)
@@ -329,7 +339,7 @@ export async function usersRoutes(app: FastifyInstance) {
       
       const user = await prisma.user.create({
         data: {
-          name,
+          name: normalizePersonName(name) || name,
           email,
           phone,
           firebaseUid,
@@ -445,7 +455,7 @@ export async function usersRoutes(app: FastifyInstance) {
       const user = await prisma.user.update({
         where: { id },
         data: {
-          ...(name && { name }),
+          ...(name && { name: normalizePersonName(name) || name }),
           ...(nextEmail && { email: nextEmail }),
           ...(phone !== undefined && { phone }),
           ...(cpf !== undefined && { cpf: cpf ? cpf.replace(/\D/g, '') : null }),

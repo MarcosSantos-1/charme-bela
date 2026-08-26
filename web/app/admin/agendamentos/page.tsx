@@ -601,9 +601,10 @@ export default function AgendamentosPage() {
                         } else if (isPackage) {
                           bgColor = 'bg-orange-100'
                           borderColor = 'border-orange-600'
-                          textColor = 'text-orange-900'
-                          textSecondary = 'text-orange-700'
+                          hoverBorder = 'hover:border-orange-500'
+                          timeBg = 'bg-orange-600'
                           badge = '🎁'
+                          badgeBg = 'bg-orange-200 text-orange-800'
                         } else if (isClientSingle) {
                           bgColor = 'bg-blue-50'
                           borderColor = 'border-blue-300'

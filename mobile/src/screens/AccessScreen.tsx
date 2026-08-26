@@ -25,6 +25,12 @@ import { logoSource } from '../assets/brandAssets';
 import { firebaseConfig } from '../lib/firebase';
 import type { AuthStackParamList } from '../navigation/AuthNavigator';
 import { KeyboardForm, dismissKeyboard } from '../components/KeyboardForm';
+import {
+  appleAuthErrorMessage,
+  appleAuthNeedsDevBuild,
+  isAppleAuthCanceled,
+  requestAppleIdentity,
+} from '../lib/appleAuth';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -65,7 +71,7 @@ function PhoneField({
 
 export function AccessScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
-  const { signInWithGoogleIdToken, sendPhoneVerification, confirmPhoneCode } = useAuth();
+  const { signInWithGoogleIdToken, signInWithAppleIdentityToken, sendPhoneVerification, confirmPhoneCode } = useAuth();
   const [step, setStep] = useState<Step>('methods');
   const [loading, setLoading] = useState(false);
   const [phone, setPhone] = useState('');
@@ -173,8 +179,31 @@ export function AccessScreen() {
     }
   };
 
-  const handleApple = () => {
-    // Stub até Apple Developer / expo-apple-authentication
+  const handleApple = async () => {
+    if (Platform.OS !== 'ios') {
+      Alert.alert(
+        'Disponível no iPhone e no site',
+        'No Android, entre com Google ou celular. O login com Apple funciona no iPhone e em charmebela.com.br.'
+      );
+      return;
+    }
+    if (appleAuthNeedsDevBuild()) {
+      Alert.alert(
+        'Build nativo necessário',
+        'O login com Apple não funciona no Expo Go. Use um dev build (npx expo run:ios).'
+      );
+      return;
+    }
+    setLoading(true);
+    try {
+      const apple = await requestAppleIdentity();
+      await signInWithAppleIdentityToken(apple.identityToken, apple.rawNonce, apple.fullName);
+    } catch (e: any) {
+      if (isAppleAuthCanceled(e)) return;
+      Alert.alert('Não foi possível entrar', appleAuthErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSendCode = async () => {
@@ -299,16 +328,38 @@ export function AccessScreen() {
                   )}
                 </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.btn, styles.btnApple]} onPress={handleApple} activeOpacity={0.9}>
-                  <Ionicons name="logo-apple" size={20} color={brand.white} />
-                  <Text style={styles.btnAppleText}>Continuar com Apple</Text>
+                <TouchableOpacity
+                  style={[styles.btn, styles.btnApple, loading && styles.btnDisabled]}
+                  onPress={handleApple}
+                  disabled={loading}
+                  activeOpacity={0.9}
+                >
+                  {loading && step === 'methods' ? (
+                    <ActivityIndicator color={brand.white} />
+                  ) : (
+                    <>
+                      <Ionicons name="logo-apple" size={20} color={brand.white} />
+                      <Text style={styles.btnAppleText}>Continuar com Apple</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </>
             ) : (
               <>
-                <TouchableOpacity style={[styles.btn, styles.btnApple]} onPress={handleApple} activeOpacity={0.9}>
-                  <Ionicons name="logo-apple" size={20} color={brand.white} />
-                  <Text style={styles.btnAppleText}>Continuar com Apple</Text>
+                <TouchableOpacity
+                  style={[styles.btn, styles.btnApple, loading && styles.btnDisabled]}
+                  onPress={handleApple}
+                  disabled={loading}
+                  activeOpacity={0.9}
+                >
+                  {loading && step === 'methods' ? (
+                    <ActivityIndicator color={brand.white} />
+                  ) : (
+                    <>
+                      <Ionicons name="logo-apple" size={20} color={brand.white} />
+                      <Text style={styles.btnAppleText}>Continuar com Apple</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
 
                 <TouchableOpacity

@@ -11,6 +11,7 @@ import {
   GoogleAuthProvider,
   PhoneAuthProvider,
   EmailAuthProvider,
+  OAuthProvider,
   signInWithCredential,
   linkWithCredential,
   type User as FirebaseUser,
@@ -19,7 +20,7 @@ import {
 import * as WebBrowser from 'expo-web-browser';
 import { auth } from '../lib/firebase';
 import { getOrCreateUserFromFirebase, getUserByFirebaseUid, updateUser, User } from '../lib/api';
-import { looksLikePhoneName } from '../lib/userDisplay';
+import { looksLikePhoneName, normalizePersonName } from '../lib/userDisplay';
 import {
   clearPushTokenOnBackend,
   syncPushTokenToBackend,
@@ -51,6 +52,12 @@ interface AuthContextType {
   signUp: (email: string, password: string, name: string, phone?: string) => Promise<void>;
   /** Completa login Google a partir do id_token do expo-auth-session. */
   signInWithGoogleIdToken: (idToken: string) => Promise<void>;
+  /** Completa login Apple a partir do identityToken nativo + nonce. */
+  signInWithAppleIdentityToken: (
+    idToken: string,
+    rawNonce: string,
+    displayName?: string
+  ) => Promise<void>;
   /** Envia SMS; retorna verificationId para confirmar depois. */
   sendPhoneVerification: (
     e164Phone: string,
@@ -59,6 +66,8 @@ interface AuthContextType {
   confirmPhoneCode: (verificationId: string, code: string) => Promise<void>;
   /** Vincula Google à conta já logada (recuperação / segundo método). */
   linkGoogleIdToken: (idToken: string) => Promise<void>;
+  /** Vincula Apple à conta já logada. */
+  linkAppleIdentityToken: (idToken: string, rawNonce: string) => Promise<void>;
   /** Vincula e-mail+senha à conta (recuperação; não vira login principal na UI). */
   linkEmailPassword: (email: string, password: string) => Promise<void>;
   /** Envia SMS para vincular telefone à conta atual. */
@@ -83,6 +92,9 @@ export function firebaseLinkErrorMessage(error: any): string {
   }
   if (code.includes('email-already-in-use')) {
     return 'Este e-mail já está em uso por outra conta.';
+  }
+  if (code.includes('account-exists-with-different-credential')) {
+    return 'Já existe uma conta com este e-mail. Entre com o método original (Google, e-mail ou telefone).';
   }
   if (code.includes('provider-already-linked')) {
     return 'Esse método já está vinculado a esta conta.';
@@ -143,15 +155,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Splash entre login Firebase e home/anamnese (aguarda sync com backend)
       setLoading(true);
       try {
+        const fromApple = normalizePersonName(pendingProfile.current?.name);
+        const fromFirebase =
+          fbUser.displayName && !looksLikePhoneName(fbUser.displayName)
+            ? normalizePersonName(fbUser.displayName)
+            : '';
         const backendUser = await getOrCreateUserFromFirebase({
           uid: fbUser.uid,
           email,
-          displayName:
-            (fbUser.displayName && !looksLikePhoneName(fbUser.displayName)
-              ? fbUser.displayName
-              : undefined) ||
-            pendingProfile.current?.name ||
-            undefined,
+          displayName: fromApple || fromFirebase || undefined,
           phone: pendingProfile.current?.phone || fbUser.phoneNumber || undefined,
         });
         pendingProfile.current = null;
@@ -213,6 +225,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signInWithCredential(auth, credential);
   }, []);
 
+  const signInWithAppleIdentityToken = useCallback(
+    async (idToken: string, rawNonce: string, displayName?: string) => {
+      if (displayName) {
+        pendingProfile.current = {
+          ...pendingProfile.current,
+          name: normalizePersonName(displayName),
+        };
+      }
+      const provider = new OAuthProvider('apple.com');
+      const credential = provider.credential({
+        idToken,
+        rawNonce,
+      });
+      const cred = await signInWithCredential(auth, credential);
+      const cleanedName = normalizePersonName(displayName);
+      if (cleanedName && (!cred.user.displayName || cred.user.displayName.includes('+'))) {
+        try {
+          await updateProfile(cred.user, { displayName: cleanedName });
+        } catch {
+          // nome é opcional
+        }
+      }
+    },
+    []
+  );
+
   const sendPhoneVerification = useCallback(
     async (e164Phone: string, verifier: ApplicationVerifier): Promise<string> => {
       pendingProfile.current = { phone: e164Phone };
@@ -231,6 +269,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const current = auth.currentUser;
     if (!current) throw new Error('Faça login antes de vincular o Google.');
     const credential = GoogleAuthProvider.credential(idToken);
+    await linkWithCredential(current, credential);
+  }, []);
+
+  const linkAppleIdentityToken = useCallback(async (idToken: string, rawNonce: string) => {
+    const current = auth.currentUser;
+    if (!current) throw new Error('Faça login antes de vincular a Apple.');
+    const provider = new OAuthProvider('apple.com');
+    const credential = provider.credential({
+      idToken,
+      rawNonce,
+    });
     await linkWithCredential(current, credential);
   }, []);
 
@@ -317,9 +366,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signIn,
         signUp,
         signInWithGoogleIdToken,
+        signInWithAppleIdentityToken,
         sendPhoneVerification,
         confirmPhoneCode,
         linkGoogleIdToken,
+        linkAppleIdentityToken,
         linkEmailPassword,
         sendPhoneLinkVerification,
         confirmPhoneLink,

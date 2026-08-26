@@ -9,6 +9,7 @@ import { Button } from '@/components/Button'
 import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
 import { frontendToBackend, FrontendAnamnesisData } from '@/lib/adapters/anamnesisAdapter'
+import { normalizePersonName } from '@/lib/names'
 
 // Steps Components
 import Step1DadosPessoais from './steps/Step1DadosPessoais'
@@ -52,7 +53,7 @@ export default function AnamnesePage() {
         if (error.message?.includes('não encontrada')) {
           console.log('ℹ️ Nova anamnese, preenchendo dados do usuário')
           setFormData({
-            fullName: user.name || '',
+            fullName: normalizePersonName(user.name),
             email: user.email || '',
             phone: user.phone || ''
           })

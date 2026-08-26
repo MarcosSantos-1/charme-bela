@@ -29,7 +29,7 @@ import {
 import { saveAnamnesis, updateUser } from '../../lib/api';
 import { getApiErrorMessage } from '../../types/commercial';
 import { brand } from '../../theme/brand';
-import { isPlausibleBrPhone, isValidContactEmail, phonePrefillFromUser } from '../../lib/userDisplay';
+import { isPlausibleBrPhone, isValidContactEmail, normalizePersonName, phonePrefillFromUser } from '../../lib/userDisplay';
 import { cpfDigits, isValidCpf, maskCpf } from '../../lib/cpf';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -250,6 +250,17 @@ export function AnamnesisFlow({ user, onComplete, initialForm }: AnamnesisFlowPr
   const step = steps[Math.min(stepIndex, steps.length - 1)];
   const patch = (payload: Partial<AnamnesisFormState>) =>
     dispatch({ type: 'PATCH', payload });
+
+  useEffect(() => {
+    const cleaned = normalizePersonName(state.fullName);
+    if (!cleaned || cleaned === state.fullName) return;
+    patch({ fullName: cleaned });
+    if (cleaned !== normalizePersonName(user.name) && user.id) {
+      updateUser(user.id, { name: cleaned }).then(setUserProfile).catch(() => {});
+    }
+    // Só na entrada: corrige nome vindo da Apple com "+" no lugar de espaço.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const persistDraft = useCallback(
     async (stepId: StepId, formState: AnamnesisFormState) => {

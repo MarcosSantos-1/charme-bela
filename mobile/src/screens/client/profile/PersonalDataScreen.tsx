@@ -33,6 +33,12 @@ import {
 import { cpfDigits, isValidCpf, maskCpf } from '../../../lib/cpf';
 import { auth, firebaseConfig } from '../../../lib/firebase';
 import { FirebaseRecaptchaVerifierModal } from '../../../lib/phone-recaptcha';
+import {
+  appleAuthErrorMessage,
+  appleAuthNeedsDevBuild,
+  isAppleAuthCanceled,
+  requestAppleIdentity,
+} from '../../../lib/appleAuth';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -117,6 +123,7 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
     firebaseUser,
     setUserProfile,
     linkGoogleIdToken,
+    linkAppleIdentityToken,
     linkEmailPassword,
     sendPhoneLinkVerification,
     confirmPhoneLink,
@@ -314,6 +321,40 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const handleLinkApple = async () => {
+    if (Platform.OS !== 'ios') {
+      Alert.alert(
+        'Disponível no iPhone',
+        'Vincular Apple só funciona no iPhone. No site, você também pode entrar com Apple.'
+      );
+      return;
+    }
+    if (appleAuthNeedsDevBuild()) {
+      Alert.alert(
+        'Build nativo necessário',
+        'O login com Apple não funciona no Expo Go. Use um dev build (npx expo run:ios).'
+      );
+      return;
+    }
+    setLinking(true);
+    try {
+      const apple = await requestAppleIdentity();
+      await linkAppleIdentityToken(apple.identityToken, apple.rawNonce);
+      await refreshProviders();
+      Alert.alert('Pronto', 'Apple vinculada à sua conta.');
+    } catch (e: any) {
+      if (isAppleAuthCanceled(e)) return;
+      const nativeMsg = appleAuthErrorMessage(e);
+      const isSimulatorAppleError = nativeMsg.includes('erro 1000');
+      Alert.alert(
+        'Não foi possível vincular',
+        isSimulatorAppleError ? nativeMsg : firebaseLinkErrorMessage(e),
+      );
+    } finally {
+      setLinking(false);
+    }
+  };
+
   const handleLinkEmail = async () => {
     if (!linkEmail.trim() || linkPassword.length < 6) {
       Alert.alert('Dados incompletos', 'Informe e-mail e senha com pelo menos 6 caracteres.');
@@ -501,6 +542,17 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
             >
               <Ionicons name="logo-google" size={18} color="#ec4899" />
               <Text style={styles.linkActionText}>Vincular Google</Text>
+            </TouchableOpacity>
+          )}
+
+          {!linkedProviders.has('apple.com') && (
+            <TouchableOpacity
+              style={styles.linkAction}
+              onPress={handleLinkApple}
+              disabled={linking}
+            >
+              <Ionicons name="logo-apple" size={18} color="#ec4899" />
+              <Text style={styles.linkActionText}>Vincular Apple</Text>
             </TouchableOpacity>
           )}
 

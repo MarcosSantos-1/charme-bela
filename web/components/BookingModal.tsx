@@ -540,7 +540,7 @@ export function BookingModal({
                 {activePurchase
                   ? `Continuar pacote · ${activePurchase.sessionCount - activePurchase.remainingSessions}/${activePurchase.sessionCount}`
                   : isPackage
-                    ? 'Escolher datas'
+                    ? 'Escolher primeira sessão'
                     : 'Agendar Agora'}
               </Button>
             </div>

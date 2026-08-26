@@ -120,7 +120,7 @@ export function PackageTimelineScreen({ route, navigation }: Props) {
                 .sort((a, b) => a.sortOrder - b.sortOrder)
                 .map((item) => (
                   <View key={`${item.serviceId}-${item.sortOrder}`} style={styles.itemRow}>
-                    <Ionicons name="sparkles-outline" size={16} color="#ec4899" />
+                    <Ionicons name="flower-outline" size={16} color="#ec4899" />
                     <Text style={styles.itemName}>{item.name}</Text>
                     <Text style={styles.itemDuration}>{item.durationMinutes} min</Text>
                   </View>

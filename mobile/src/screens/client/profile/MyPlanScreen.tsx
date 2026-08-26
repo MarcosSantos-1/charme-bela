@@ -380,7 +380,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
                 <Text style={styles.noPlanEyebrow}>Charme & Bela Club</Text>
               </View>
               <View style={styles.noPlanPill}>
-                <Ionicons name="sparkles" size={12} color={brand.roseDeep} />
+                <Ionicons name="flower" size={12} color={brand.roseDeep} />
                 <Text style={styles.noPlanPillText}>Sem plano</Text>
               </View>
             </View>

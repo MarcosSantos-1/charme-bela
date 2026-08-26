@@ -207,8 +207,13 @@ function maskCep(value: string) {
 }
 
 function resolveResumeStepIndex(form: any | null | undefined, sex: SexValue | null): number {
-  if (!form || form.termsAccepted) return form ? 1 : 0;
+  if (!form) return 0;
   const steps = buildSteps(sex ?? (form.personalData?.sex as SexValue | null) ?? null);
+  // Ficha já completa: pula dados pessoais (welcome → sexo) e começa na saúde (passo 5).
+  if (form.termsAccepted) {
+    const healthIdx = steps.indexOf('health_disease');
+    return healthIdx >= 0 ? healthIdx : 1;
+  }
   const draftStep = form.personalData?.draftStepId as StepId | undefined;
   if (draftStep && steps.includes(draftStep)) {
     return steps.indexOf(draftStep);

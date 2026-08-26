@@ -42,7 +42,7 @@ export function ClubStep({ total, current, onNext, onBack, onSelect, width }: Cl
         ]}
       >
         <View style={styles.badge}>
-          <Ionicons name="sparkles" size={14} color="#8a5a2d" />
+          <Ionicons name="flower" size={14} color="#8a5a2d" />
           <Text style={styles.badgeText}>Charme & Bela Club</Text>
         </View>
 

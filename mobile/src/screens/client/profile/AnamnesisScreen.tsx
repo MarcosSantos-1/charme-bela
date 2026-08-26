@@ -14,12 +14,10 @@ import { getAnamnesis } from '../../../lib/api';
 import { getApiErrorMessage } from '../../../types/commercial';
 import { ScreenHeader } from '../../../components/ScreenHeader';
 import { brand } from '../../../theme/brand';
-import { maskCpf } from '../../../lib/cpf';
 import { AnamnesisFlow } from '../../anamnesis/AnamnesisFlow';
 
 const LABELS: Record<string, string> = {
   fullName: 'Nome completo',
-  cpf: 'CPF',
   diagnosedDisease: 'Doença diagnosticada',
   diagnosedDiseaseDetails: 'Quais doenças',
   medicalTreatment: 'Tratamento médico',
@@ -164,7 +162,6 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
   const personal = data?.personalData || {};
   const fullName = personal.fullName || personal.name || '—';
   const birthDate = personal.birthDate || '—';
-  const cpf = personal.cpf ? maskCpf(String(personal.cpf)) : '—';
   const address = personal.address as
     | {
         street?: string;
@@ -209,7 +206,7 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
         {
           key: 'objectives',
           title: 'Objetivos',
-          icon: 'sparkles',
+          icon: 'flower',
           accent: '#8a6d1f',
           accentSoft: '#f3f4f6',
           value: data.objectivesData,
@@ -300,11 +297,6 @@ export function AnamnesisScreen({ onBack }: { onBack: () => void }) {
                   <View style={styles.personalRow}>
                     <Text style={styles.personalLabel}>Data de nascimento</Text>
                     <Text style={styles.personalValue}>{String(birthDate)}</Text>
-                  </View>
-                  <View style={styles.personalDivider} />
-                  <View style={styles.personalRow}>
-                    <Text style={styles.personalLabel}>CPF</Text>
-                    <Text style={styles.personalValue}>{String(cpf)}</Text>
                   </View>
                   {addressLine ? (
                     <>
@@ -424,7 +416,8 @@ function readableEntries(value: any, hideNegatives = false): [string, any][] {
   if (!value || typeof value !== 'object') {
     return [];
   }
-  return Object.entries(value).filter(([, v]) => {
+  return Object.entries(value).filter(([k, v]) => {
+    if (k === 'cpf') return false;
     if (v == null || v === '') return false;
     if (Array.isArray(v) && v.length === 0) return false;
     if (hideNegatives) {

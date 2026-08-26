@@ -49,7 +49,7 @@ export function ExperienceStep({
         </View>
 
         <View style={[styles.floatCard, styles.floatRight]}>
-          <Ionicons name="sparkles" size={16} color={brand.gold} />
+          <Ionicons name="flower" size={16} color={brand.gold} />
           <Text style={styles.floatSeal}>Autocuidado diário</Text>
         </View>
       </View>

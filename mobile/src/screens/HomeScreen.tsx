@@ -33,7 +33,7 @@ export function HomeScreen() {
         {/* Hero Section */}
         <View style={styles.hero}>
           <View style={styles.badge}>
-            <Ionicons name="sparkles" size={16} color="#831843" />
+            <Ionicons name="flower" size={16} color="#831843" />
             <Text style={styles.badgeText}>Especialistas em Estética</Text>
           </View>
 
@@ -153,7 +153,7 @@ export function HomeScreen() {
         {/* Subscription CTA */}
         <View style={styles.subscriptionBanner}>
           <View style={styles.subscriptionBadge}>
-            <Ionicons name="sparkles" size={14} color="white" />
+            <Ionicons name="flower" size={14} color="white" />
             <Text style={styles.subscriptionBadgeText}>Charme & Bela Club</Text>
           </View>
 

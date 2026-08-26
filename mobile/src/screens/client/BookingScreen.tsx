@@ -231,10 +231,11 @@ export function BookingScreen({ route, navigation }: Props) {
   );
 
   useEffect(() => {
-    if (step !== 'date' || !date) return;
-    const handle = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+    const handle = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }, 0);
     return () => clearTimeout(handle);
-  }, [date, step, planMonthFull]);
+  }, [step]);
 
   const selectDay = (ymd: string) => {
     if (date === ymd) {
@@ -446,7 +447,7 @@ export function BookingScreen({ route, navigation }: Props) {
               <View style={styles.packageItems}>
                 {(packageItemsOf(service).length ? packageItemsOf(service) : []).map((item) => (
                   <View key={item.name} style={styles.packageItemRow}>
-                    <Ionicons name="sparkles-outline" size={16} color="#ec4899" />
+                    <Ionicons name="flower-outline" size={16} color="#ec4899" />
                     <Text style={styles.packageItemName}>{item.name}</Text>
                     <Text style={styles.packageItemDuration}>{item.durationMinutes} min</Text>
                   </View>
@@ -578,7 +579,7 @@ export function BookingScreen({ route, navigation }: Props) {
             ) : null}
 
             <PrimaryButton
-              title={isPackage ? 'Escolher datas' : 'Escolher data'}
+              title={isPackage ? 'Escolher primeira sessão' : 'Escolher data'}
               onPress={() => setStep('date')}
               disabled={!canProceedFromDetails}
             />
@@ -804,7 +805,7 @@ export function BookingScreen({ route, navigation }: Props) {
               />
               <ReviewRow
                 icon="calendar-outline"
-                label="Data"
+                label={isPackage && !isRescheduling ? 'Primeira sessão' : 'Data'}
                 value={formatReviewDate(date)}
                 suffix={date === localDateKey(new Date()) ? '(Hoje)' : undefined}
               />

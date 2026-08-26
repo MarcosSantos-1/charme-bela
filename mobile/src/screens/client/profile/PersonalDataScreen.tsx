@@ -133,7 +133,7 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
   const [email, setEmail] = useState(() =>
     user?.email && !isPhoneLocalEmail(user.email) ? user.email : '',
   );
-  const [cpf, setCpf] = useState(() => maskCpf(user?.cpf || ''));
+  const [cpf] = useState(() => maskCpf(user?.cpf || ''));
   const [birthDate, setBirthDate] = useState('');
   const [loadingForm, setLoadingForm] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -241,10 +241,6 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
       );
       return;
     }
-    if (!isValidCpf(cpf)) {
-      Alert.alert('CPF inválido', 'Informe um CPF válido no formato 000.000.000-00.');
-      return;
-    }
     if (birthDate && birthDate.replace(/\D/g, '').length > 0 && birthDate.replace(/\D/g, '').length < 8) {
       Alert.alert('Data inválida', 'Use o formato DD/MM/AAAA.');
       return;
@@ -269,7 +265,7 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
       const updated = await updateUser(user.id, {
         email: emailValue,
         ...(e164 ? { phone: e164 } : {}),
-        cpf: cpfDigits(cpf),
+        ...(isValidCpf(cpf) ? { cpf: cpfDigits(cpf) } : {}),
       });
       await setUserProfile(updated);
 
@@ -279,7 +275,7 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
           personalData: {
             ...(current?.personalData || {}),
             birthDate: birthDate.trim(),
-            cpf: cpfDigits(cpf),
+            ...(isValidCpf(cpf) ? { cpf: cpfDigits(cpf) } : {}),
             email: emailValue,
             ...(e164 ? { phone: e164 } : {}),
           },
@@ -479,19 +475,6 @@ export function PersonalDataScreen({ onBack }: { onBack: () => void }) {
             keyboardType="phone-pad"
             editable
           />
-          <FormField
-            label="CPF"
-            icon="card-outline"
-            value={cpf}
-            onChangeText={(t) => setCpf(maskCpf(t))}
-            placeholder="000.000.000-00"
-            keyboardType="number-pad"
-            maxLength={14}
-            editable
-          />
-          {cpfDigits(cpf).length === 11 && !isValidCpf(cpf) ? (
-            <Text style={styles.fieldError}>CPF inválido. Confira os dígitos.</Text>
-          ) : null}
           <FormField
             label="Data de Nascimento"
             icon="calendar-outline"

@@ -1328,11 +1328,12 @@ export interface PaymentHistory {
 export async function createCheckoutSession(
   userId: string,
   planId: string,
-  cpf?: string
+  cpf?: string,
+  opts?: { replaceCard?: boolean }
 ): Promise<CheckoutSessionResponse> {
   return apiRequest('/payments/subscribe', {
     method: 'POST',
-    body: JSON.stringify({ userId, planId, cpf })
+    body: JSON.stringify({ userId, planId, cpf, replaceCard: opts?.replaceCard }),
   })
 }
 

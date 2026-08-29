@@ -41,6 +41,7 @@ export type ClientStackParamList = {
     description?: string;
     expiresAt?: string;
     upgrade?: boolean;
+    replaceCard?: boolean;
   };
   PackageTimeline: { purchaseId: string };
   Plan: undefined;

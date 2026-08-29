@@ -144,7 +144,9 @@ export function CheckoutScreen({ route, navigation }: Props) {
       const checkout = params.upgrade && params.planId
         ? await createUpgradeCheckout(user.id, params.planId, document)
         : params.planId
-        ? await createCheckoutSession(user.id, params.planId, document)
+        ? await createCheckoutSession(user.id, params.planId, document, {
+            replaceCard: Boolean(params.replaceCard),
+          })
         : await createPaymentSession(
             user.id,
             params.serviceId || '',
@@ -171,7 +173,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       setError(getApiErrorMessage(requestError, 'Não foi possível abrir o pagamento'));
       setPhase('error');
     }
-  }, [filterSavedCards, installmentCount, isPackage, params.amount, params.appointmentId, params.customDescription, params.packagePurchaseId, params.planId, params.serviceId, params.upgrade, user?.id]);
+  }, [filterSavedCards, installmentCount, isPackage, params.amount, params.appointmentId, params.customDescription, params.packagePurchaseId, params.planId, params.replaceCard, params.serviceId, params.upgrade, user?.id]);
 
   const installmentChoices = useMemo(
     () => (isPackage ? packageInstallmentOptions(amount || params.amount || 0) : [1]),

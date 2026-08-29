@@ -5,6 +5,7 @@ import {
   isAsaasPaidStatus,
   listSubscriptionPayments,
   payChargeWithCardToken,
+  updateSubscription,
   type AsaasPayment,
 } from '../lib/asaas'
 import { logger } from './logger'
@@ -18,6 +19,39 @@ export function pastDueGraceEndsAt(pastDueSince: Date) {
   const end = new Date(pastDueSince)
   end.setDate(end.getDate() + PAST_DUE_GRACE_DAYS)
   return end
+}
+
+export async function hasSavedCreditCard(userId: string) {
+  const card = await prisma.savedCard.findFirst({
+    where: { userId, kind: { not: 'debit' } },
+    select: { id: true },
+  })
+  return Boolean(card)
+}
+
+/** Impede o Asaas de debitar um token que o cliente já apagou em Meu plano. */
+export async function detachAsaasAutoDebit(userId: string) {
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId },
+    select: { asaasSubscriptionId: true, status: true },
+  })
+  if (!subscription?.asaasSubscriptionId) return
+  if (subscription.status === 'CANCELED') return
+  try {
+    await cancelPendingSubscriptionPayments(subscription.asaasSubscriptionId)
+    await updateSubscription(subscription.asaasSubscriptionId, {
+      status: 'INACTIVE',
+      updatePendingPayments: true,
+    })
+    logger.info(`Débito automático Asaas pausado para ${userId}: nenhum cartão de crédito salvo`)
+  } catch (error: any) {
+    logger.warning(`Não foi possível pausar o débito automático de ${userId}: ${error.message}`)
+  }
+}
+
+export async function ensureAsaasDebitMatchesSavedCards(userId: string) {
+  if (await hasSavedCreditCard(userId)) return
+  await detachAsaasAutoDebit(userId)
 }
 
 export function daysLeftInPastDueGrace(pastDueSince: Date | string | null | undefined, now = new Date()) {
@@ -222,6 +256,10 @@ export async function processPastDueSubscriptions() {
       continue
     }
     if (!sub.asaasSubscriptionId) continue
+    if (!(await hasSavedCreditCard(sub.userId))) {
+      await detachAsaasAutoDebit(sub.userId)
+      continue
+    }
     try {
       const result = await retryOverdueSubscription({ userId: sub.userId })
       if (result.paid) retried += 1

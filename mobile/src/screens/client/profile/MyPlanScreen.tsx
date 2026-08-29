@@ -120,7 +120,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const openCheckout = async (plan: Plan, upgrade = false) => {
+  const openCheckout = async (plan: Plan, upgrade = false, replaceCard = false) => {
     if (!user) return;
     const difference = upgrade && subscription ? Math.max(0, plan.price - subscription.plan.price) : plan.price;
     navigation.navigate('Checkout', {
@@ -128,6 +128,7 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
       amount: difference,
       description: upgrade ? `Upgrade para ${plan.name}` : `Assinatura ${plan.name}`,
       upgrade,
+      replaceCard,
     });
   };
 
@@ -447,6 +448,32 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
           </View>
         ) : null}
 
+        {subscription &&
+        (subscription.status === 'PAST_DUE' || (!loadingPayments && !methods.some((item) => item.kind !== 'debit'))) ? (
+          <View style={styles.checkoutCard}>
+            <Text style={styles.checkoutTitle}>
+              {methods.some((item) => item.kind !== 'debit')
+                ? 'Pagar com um cartão novo'
+                : 'Nenhum cartão salvo em Meu plano'}
+            </Text>
+            <Text style={styles.checkoutText}>
+              A assinatura só é cobrada em cartão salvo aqui. Sem cartão, o débito automático fica pausado. Pague no
+              checkout seguro com um cartão novo — ele passa a aparecer em Meu plano.
+            </Text>
+            <TouchableOpacity
+              style={styles.checkoutButton}
+              onPress={() => void openCheckout(subscription.plan, false, true)}
+              disabled={busy === subscription.plan.id}
+            >
+              {busy === subscription.plan.id ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.checkoutButtonText}>Pagar com um cartão novo</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {subscription?.status === 'PAST_DUE' ? (
           <View style={styles.pastDueCard}>
             <Text style={styles.pastDueTitle}>Pagamento da assinatura não passou</Text>
@@ -457,17 +484,19 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
                 : ' Você tem até 7 dias para regularizar.'}{' '}
               Depois o plano volta para sem assinatura e os horários do plano são cancelados.
             </Text>
-            <TouchableOpacity
-              style={styles.pastDueButton}
-              onPress={() => retryPayment()}
-              disabled={busy === 'retry-sub'}
-            >
-              {busy === 'retry-sub' ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.pastDueButtonText}>Tentar pagar novamente</Text>
-              )}
-            </TouchableOpacity>
+            {methods.some((item) => item.kind !== 'debit') ? (
+              <TouchableOpacity
+                style={styles.pastDueButton}
+                onPress={() => retryPayment()}
+                disabled={busy === 'retry-sub'}
+              >
+                {busy === 'retry-sub' ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.pastDueButtonText}>Tentar pagar novamente</Text>
+                )}
+              </TouchableOpacity>
+            ) : null}
           </View>
         ) : null}
 
@@ -1245,6 +1274,23 @@ const styles = StyleSheet.create({
   },
   cardFaceTitle: { color: '#fff', fontWeight: '800', fontSize: 16 },
   cardFaceSub: { color: 'rgba(255,255,255,0.82)', fontSize: 12, marginTop: 6 },
+  checkoutCard: {
+    backgroundColor: '#fff1f2',
+    borderColor: '#fecdd3',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 18,
+  },
+  checkoutTitle: { color: '#9f1239', fontWeight: '800', fontSize: 16, marginBottom: 6 },
+  checkoutText: { color: '#9f1239', fontSize: 13, lineHeight: 19, marginBottom: 12 },
+  checkoutButton: {
+    backgroundColor: brand.rose,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  checkoutButtonText: { color: '#fff', fontWeight: '800' },
   pastDueCard: {
     backgroundColor: '#fff7ed',
     borderColor: '#fdba74',

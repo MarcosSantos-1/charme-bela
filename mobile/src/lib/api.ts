@@ -294,8 +294,18 @@ export async function mergeVouchers(voucherIds: string[]): Promise<Voucher> {
   return unwrap<Voucher>(response.data);
 }
 
-export async function createCheckoutSession(userId: string, planId: string, cpf?: string) {
-  const response = await api.post('/payments/subscribe', { userId, planId, cpf });
+export async function createCheckoutSession(
+  userId: string,
+  planId: string,
+  cpf?: string,
+  opts?: { replaceCard?: boolean },
+) {
+  const response = await api.post('/payments/subscribe', {
+    userId,
+    planId,
+    cpf,
+    replaceCard: opts?.replaceCard,
+  });
   return unwrap<{
     paymentId: string;
     sessionId: string;

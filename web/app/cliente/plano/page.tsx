@@ -3,7 +3,7 @@
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { ClientLayout } from '@/components/ClientLayout'
 import { Button } from '@/components/Button'
-import { Sparkles, Check, AlertCircle, Loader2 } from 'lucide-react'
+import { Sparkles, Check, AlertCircle, Loader2, CreditCard } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -17,12 +17,14 @@ export default function PlanoPage() {
   const router = useRouter()
   const { user } = useAuth()
   const { subscription, hasSubscription, cancelInProgress, remainingTreatments, cancelSubscription, reactivateSubscription, loading: subLoading, refetch } = useSubscription(user?.id)
-  const isPastDue = subscription?.status === 'PAST_DUE'
-  const showPlan = Boolean(subscription && (hasSubscription || isPastDue))
-  
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
   const [paymentMethods, setPaymentMethods] = useState<api.PaymentMethod[]>([])
+  const isPastDue = subscription?.status === 'PAST_DUE'
+  const showPlan = Boolean(subscription && (hasSubscription || isPastDue))
+  const creditCards = paymentMethods.filter((card) => card.kind !== 'debit')
+  const hasCreditCard = creditCards.length > 0
+  const showNewCardCheckout = Boolean(showPlan && (isPastDue || !hasCreditCard))
   const [retryingPayment, setRetryingPayment] = useState(false)
   const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null)
   const [showCancelModal, setShowCancelModal] = useState(false)
@@ -52,6 +54,36 @@ export default function PlanoPage() {
     if (!user?.id) return
     void api.getPaymentMethods(user.id).then(setPaymentMethods).catch(() => setPaymentMethods([]))
   }, [user?.id, subscription?.id, subscription?.status])
+
+  const openRecoveryCheckout = async () => {
+    if (!user || !subscription) return
+    const payerCpf = window.prompt('Digite o CPF do titular do cartão (obrigatório pelo Asaas):')
+    const cpfDigits = (payerCpf || '').replace(/\D/g, '')
+    if (cpfDigits.length !== 11) {
+      toast.error('Informe um CPF válido com 11 dígitos')
+      return
+    }
+    setProcessingPlanId(subscription.planId)
+    try {
+      const checkoutData = await api.createCheckoutSession(user.id, subscription.planId, cpfDigits, {
+        replaceCard: true,
+      })
+      const paymentId = checkoutData?.paymentId || checkoutData?.sessionId
+      if (paymentId) {
+        router.push(`/cliente/checkout?paymentId=${encodeURIComponent(paymentId)}&plan=1`)
+        return
+      }
+      if (checkoutData?.url || checkoutData?.invoiceUrl) {
+        window.location.href = checkoutData.url || checkoutData.invoiceUrl || ''
+        return
+      }
+      throw new Error('URL do checkout não encontrada')
+    } catch (error: any) {
+      toast.error(error.message || 'Não foi possível abrir o checkout')
+    } finally {
+      setProcessingPlanId(null)
+    }
+  }
 
   const handleRetryPayment = async (savedCardId?: string) => {
     if (!user) return
@@ -296,6 +328,33 @@ export default function PlanoPage() {
                   >
                     Desfazer troca
                   </button>
+                </div>
+              ) : null}
+
+              {showNewCardCheckout ? (
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-5 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <CreditCard className="w-6 h-6 text-rose-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="font-semibold text-rose-950">
+                        {hasCreditCard ? 'Pagar com um cartão novo' : 'Nenhum cartão salvo em Meu plano'}
+                      </h3>
+                      <p className="text-sm text-rose-900 mt-1">
+                        A assinatura só é cobrada em cartão salvo aqui. Sem cartão, o débito automático fica pausado.
+                        Abra o checkout seguro para pagar com um cartão novo — ele passa a aparecer em Meu plano.
+                      </p>
+                    </div>
+                  </div>
+                  <Button onClick={() => void openRecoveryCheckout()} disabled={processingPlanId === subscription.planId}>
+                    {processingPlanId === subscription.planId ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        Abrindo checkout...
+                      </>
+                    ) : (
+                      'Pagar com um cartão novo'
+                    )}
+                  </Button>
                 </div>
               ) : null}
 

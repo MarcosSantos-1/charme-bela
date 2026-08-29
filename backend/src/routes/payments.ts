@@ -66,6 +66,9 @@ import {
   upgradeReference,
 } from '../utils/planChange'
 import {
+  detachAsaasAutoDebit,
+  ensureAsaasDebitMatchesSavedCards,
+  hasSavedCreditCard,
   markSubscriptionPastDue,
   retryOverdueSubscription,
 } from '../utils/subscriptionDunning'
@@ -262,6 +265,15 @@ async function syncSubscriptionDefaultCard(opts: {
   asaasToken: string
   remoteIp?: string | null
 }) {
+  const saved = await prisma.savedCard.findFirst({
+    where: { userId: opts.userId, asaasToken: opts.asaasToken, kind: { not: 'debit' } },
+    select: { id: true },
+  })
+  if (!saved) {
+    logger.warning(`Recusou débito automático com token que não está salvo em Meu plano (${opts.userId})`)
+    await detachAsaasAutoDebit(opts.userId)
+    return
+  }
   const subscription = await prisma.subscription.findUnique({
     where: { userId: opts.userId },
     select: { asaasSubscriptionId: true, status: true },
@@ -954,7 +966,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
         return reply.status(503).send({ success: false, error: 'Asaas não configurado (ASAAS_API_KEY)' })
       }
 
-      const body = request.body as { userId?: string; planId: string; cpf?: string }
+      const body = request.body as { userId?: string; planId: string; cpf?: string; replaceCard?: boolean }
       const resolved = resolveUserId(request, body.userId)
       if (resolved.error === 'forbidden') {
         return reply.status(403).send({ success: false, error: 'Você só pode assinar no próprio cadastro' })
@@ -977,7 +989,11 @@ export async function paymentsRoutes(app: FastifyInstance) {
       if (!plan) {
         return reply.status(404).send({ success: false, error: 'Plano não encontrado' })
       }
-      const covered = clubAlreadyCoveredError(user.subscription)
+      const replacingCard =
+        body.replaceCard === true &&
+        Boolean(user.subscription) &&
+        (user.subscription?.status === 'PAST_DUE' || !(await hasSavedCreditCard(user.id)))
+      const covered = replacingCard ? null : clubAlreadyCoveredError(user.subscription)
       if (covered) {
         return reply.status(400).send({
           success: false,
@@ -1000,6 +1016,9 @@ export async function paymentsRoutes(app: FastifyInstance) {
       const customerPhone = pickAsaasPhone(payer.anamnesisPhone, user.phone)
       const customerId = await ensureAsaasCustomer(user, cpfCnpj, payer.address, customerPhone)
       const externalReference = clubSubscriptionReference(user.id, plan.id)
+      if (user.subscription?.asaasSubscriptionId && (replacingCard || user.subscription.status === 'PAST_DUE')) {
+        await detachAsaasAutoDebit(user.id)
+      }
       await cancelOrphanUnpaidSubscriptions(customerId, user.subscription?.asaasSubscriptionId)
 
       try {
@@ -1513,7 +1532,11 @@ export async function paymentsRoutes(app: FastifyInstance) {
           } catch (error: any) {
             logger.warning(`Cartão removido, mas o Asaas não atualizou o débito automático: ${error.message}`)
           }
+        } else {
+          await detachAsaasAutoDebit(resolved.userId)
         }
+      } else if (card.kind !== 'debit' && !(await hasSavedCreditCard(resolved.userId))) {
+        await detachAsaasAutoDebit(resolved.userId)
       }
       return reply.status(200).send({ success: true, data: await listCardMethods(resolved.userId) })
     } catch (error: any) {
@@ -2442,6 +2465,7 @@ async function handleSubscriptionInvoicePaid(payment: AsaasPayment) {
   const asaasSubscriptionId = payment.subscription || existing?.asaasSubscriptionId || null
   const isNew = !existing || existing.status !== 'ACTIVE'
 
+  const previousAsaasId = existing?.asaasSubscriptionId || null
   await prisma.subscription.upsert({
     where: { userId: user.id },
     update: {
@@ -2463,6 +2487,13 @@ async function handleSubscriptionInvoicePaid(payment: AsaasPayment) {
       startDate: new Date(),
     },
   })
+
+  if (previousAsaasId && asaasSubscriptionId && previousAsaasId !== asaasSubscriptionId) {
+    await cancelSubscriptionSilent(previousAsaasId)
+  }
+
+  await persistSavedCard(payment)
+  await ensureAsaasDebitMatchesSavedCards(user.id)
 
   if (plan && asaasSubscriptionId) {
     try {
@@ -2638,4 +2669,7 @@ async function handleSubscriptionPaymentFailed(payment: AsaasPayment) {
     planName: user.subscription.plan.name,
     reason: 'Pagamento da assinatura não confirmado no prazo',
   })
+  if (!(await hasSavedCreditCard(user.id))) {
+    await detachAsaasAutoDebit(user.id)
+  }
 }

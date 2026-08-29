@@ -335,6 +335,7 @@ export async function createPaymentSession(
   customDescription?: string,
   packagePurchaseId?: string,
   cpf?: string,
+  installmentCount?: number,
 ) {
   const response = await api.post('/payments/checkout', {
     userId,
@@ -344,6 +345,7 @@ export async function createPaymentSession(
     customDescription,
     packagePurchaseId,
     cpf,
+    installmentCount,
   });
   return unwrap<{
     paymentId: string;
@@ -355,6 +357,7 @@ export async function createPaymentSession(
     expiresAt?: string | null;
     amount: number;
     description: string;
+    installmentCount?: number;
   }>(response.data);
 }
 

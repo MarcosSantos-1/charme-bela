@@ -152,13 +152,8 @@ export default function ClientePage() {
                   <Link href="/cliente/plano" className="block h-full">
                     <div className={`h-full bg-gradient-to-br ${getPlanColors().from} ${getPlanColors().to} text-white p-6 flex flex-col justify-between`}>
                       <div>
-                        <div className="flex items-center justify-between mb-3">
+                        <div className="mb-3">
                           <Sparkles className="w-7 h-7" />
-                          <span className={`px-3 py-1 backdrop-blur-sm rounded-full text-xs font-medium ${
-                            subscription.status === 'ACTIVE' ? 'bg-green-500/30' : 'bg-red-500/30'
-                          }`}>
-                            {subscription.status === 'ACTIVE' ? 'Ativo' : subscription.status}
-                          </span>
                         </div>
                         <h3 className="text-2xl font-bold mb-1">{subscription.plan.name}</h3>
                         <p className="text-pink-100 text-sm">R$ {subscription.plan.price.toFixed(2)} / mês</p>
@@ -268,6 +263,11 @@ export default function ClientePage() {
                   const isAdminPending = isAdminCreated && (appointment.paymentStatus === 'PENDING' || !appointment.paymentStatus)
                   const isSubscription = appointment.origin === 'SUBSCRIPTION'
                   const isSingle = appointment.origin === 'SINGLE'
+                  const isPackage = appointment.origin === 'PACKAGE'
+                  const sessionLabel =
+                    appointment.packageSessionIndex && appointment.packagePurchase?.sessionCount
+                      ? `${appointment.packageSessionIndex}/${appointment.packagePurchase.sessionCount}`
+                      : null
                   
                   // Definir cores
                   let cardBorder = 'border-gray-200'
@@ -325,6 +325,14 @@ export default function ClientePage() {
                               ) : isSingle ? (
                                 <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
                                   💳 Pagamento Único
+                                </span>
+                              ) : isPackage ? (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">
+                                  Pacote{sessionLabel ? ` ${sessionLabel}` : ''}
+                                </span>
+                              ) : sessionLabel ? (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">
+                                  {sessionLabel}
                                 </span>
                               ) : null}
                               

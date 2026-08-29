@@ -73,7 +73,26 @@ export type AsaasPayment = {
   confirmedDate?: string | null
   creditCard?: AsaasCreditCardSummary | null
   creditCardToken?: string | null
+  installment?: string | null
+  installmentCount?: number | null
+  installmentNumber?: number | null
   deleted?: boolean
+}
+
+export function asaasInstallmentCount(payment: Pick<AsaasPayment, 'installment' | 'installmentCount'>): number {
+  if (typeof payment.installmentCount === 'number' && payment.installmentCount >= 2) {
+    return payment.installmentCount
+  }
+  return payment.installment ? 0 : 1
+}
+
+export function chargeMatchesInstallments(
+  payment: Pick<AsaasPayment, 'installment' | 'installmentCount'>,
+  requested?: number,
+) {
+  const want = requested && requested >= 2 ? requested : 1
+  const have = asaasInstallmentCount(payment)
+  return have === want
 }
 
 export type AsaasPixQr = {
@@ -397,13 +416,19 @@ export async function createPayment(input: {
   externalReference: string
   billingType?: AsaasBillingType
   notificationDisabled?: boolean
+  installmentCount?: number
 }) {
+  const installmentCount =
+    input.installmentCount && input.installmentCount >= 2 ? input.installmentCount : undefined
+  const total = Number(input.value.toFixed(2))
   return asaasFetch<AsaasPayment>('/payments', {
     method: 'POST',
     body: JSON.stringify({
       customer: input.customer,
       billingType: input.billingType || 'UNDEFINED',
-      value: Number(input.value.toFixed(2)),
+      ...(installmentCount
+        ? { installmentCount, totalValue: total }
+        : { value: total }),
       dueDate: todaySaoPauloISODate(),
       description: input.description.slice(0, 500),
       externalReference: input.externalReference.slice(0, 100),
@@ -533,13 +558,19 @@ export async function createPaymentWithCardToken(input: {
   externalReference: string
   creditCardToken: string
   remoteIp: string
+  installmentCount?: number
 }) {
+  const installmentCount =
+    input.installmentCount && input.installmentCount >= 2 ? input.installmentCount : undefined
+  const total = Number(input.value.toFixed(2))
   return asaasFetch<AsaasPayment>('/payments', {
     method: 'POST',
     body: JSON.stringify({
       customer: input.customer,
       billingType: 'CREDIT_CARD',
-      value: Number(input.value.toFixed(2)),
+      ...(installmentCount
+        ? { installmentCount, totalValue: total }
+        : { value: total }),
       dueDate: todaySaoPauloISODate(),
       description: input.description.slice(0, 500),
       externalReference: input.externalReference.slice(0, 100),
@@ -869,15 +900,23 @@ export type CheckoutPayload = {
   expiresAt?: string | null
   amount: number
   description: string
+  installmentCount?: number
 }
 
 export async function toCheckoutPayload(
   payment: AsaasPayment,
-  extras?: { expiresAt?: Date | string | null; description?: string; invoiceUrl?: string | null },
+  extras?: {
+    expiresAt?: Date | string | null
+    description?: string
+    invoiceUrl?: string | null
+    amount?: number
+    installmentCount?: number
+  },
 ): Promise<CheckoutPayload> {
   const canHavePix = payment.billingType !== 'CREDIT_CARD' && payment.billingType !== 'BOLETO'
   const pix = canHavePix ? await getPixQrCode(payment.id) : null
   const invoiceUrl = extras?.invoiceUrl || payment.invoiceUrl || null
+  const installmentCount = extras?.installmentCount || asaasInstallmentCount(payment)
   return {
     paymentId: payment.id,
     sessionId: payment.id,
@@ -886,7 +925,8 @@ export async function toCheckoutPayload(
     pixCopyPaste: pix?.payload || null,
     pixQrBase64: pix?.encodedImage || null,
     expiresAt: extras?.expiresAt ? new Date(extras.expiresAt).toISOString() : pix?.expirationDate || null,
-    amount: payment.value,
+    amount: extras?.amount ?? payment.value,
     description: extras?.description || payment.description || 'Charme & Bela',
+    ...(installmentCount >= 2 ? { installmentCount } : {}),
   }
 }

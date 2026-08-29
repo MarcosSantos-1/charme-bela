@@ -433,6 +433,37 @@ export async function notifyVoucherReceived(
   })
 }
 
+export async function notifyCancellationCreditReceived(
+  userId: string,
+  creditData: {
+    voucherId: string
+    serviceName: string
+    amount: number
+  }
+) {
+  const formattedAmount = new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(creditData.amount)
+
+  return createNotification({
+    userId,
+    type: 'VOUCHER_RECEIVED',
+    title: 'Você recebeu um crédito/reembolso!',
+    message: `Toque para ativar o reembolso do crédito de cancelamento do serviço ${creditData.serviceName} no valor de ${formattedAmount}.`,
+    icon: 'CARD',
+    priority: 'HIGH',
+    actionUrl: `/cliente/servicos?voucherId=${creditData.voucherId}`,
+    actionLabel: 'Ativar crédito',
+    metadata: {
+      voucherId: creditData.voucherId,
+      serviceName: creditData.serviceName,
+      amount: creditData.amount,
+      kind: 'cancellation_credit',
+    },
+  })
+}
+
 export async function notifyVoucherExpiring(
   userId: string,
   voucherData: {
@@ -467,13 +498,24 @@ export async function notifySubscriptionActivated(
   subscriptionData: {
     planName: string
     maxTreatments: number
+    amount?: number
+    paymentId?: string
   }
 ) {
+  let activatedText = `Sua assinatura ${subscriptionData.planName} foi ativada com sucesso!`
+  if (typeof subscriptionData.amount === 'number') {
+    const formattedAmount = new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(subscriptionData.amount)
+    activatedText = `Sua assinatura ${subscriptionData.planName} foi ativada por ${formattedAmount}!`
+  }
+
   return createNotification({
     userId,
     type: 'SUBSCRIPTION_ACTIVATED',
     title: 'Assinatura Ativada! 🎉',
-    message: `Sua assinatura ${subscriptionData.planName} foi ativada com sucesso! Você tem ${subscriptionData.maxTreatments} tratamentos por mês.`,
+    message: `${activatedText} Você tem ${subscriptionData.maxTreatments} tratamentos por mês.`,
     icon: 'SPARKLES',
     priority: 'HIGH',
     actionUrl: '/cliente/plano',

@@ -78,6 +78,14 @@ function ServicosContent() {
       setSelectedCategory(categoryParam)
     }
   }, [searchParams])
+
+  useEffect(() => {
+    const voucherId = searchParams.get('voucherId')
+    if (!voucherId || vouchers.length === 0) return
+    const match = vouchers.find((voucher) => voucher.id === voucherId)
+    if (!match || selectedVoucher?.id === match.id) return
+    setSelectedVoucher(match)
+  }, [searchParams, selectedVoucher?.id, vouchers])
   
   // Verificar se serviço está incluído no plano
   const isIncludedInPlan = (serviceId: string): boolean => {

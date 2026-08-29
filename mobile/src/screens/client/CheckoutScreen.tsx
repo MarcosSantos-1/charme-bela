@@ -49,6 +49,17 @@ function formatMoney(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+const MAX_PACKAGE_INSTALLMENTS = 3;
+const MIN_PACKAGE_INSTALLMENT_VALUE = 5;
+
+function packageInstallmentOptions(amount: number) {
+  const options = [1];
+  for (let count = 2; count <= MAX_PACKAGE_INSTALLMENTS; count += 1) {
+    if (amount / count >= MIN_PACKAGE_INSTALLMENT_VALUE) options.push(count);
+  }
+  return options;
+}
+
 function formatCountdown(ms: number) {
   if (ms <= 0) return '00:00';
   const total = Math.ceil(ms / 1000);
@@ -63,6 +74,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
   const params = route.params;
   const isPlan = Boolean(params.planId);
   const isUpgrade = Boolean(params.upgrade);
+  const isPackage = Boolean(params.packagePurchaseId);
   const [phase, setPhase] = useState<Phase>(() =>
     isValidCpf(user?.cpf) ? 'loading' : 'need_cpf',
   );
@@ -85,6 +97,8 @@ export function CheckoutScreen({ route, navigation }: Props) {
   const [pixOpen, setPixOpen] = useState(false);
   const [pixLoading, setPixLoading] = useState(false);
   const [pixError, setPixError] = useState<string | null>(null);
+  const [installmentCount, setInstallmentCount] = useState(1);
+  const [changingInstallments, setChangingInstallments] = useState(false);
   const abandoning = useRef(false);
   const startedRef = useRef(false);
   const cpfRef = useRef(cpf);
@@ -94,8 +108,8 @@ export function CheckoutScreen({ route, navigation }: Props) {
 
   const filterSavedCards = useCallback(
     (methods: PaymentMethod[]) =>
-      methods.filter((method) => method.last4 && (!isPlan || method.kind !== 'debit')),
-    [isPlan],
+      methods.filter((method) => method.last4 && (!isPlan || method.kind !== 'debit') && (installmentCount <= 1 || method.kind !== 'debit')),
+    [installmentCount, isPlan],
   );
 
   const offerNicknameIfNeeded = useCallback(async () => {
@@ -110,7 +124,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
     }
   }, [filterSavedCards, user]);
 
-  const loadCheckout = useCallback(async () => {
+  const loadCheckout = useCallback(async (nextInstallmentCount?: number) => {
     if (!user) return;
     const document = cpfRef.current.replace(/\D/g, '');
     if (!isValidCpf(document)) {
@@ -118,7 +132,8 @@ export function CheckoutScreen({ route, navigation }: Props) {
       setError(cpfRef.current.replace(/\D/g, '').length === 11 ? 'CPF inválido. Confira os dígitos.' : null);
       return;
     }
-    setPhase('loading');
+    const selectedInstallments = nextInstallmentCount ?? installmentCount;
+    if (nextInstallmentCount == null) setPhase('loading');
     setError(null);
     setPixOpen(false);
     setPixCopy(null);
@@ -138,6 +153,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
             params.customDescription,
             params.packagePurchaseId,
             document,
+            isPackage && selectedInstallments > 1 ? selectedInstallments : undefined,
           );
       setPaymentId(checkout.paymentId);
       setInvoiceUrl(checkout.invoiceUrl || checkout.url);
@@ -155,7 +171,26 @@ export function CheckoutScreen({ route, navigation }: Props) {
       setError(getApiErrorMessage(requestError, 'Não foi possível abrir o pagamento'));
       setPhase('error');
     }
-  }, [filterSavedCards, params.amount, params.appointmentId, params.customDescription, params.packagePurchaseId, params.planId, params.serviceId, params.upgrade, user?.id]);
+  }, [filterSavedCards, installmentCount, isPackage, params.amount, params.appointmentId, params.customDescription, params.packagePurchaseId, params.planId, params.serviceId, params.upgrade, user?.id]);
+
+  const installmentChoices = useMemo(
+    () => (isPackage ? packageInstallmentOptions(amount || params.amount || 0) : [1]),
+    [amount, isPackage, params.amount],
+  );
+
+  const applyInstallment = useCallback(
+    async (count: number) => {
+      if (!isPackage || count === installmentCount || changingInstallments) return;
+      setInstallmentCount(count);
+      setChangingInstallments(true);
+      try {
+        await loadCheckout(count);
+      } finally {
+        setChangingInstallments(false);
+      }
+    },
+    [changingInstallments, installmentCount, isPackage, loadCheckout],
+  );
 
   useEffect(() => {
     if (!user) return;
@@ -469,6 +504,11 @@ export function CheckoutScreen({ route, navigation }: Props) {
           <LinearGradient colors={[brand.rose, brand.roseDeep]} style={styles.hero}>
             <Text style={styles.heroLabel}>Valor a pagar</Text>
             <Text style={styles.heroAmount}>{formatMoney(amount)}</Text>
+            {isPackage && installmentCount > 1 ? (
+              <Text style={styles.heroDesc}>
+                {installmentCount}x de {formatMoney(amount / installmentCount)} no crédito
+              </Text>
+            ) : null}
             <Text style={styles.heroDesc} numberOfLines={2}>
               {description}
             </Text>
@@ -531,6 +571,36 @@ export function CheckoutScreen({ route, navigation }: Props) {
           </View>
           ) : null}
 
+          {isPackage && installmentChoices.length > 1 ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Parcelar no crédito</Text>
+              <Text style={styles.cardHint}>
+                Só para pacotes. Pix e débito continuam à vista.
+              </Text>
+              <View style={styles.installmentGrid}>
+                {installmentChoices.map((count) => {
+                  const selected = installmentCount === count;
+                  return (
+                    <TouchableOpacity
+                      key={count}
+                      style={[styles.installmentChip, selected && styles.installmentChipSelected]}
+                      onPress={() => void applyInstallment(count)}
+                      disabled={changingInstallments}
+                    >
+                      <Text style={[styles.installmentChipText, selected && styles.installmentChipTextSelected]}>
+                        {count === 1 ? 'À vista' : `${count}x`}
+                      </Text>
+                      <Text style={[styles.installmentChipValue, selected && styles.installmentChipTextSelected]}>
+                        {count === 1 ? formatMoney(amount) : formatMoney(amount / count)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {changingInstallments ? <ActivityIndicator color={brand.rose} /> : null}
+            </View>
+          ) : null}
+
           {savedCards.map((card) => {
             const charging = chargingSavedId === card.id;
             return (
@@ -586,6 +656,8 @@ export function CheckoutScreen({ route, navigation }: Props) {
                     ? 'Pode pagar com qualquer cartão salvo acima. Se preferir outro, abre o Asaas no navegador — a diferença é cobrada agora e o plano troca na hora. Depois você escolhe um apelido.'
                     : isPlan
                     ? 'Abre o Asaas no navegador. Cada cartão novo fica salvo com o apelido que você escolher. Ao voltar, esta tela confirma sozinha.'
+                    : isPackage && installmentCount > 1
+                    ? `Abre o Asaas no navegador para pagar em ${installmentCount}x no crédito. Débito e Pix continuam à vista.`
                     : 'Abre o Asaas no navegador. Crédito ou débito. Cada cartão fica salvo com um apelido para usar nas próximas compras.'}
                 </Text>
               </View>
@@ -669,6 +741,31 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 18, fontWeight: '800', color: brand.ink },
   cardHint: { color: brand.muted, fontSize: 13, textAlign: 'center', lineHeight: 18 },
   cardHintLeft: { color: brand.muted, fontSize: 13, lineHeight: 18 },
+  installmentGrid: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  installmentChip: {
+    minWidth: 72,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: brand.border,
+    backgroundColor: brand.white,
+    alignItems: 'center',
+  },
+  installmentChipSelected: {
+    borderColor: brand.rose,
+    backgroundColor: brand.blush,
+  },
+  installmentChipText: { fontSize: 13, fontWeight: '800', color: brand.ink },
+  installmentChipTextSelected: { color: brand.roseDeep },
+  installmentChipValue: { fontSize: 11, color: brand.muted, marginTop: 2 },
   accordionHeader: { width: '100%', alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 10 },
   accordionBody: { width: '100%', alignSelf: 'stretch', alignItems: 'center', gap: 10, paddingTop: 8 },
   qr: { width: 220, height: 220, borderRadius: 16, backgroundColor: 'white' },

@@ -36,6 +36,7 @@ import {
   pickAsaasPhone,
   refundPayment,
   asaasCustomerEmail,
+  chargeMatchesInstallments,
   toCheckoutPayload,
   updateCustomer,
   updateSubscriptionCreditCard,
@@ -64,6 +65,9 @@ import {
   upgradeReference,
 } from '../utils/planChange'
 
+const MAX_PACKAGE_INSTALLMENTS = 3
+const MIN_PACKAGE_INSTALLMENT_VALUE = 5
+
 type CheckoutBody = {
   userId?: string
   serviceId: string
@@ -72,6 +76,25 @@ type CheckoutBody = {
   customAmount?: number
   customDescription?: string
   cpf?: string
+  installmentCount?: number
+}
+
+function parsePackageInstallmentCount(raw: unknown, amount: number, isPackage: boolean) {
+  if (raw == null || raw === '' || raw === 1 || raw === '1') return undefined
+  const count = Number(raw)
+  if (!Number.isInteger(count) || count < 2) {
+    throw Object.assign(new Error('Quantidade de parcelas inválida'), { statusCode: 400 })
+  }
+  if (!isPackage) {
+    throw Object.assign(new Error('Parcelamento só está disponível para pacotes'), { statusCode: 400 })
+  }
+  if (count > MAX_PACKAGE_INSTALLMENTS) {
+    throw Object.assign(new Error(`Parcelamento máximo: ${MAX_PACKAGE_INSTALLMENTS}x`), { statusCode: 400 })
+  }
+  if (amount / count < MIN_PACKAGE_INSTALLMENT_VALUE) {
+    throw Object.assign(new Error('Valor da parcela abaixo do mínimo'), { statusCode: 400 })
+  }
+  return count
 }
 
 function webhookTokensMatch(received: string | undefined, expected: string) {
@@ -258,6 +281,7 @@ async function ensureCardInvoice(opts: {
   value: number
   description: string
   externalReference: string
+  installmentCount?: number
 }) {
   const listed = await listPayments({
     customer: opts.customerId,
@@ -268,9 +292,20 @@ async function ensureCardInvoice(opts: {
     (item) =>
       item.billingType === 'CREDIT_CARD' &&
       (item.status === 'PENDING' || item.status === 'OVERDUE') &&
-      !item.deleted,
+      !item.deleted &&
+      chargeMatchesInstallments(item, opts.installmentCount),
   )
   if (pending?.invoiceUrl) return pending
+  for (const item of listed.data || []) {
+    if (
+      item.billingType === 'CREDIT_CARD' &&
+      (item.status === 'PENDING' || item.status === 'OVERDUE') &&
+      !item.deleted &&
+      !chargeMatchesInstallments(item, opts.installmentCount)
+    ) {
+      await cancelPaymentSilent(item.id)
+    }
+  }
   return createPayment({
     customer: opts.customerId,
     value: opts.value,
@@ -278,6 +313,7 @@ async function ensureCardInvoice(opts: {
     externalReference: opts.externalReference,
     billingType: 'CREDIT_CARD',
     notificationDisabled: true,
+    installmentCount: opts.installmentCount,
   })
 }
 
@@ -288,6 +324,7 @@ async function reuseOrCreateCharge(opts: {
   externalReference: string
   existingPaymentId?: string | null
   expiresAt?: Date | null
+  installmentCount?: number
 }) {
   let card: AsaasPayment | null = null
   if (opts.existingPaymentId) {
@@ -296,9 +333,15 @@ async function reuseOrCreateCharge(opts: {
       if (
         (existing.status === 'PENDING' || existing.status === 'OVERDUE') &&
         !existing.deleted &&
-        existing.billingType !== 'PIX'
+        existing.billingType !== 'PIX' &&
+        chargeMatchesInstallments(existing, opts.installmentCount)
       ) {
         card = existing
+      } else if (
+        (existing.status === 'PENDING' || existing.status === 'OVERDUE') &&
+        !existing.deleted
+      ) {
+        await cancelPaymentSilent(existing.id)
       }
     } catch (error: any) {
       logger.warning(`Cobrança Asaas anterior indisponível (${opts.existingPaymentId}): ${error.message}`)
@@ -311,6 +354,7 @@ async function reuseOrCreateCharge(opts: {
       value: opts.value,
       description: opts.description,
       externalReference: opts.externalReference,
+      installmentCount: opts.installmentCount,
     })
   }
 
@@ -318,6 +362,8 @@ async function reuseOrCreateCharge(opts: {
     expiresAt: opts.expiresAt,
     description: opts.description,
     invoiceUrl: card.invoiceUrl || null,
+    amount: opts.value,
+    installmentCount: opts.installmentCount,
   })
 }
 
@@ -721,6 +767,15 @@ export async function paymentsRoutes(app: FastifyInstance) {
             ? body.customAmount
             : service.price
       const isPackageCheckout = Boolean(resolvedPackagePurchaseId) || service.category === 'COMBO'
+      let installmentCount: number | undefined
+      try {
+        installmentCount = parsePackageInstallmentCount(body.installmentCount, finalAmount, isPackageCheckout)
+      } catch (error: any) {
+        return reply.status(error.statusCode || 400).send({
+          success: false,
+          error: error.message || 'Parcelamento inválido',
+        })
+      }
       const description = isPackageCheckout
         ? `Pacote ${service.name} - Charme & Bela`
         : `${service.name} - Charme & Bela`
@@ -752,6 +807,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
         externalReference,
         existingPaymentId,
         expiresAt,
+        installmentCount,
       })
 
       await persistPaymentId({
@@ -1660,22 +1716,40 @@ export async function paymentsRoutes(app: FastifyInstance) {
       } catch (firstError: any) {
         logger.warning(`payWithCreditCard em ${payment.id} falhou: ${firstError.message}`)
         try {
+          const fallbackInstallments =
+            typeof payment.installmentCount === 'number' && payment.installmentCount >= 2
+              ? payment.installmentCount
+              : undefined
+          const fallbackValue =
+            fallbackInstallments && payment.value > 0
+              ? Number((payment.value * fallbackInstallments).toFixed(2))
+              : payment.value
           const card = await ensureCardInvoice({
             customerId: user.asaasCustomerId,
-            value: payment.value,
+            value: fallbackValue,
             description: payment.description || 'Charme & Bela',
             externalReference: payment.externalReference || payment.id,
+            installmentCount: fallbackInstallments,
           })
           await tryPay(card.id)
         } catch (secondError: any) {
           logger.warning(`Cobrança de cartão irmã falhou: ${secondError.message}`)
+          const fallbackInstallments =
+            typeof payment.installmentCount === 'number' && payment.installmentCount >= 2
+              ? payment.installmentCount
+              : undefined
+          const fallbackValue =
+            fallbackInstallments && payment.value > 0
+              ? Number((payment.value * fallbackInstallments).toFixed(2))
+              : payment.value
           charged = await createPaymentWithCardToken({
             customer: user.asaasCustomerId,
-            value: payment.value,
+            value: fallbackValue,
             description: payment.description || 'Charme & Bela',
             externalReference: payment.externalReference || payment.id,
             creditCardToken: savedCard.asaasToken,
             remoteIp,
+            installmentCount: fallbackInstallments,
           })
         }
       }
@@ -2035,6 +2109,7 @@ async function confirmPackagePayment(
     logger.error(`Webhook de pacote para compra inexistente: ${packagePurchaseId}`)
     return
   }
+  const confirmedAmount = purchase.pricePaid > 0 ? purchase.pricePaid : paidAmount
   if (purchase.paymentStatus === 'PAID') {
     logger.info(`Pacote ${packagePurchaseId} já estava pago`)
     if (purchase.voucherId) {
@@ -2048,7 +2123,7 @@ async function confirmPackagePayment(
   }
 
   await prisma.$transaction(async (tx) => {
-    await markPackagePurchasePaid(tx, packagePurchaseId, paidAmount, method)
+    await markPackagePurchasePaid(tx, packagePurchaseId, confirmedAmount, method)
     await tx.packagePurchase.update({
       where: { id: packagePurchaseId },
       data: { asaasPaymentId: paymentId },
@@ -2064,19 +2139,19 @@ async function confirmPackagePayment(
   }
 
   await notifyPaymentSucceeded(purchase.userId, {
-    amount: paidAmount,
+    amount: confirmedAmount,
     description: `Pacote: ${purchase.packageService.name}`,
   })
   await createNotification({
     userId: null,
     type: 'PAYMENT_SUCCEEDED',
     title: 'Pagamento de Pacote Recebido',
-    message: `${purchase.user.name} - R$ ${paidAmount.toFixed(2).replace('.', ',')} (${purchase.packageService.name})`,
+    message: `${purchase.user.name} - R$ ${confirmedAmount.toFixed(2).replace('.', ',')} (${purchase.packageService.name})`,
     icon: 'CARD',
     priority: 'NORMAL',
     actionUrl: '/admin/atividades',
     actionLabel: 'Ver Atividades',
-    metadata: { userId: purchase.userId, amount: paidAmount, packagePurchaseId, paymentId },
+    metadata: { userId: purchase.userId, amount: confirmedAmount, packagePurchaseId, paymentId },
   })
 }
 
@@ -2329,10 +2404,31 @@ async function handleSubscriptionInvoicePaid(payment: AsaasPayment) {
     }
   }
 
-  if (isNew && plan) {
+  let shouldNotifyClient = true
+  if (payment.id) {
+    try {
+      await prisma.processedWebhookEvent.create({
+        data: {
+          id: `subscription-invoice:${payment.id}`,
+          source: 'asaas',
+          event: 'subscription-invoice',
+        },
+      })
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        shouldNotifyClient = false
+      } else {
+        throw error
+      }
+    }
+  }
+
+  if (shouldNotifyClient && isNew && plan) {
     await notifySubscriptionActivated(user.id, {
       planName: plan.name,
       maxTreatments: plan.maxTreatmentsPerMonth,
+      amount: payment.value,
+      paymentId: payment.id,
     })
     await createNotification({
       userId: null,
@@ -2345,7 +2441,7 @@ async function handleSubscriptionInvoicePaid(payment: AsaasPayment) {
       actionLabel: 'Ver Atividades',
       metadata: { userId: user.id, planId: plan.id, planName: plan.name },
     })
-  } else if (plan && existing?.status === 'ACTIVE') {
+  } else if (shouldNotifyClient && plan && existing?.status === 'ACTIVE') {
     const next = new Date()
     next.setMonth(next.getMonth() + 1)
     await notifySubscriptionRenewed(user.id, {

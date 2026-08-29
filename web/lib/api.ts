@@ -1285,6 +1285,7 @@ export interface CheckoutSessionResponse {
   expiresAt?: string | null
   amount?: number
   description?: string
+  installmentCount?: number
   upgrade?: boolean
   newPlanId?: string
   newPlanName?: string
@@ -1374,7 +1375,8 @@ export async function createPaymentSession(
   customAmount?: number,
   customDescription?: string,
   packagePurchaseId?: string,
-  cpf?: string
+  cpf?: string,
+  installmentCount?: number
 ): Promise<CheckoutSessionResponse> {
   return apiRequest('/payments/checkout', {
     method: 'POST',
@@ -1385,7 +1387,8 @@ export async function createPaymentSession(
       packagePurchaseId,
       customAmount,
       customDescription,
-      cpf
+      cpf,
+      installmentCount
     })
   })
 }

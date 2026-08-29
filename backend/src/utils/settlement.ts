@@ -1,7 +1,7 @@
 import { prisma } from '../lib/prisma'
 import { logger } from './logger'
 import { refundPaymentWithFallback } from '../lib/asaas'
-import { createNotification, notifyVoucherReceived } from './notifications'
+import { createNotification, notifyCancellationCreditReceived } from './notifications'
 
 export type SettlementChoiceValue = 'REFUND' | 'CREDIT'
 
@@ -57,11 +57,8 @@ export async function createReusableCreditVoucher(params: {
   userId: string
   amount: number
   serviceName: string
-  monthsValid: number
   grantedReason: string
 }) {
-  const expiresAt = new Date()
-  expiresAt.setMonth(expiresAt.getMonth() + params.monthsValid)
   const amount = Number(params.amount.toFixed(2))
 
   const voucher = await prisma.voucher.create({
@@ -72,16 +69,16 @@ export async function createReusableCreditVoucher(params: {
       discountAmount: amount,
       remainingAmount: amount,
       anyService: true,
-      expiresAt,
+      expiresAt: null,
       grantedBy: 'system',
       grantedReason: params.grantedReason,
     },
   })
 
-  await notifyVoucherReceived(params.userId, {
-    description: voucher.description,
-    type: 'DISCOUNT',
-    expiresAt: voucher.expiresAt || undefined,
+  await notifyCancellationCreditReceived(params.userId, {
+    voucherId: voucher.id,
+    serviceName: params.serviceName,
+    amount,
   })
 
   return voucher
@@ -257,7 +254,6 @@ export async function settlePaidSingleCancel(params: {
       userId: params.userId,
       amount: paidAmount,
       serviceName: params.serviceName,
-      monthsValid: 3,
       grantedReason: `Cancelamento com menos de ${params.minHours}h de antecedência. Valor convertido em crédito reutilizável.`,
     })
     await prisma.appointment.update({
@@ -288,7 +284,6 @@ export async function settlePaidSingleCancel(params: {
       userId: params.userId,
       amount: paidAmount,
       serviceName: params.serviceName,
-      monthsValid: 6,
       grantedReason: 'Cancelamento com antecedência. Cliente optou por crédito reutilizável.',
     })
     await prisma.appointment.update({

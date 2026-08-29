@@ -137,6 +137,10 @@ export function ClientHomeScreen() {
         navigation.navigate('Profile', { openScreen: target.profileScreen as 'history' });
         return;
       }
+      if (target.tab === 'Services') {
+        navigation.navigate('Services', target.applyVoucherId ? { applyVoucherId: target.applyVoucherId } : undefined);
+        return;
+      }
       if (target.tab) {
         navigation.navigate(target.tab);
       }
@@ -184,7 +188,7 @@ export function ClientHomeScreen() {
         : subscription.startDate
           ? nextBillingLabel(subscription.startDate)
           : '—',
-    gradientColors: subscription.plan.tier === 'GOLD' ? ['#8b5cf6', '#7c3aed'] : subscription.plan.tier === 'SILVER' ? ['#64748b', '#475569'] : ['#d97706', '#b45309'],
+    gradientColors: subscription.plan.tier === 'GOLD' ? ['#8b5cf6', '#7c3aed'] : subscription.plan.tier === 'SILVER' ? ['#64748b', '#475569'] : ['#2563eb', '#0891b2'],
   } : null;
   const categories = (Object.keys(CATEGORY_META) as ServiceCategory[]).map((category) => ({
     id: category,
@@ -219,6 +223,10 @@ export function ClientHomeScreen() {
         time: item.startTime.slice(11, 16),
         paymentType,
         status: item.status === 'CONFIRMED' ? 'confirmed' : 'pending',
+        sessionLabel:
+          item.packageSessionIndex && item.packagePurchase?.sessionCount
+            ? `${item.packageSessionIndex}/${item.packagePurchase.sessionCount}`
+            : null,
       };
     });
 
@@ -515,10 +523,6 @@ function ActivePlanCard({ plan, embedded }: { plan: any; embedded?: boolean }) {
               {plan.status === 'CANCELED' ? 'Acesso até' : 'Próxima cobrança'}: {plan.nextPayment}
             </Text>
           </View>
-          <View style={styles.statusBadge}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusText}>{plan.status === 'CANCELED' ? (plan.nextPayment ? 'EM CANCELAMENTO' : 'CANCELADO') : plan.status === 'PAUSED' ? 'PAUSADO' : plan.status === 'PAST_DUE' ? 'PENDENTE' : 'ATIVO'}</Text>
-          </View>
         </View>
 
         <View style={styles.progressSection}>
@@ -639,7 +643,7 @@ function AppointmentCard({ appointment, onPress }: { appointment: any; onPress: 
           <View style={[styles.appointmentPayment, { backgroundColor: `${payment.color}15` }]}>
             <Ionicons name={payment.icon as any} size={14} color={payment.color} />
             <Text style={[styles.appointmentPaymentText, { color: payment.color }]}>
-              {payment.text}
+              {payment.text}{appointment.sessionLabel ? ` · ${appointment.sessionLabel}` : ''}
             </Text>
           </View>
         </View>
@@ -850,26 +854,6 @@ const styles = StyleSheet.create({
   planNextPayment: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.8)',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10b981',
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: 'white',
   },
   progressSection: {
     marginTop: 4,

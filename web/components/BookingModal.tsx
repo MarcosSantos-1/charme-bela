@@ -326,7 +326,7 @@ export function BookingModal({
           cpfDigits,
         )
         if (cardData?.paymentId) {
-          router.push(`/cliente/checkout?paymentId=${encodeURIComponent(cardData.paymentId)}&appointmentId=${encodeURIComponent(purchase.appointments?.[0]?.id || '')}`)
+          router.push(`/cliente/checkout?paymentId=${encodeURIComponent(cardData.paymentId)}&appointmentId=${encodeURIComponent(purchase.appointments?.[0]?.id || '')}&packagePurchaseId=${encodeURIComponent(purchase.id)}&serviceId=${encodeURIComponent(service.id)}`)
           return
         }
         throw new Error('Erro ao criar sessão de pagamento')

@@ -327,7 +327,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
                     onChange={(e) => setFormData({ ...formData, installmentsAllowed: e.target.checked })}
                     className="w-4 h-4 text-orange-600 rounded"
                   />
-                  Parcelado (checkout futuro)
+                  Permitir parcelamento no cartão
                 </label>
               </div>
             </div>

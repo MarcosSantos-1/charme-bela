@@ -78,10 +78,20 @@ function iconFor(iconName: string, tone: UiTone): {
   };
 }
 
+function parseActionVoucherId(actionUrl: string): string | undefined {
+  try {
+    const url = new URL(actionUrl, 'https://charmebela.local');
+    return url.searchParams.get('voucherId') || undefined;
+  } catch {
+    const match = actionUrl.match(/[?&]voucherId=([^&]+)/i);
+    return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+  }
+}
+
 /** Mapeia actionUrl do web para destino no app. */
 export function resolveNotificationNav(
   actionUrl?: string
-): { tab?: string; profileScreen?: string; stack?: string } | null {
+): { tab?: string; profileScreen?: string; stack?: string; applyVoucherId?: string } | null {
   if (!actionUrl) return null;
   const path = actionUrl.toLowerCase();
   if (path.includes('agenda')) return { tab: 'Agenda' };
@@ -90,7 +100,7 @@ export function resolveNotificationNav(
     return { stack: 'Plan' };
   }
   if (path.includes('servico') || path.includes('serviços') || path.includes('servicos')) {
-    return { tab: 'Services' };
+    return { tab: 'Services', applyVoucherId: parseActionVoucherId(actionUrl) };
   }
   return null;
 }

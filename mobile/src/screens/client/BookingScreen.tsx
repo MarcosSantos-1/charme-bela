@@ -237,6 +237,14 @@ export function BookingScreen({ route, navigation }: Props) {
     return () => clearTimeout(handle);
   }, [step]);
 
+  useEffect(() => {
+    if (step !== 'date' || !date) return;
+    const handle = setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 80);
+    return () => clearTimeout(handle);
+  }, [date, step, planMonthFull]);
+
   const selectDay = (ymd: string) => {
     if (date === ymd) {
       setDate('');

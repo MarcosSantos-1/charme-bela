@@ -167,6 +167,7 @@ export function ServicesScreen() {
       setPlanOnly(false);
       const category = route.params?.category;
       const machine = route.params?.machine;
+      const applyVoucherId = route.params?.applyVoucherId;
       if (machine === 'LASER' || machine === 'CRYO') {
         setMachineFilter(machine);
         setSelectedCategory(null);
@@ -178,10 +179,14 @@ export function ServicesScreen() {
           setSelectedCategory(null);
         }
       }
+      if (applyVoucherId) {
+        setAppliedVoucherId(applyVoucherId);
+        navigation.setParams({ applyVoucherId: undefined });
+      }
       scrollToTop();
       const unsubscribe = navigation.addListener('tabPress', scrollToTop);
       return unsubscribe;
-    }, [navigation, route.params?.category, route.params?.machine, scrollToTop]),
+    }, [navigation, route.params?.applyVoucherId, route.params?.category, route.params?.machine, scrollToTop]),
   );
 
   const categories = (Object.keys(CATEGORY_META) as ServiceCategory[])

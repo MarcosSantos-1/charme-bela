@@ -33,6 +33,7 @@ interface PaymentHoldBannerProps {
     serviceId: string
     paymentAmount?: number | null
     paymentExpiresAt?: string | null
+    packagePurchaseId?: string | null
     service?: { id?: string; name?: string; price?: number } | null
   }
   onExpired?: () => void
@@ -78,10 +79,18 @@ export function PaymentHoldBanner({
         appointment.userId,
         appointment.serviceId,
         appointment.id,
-        amount ?? undefined
+        amount ?? undefined,
+        undefined,
+        appointment.packagePurchaseId || undefined,
       )
       if (session?.paymentId) {
-        window.location.href = `/cliente/checkout?paymentId=${encodeURIComponent(session.paymentId)}&appointmentId=${encodeURIComponent(appointment.id)}`
+        const params = new URLSearchParams({
+          paymentId: session.paymentId,
+          appointmentId: appointment.id,
+        })
+        if (appointment.packagePurchaseId) params.set('packagePurchaseId', appointment.packagePurchaseId)
+        if (appointment.serviceId) params.set('serviceId', appointment.serviceId)
+        window.location.href = `/cliente/checkout?${params.toString()}`
         return
       }
       throw new Error('Não foi possível abrir o checkout')

@@ -31,22 +31,44 @@ function savedCardLabel(card: api.PaymentMethod) {
   return `${cardBrandLabel(card.brand)} •••• ${card.last4}`
 }
 
+const MAX_PACKAGE_INSTALLMENTS = 3
+const MIN_PACKAGE_INSTALLMENT_VALUE = 5
+
+function packageInstallmentOptions(total: number) {
+  const options = [1]
+  for (let count = 2; count <= MAX_PACKAGE_INSTALLMENTS; count += 1) {
+    if (total / count >= MIN_PACKAGE_INSTALLMENT_VALUE) options.push(count)
+  }
+  return options
+}
+
+function formatMoney(value: number) {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
 function PayCheckout({
-  paymentId,
+  paymentId: initialPaymentId,
   appointmentId,
+  packagePurchaseId,
+  serviceId,
   cardOnly,
   isUpgrade,
 }: {
   paymentId: string
   appointmentId: string | null
+  packagePurchaseId: string | null
+  serviceId: string | null
   cardOnly: boolean
   isUpgrade?: boolean
 }) {
   const router = useRouter()
   const { user } = useAuth()
+  const [paymentId, setPaymentId] = useState(initialPaymentId)
   const [loading, setLoading] = useState(true)
   const [paid, setPaid] = useState(false)
   const [amount, setAmount] = useState(0)
+  const [installmentCount, setInstallmentCount] = useState(1)
+  const [changingInstallments, setChangingInstallments] = useState(false)
   const [invoiceUrl, setInvoiceUrl] = useState<string | null>(null)
   const [pixCopy, setPixCopy] = useState<string | null>(null)
   const [pixQr, setPixQr] = useState<string | null>(null)
@@ -121,6 +143,42 @@ function PayCheckout({
     }
   }, [cardOnly, isUpgrade, paymentId, router, paid, user?.id])
 
+  const isPackage = Boolean(packagePurchaseId)
+  const installmentChoices = packageInstallmentOptions(amount)
+
+  const applyInstallment = async (count: number) => {
+    if (!user || !isPackage || !serviceId || count === installmentCount || changingInstallments) return
+    setChangingInstallments(true)
+    try {
+      const session = await api.createPaymentSession(
+        user.id,
+        serviceId,
+        appointmentId || undefined,
+        undefined,
+        undefined,
+        packagePurchaseId || undefined,
+        undefined,
+        count > 1 ? count : undefined,
+      )
+      if (!session.paymentId) throw new Error('Não foi possível atualizar o parcelamento')
+      setPaymentId(session.paymentId)
+      setInvoiceUrl(session.invoiceUrl || session.url || null)
+      setAmount(session.amount || amount)
+      setInstallmentCount(count)
+      const next = new URLSearchParams(window.location.search)
+      next.set('paymentId', session.paymentId)
+      if (packagePurchaseId) next.set('packagePurchaseId', packagePurchaseId)
+      if (serviceId) next.set('serviceId', serviceId)
+      router.replace(`/cliente/checkout?${next.toString()}`)
+    } catch (error: any) {
+      toast.error(error.message || 'Não foi possível alterar o parcelamento')
+    } finally {
+      setChangingInstallments(false)
+    }
+  }
+
+  const visibleSavedCards = savedCards.filter((card) => installmentCount <= 1 || card.kind !== 'debit')
+
   const payWithSaved = async (card: api.PaymentMethod) => {
     if (!user || chargingSavedId) return
     setChargingSavedId(card.id)
@@ -129,6 +187,7 @@ function PayCheckout({
         userId: user.id,
         paymentId,
         appointmentId: appointmentId || undefined,
+        packagePurchaseId: packagePurchaseId || undefined,
         savedCardId: card.id,
       })
       if (result.paid) {
@@ -228,16 +287,59 @@ function PayCheckout({
       <div className="bg-gradient-to-br from-pink-500 to-pink-700 rounded-2xl p-6 text-white">
         <p className="text-sm font-medium text-pink-100">Valor a pagar</p>
         <p className="text-4xl font-extrabold mt-1">
-          {amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          {formatMoney(amount)}
         </p>
+        {isPackage && installmentCount > 1 ? (
+          <p className="text-sm text-pink-100 mt-1">
+            {installmentCount}x de {formatMoney(amount / installmentCount)} no crédito
+          </p>
+        ) : null}
         <p className="text-sm text-pink-100 mt-2">
           {isUpgrade
             ? 'Só a diferença do plano, no crédito. Pode usar o cartão salvo — o plano troca assim que o pagamento confirmar.'
             : cardOnly
             ? 'Assinatura no cartão de crédito. Débito não renova o plano.'
+            : isPackage
+            ? 'Pacote: parcele no crédito. Pix e débito continuam à vista.'
             : 'Pague com Pix nesta tela ou crédito/débito no checkout seguro.'}
         </p>
       </div>
+
+      {isPackage && installmentChoices.length > 1 ? (
+        <div className="bg-white rounded-2xl p-5 border border-gray-200">
+          <h2 className="text-lg font-bold text-gray-900">Parcelar no crédito</h2>
+          <p className="text-sm text-gray-500 mb-3">Só para pacotes. Pix e débito continuam à vista.</p>
+          <div className="flex flex-wrap gap-2">
+            {installmentChoices.map((count) => {
+              const selected = installmentCount === count
+              return (
+                <button
+                  key={count}
+                  type="button"
+                  disabled={changingInstallments}
+                  onClick={() => void applyInstallment(count)}
+                  className={`min-w-[4.5rem] rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-60 ${
+                    selected
+                      ? 'border-pink-500 bg-pink-50 text-pink-700'
+                      : 'border-gray-200 text-gray-700 hover:border-pink-200'
+                  }`}
+                >
+                  <span className="block">{count === 1 ? 'À vista' : `${count}x`}</span>
+                  <span className={`block text-xs font-medium ${selected ? 'text-pink-600' : 'text-gray-400'}`}>
+                    {count === 1 ? formatMoney(amount) : formatMoney(amount / count)}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          {changingInstallments ? (
+            <p className="mt-3 text-xs text-gray-500 inline-flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Atualizando cobrança…
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {!cardOnly && (pixCopy || qrSrc) ? (
       <div className="bg-white rounded-2xl p-6 border border-gray-200 text-center">
@@ -267,7 +369,7 @@ function PayCheckout({
       </div>
       ) : null}
 
-      {savedCards.map((card) => {
+      {visibleSavedCards.map((card) => {
         const charging = chargingSavedId === card.id
         return (
           <button
@@ -324,6 +426,8 @@ function PayCheckout({
                 ? 'Mesma tela da assinatura. A diferença entra no cartão e o plano novo vale na hora.'
                 : cardOnly
                 ? 'A assinatura renova no crédito. Depois você escolhe um apelido para o cartão.'
+                : isPackage && installmentCount > 1
+                ? `Checkout seguro em ${installmentCount}x no crédito. Pix e débito continuam à vista.`
                 : 'Crédito ou débito no checkout seguro. Depois você escolhe um apelido para aparecer na hora de pagar.'}
             </p>
           </div>
@@ -344,6 +448,8 @@ function CheckoutContent() {
   
   const paymentId = searchParams.get('paymentId')
   const appointmentId = searchParams.get('appointmentId')
+  const packagePurchaseId = searchParams.get('packagePurchaseId')
+  const serviceId = searchParams.get('serviceId')
   const cardOnly = searchParams.get('plan') === '1'
   const isUpgrade = searchParams.get('upgrade') === '1'
   const success = searchParams.get('success')
@@ -366,7 +472,14 @@ function CheckoutContent() {
       <ProtectedRoute requiredRole="CLIENT">
         <ClientLayout title="Pagamento">
           <div className="max-w-lg mx-auto px-4 py-6">
-            <PayCheckout paymentId={paymentId} appointmentId={appointmentId} cardOnly={cardOnly} isUpgrade={isUpgrade} />
+            <PayCheckout
+              paymentId={paymentId}
+              appointmentId={appointmentId}
+              packagePurchaseId={packagePurchaseId}
+              serviceId={serviceId}
+              cardOnly={cardOnly}
+              isUpgrade={isUpgrade}
+            />
           </div>
         </ClientLayout>
       </ProtectedRoute>

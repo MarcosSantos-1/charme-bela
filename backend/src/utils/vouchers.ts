@@ -300,6 +300,19 @@ export async function mergeReusableCredits(params: {
 
 /** Créditos em R$ com saldo não podem ficar presos em isUsed por um hold parcial. */
 export async function repairReusableCredits(userId?: string): Promise<number> {
+  const clearedExpiry = await prisma.voucher.updateMany({
+    where: {
+      grantedBy: 'system',
+      description: { startsWith: 'Crédito de cancelamento' },
+      expiresAt: { not: null },
+      ...(userId ? { userId } : {}),
+    },
+    data: { expiresAt: null },
+  })
+  if (clearedExpiry.count > 0) {
+    logger.info(`🎫 ${clearedExpiry.count} crédito(s) de cancelamento sem validade`)
+  }
+
   const result = await prisma.voucher.updateMany({
     where: {
       type: 'DISCOUNT',

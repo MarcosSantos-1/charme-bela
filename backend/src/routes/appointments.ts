@@ -1088,9 +1088,8 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       } else if (lostTreatment) {
         message = `Agendamento cancelado. Como foi cancelado com menos de ${minHours}h de antecedência, a sessão do plano foi contabilizada.`
       } else if (creditVoucher) {
-        const months = isLate ? 3 : 6
         const creditValue = creditVoucher.remainingAmount ?? creditVoucher.discountAmount
-        message = `Agendamento cancelado. Você recebeu um crédito de R$ ${creditValue?.toFixed(2).replace('.', ',')} para usar em outros procedimentos, válido por ${months} meses.`
+        message = `Agendamento cancelado. Você recebeu um crédito de R$ ${creditValue?.toFixed(2).replace('.', ',')} para usar em outros procedimentos.`
       }
       
       return reply.status(200).send({

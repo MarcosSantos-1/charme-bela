@@ -30,7 +30,7 @@ export default function AgendaPage() {
     cancelAppointment: hookCancelAppointment,
     rescheduleAppointment: hookRescheduleAppointment
   } = useAppointments(user?.id)
-  const { subscription, hasSubscription, remainingTreatments } = useSubscription(user?.id)
+  const { subscription, hasSubscription, cancelInProgress, remainingTreatments } = useSubscription(user?.id)
   
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [currentMonth, setCurrentMonth] = useState(new Date())
@@ -282,6 +282,14 @@ export default function AgendaPage() {
   const getMaxRescheduleDate = () => {
     const today = new Date()
     const nextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0)
+    if (
+      cancelInProgress &&
+      subscription?.endDate &&
+      selectedAppointment?.origin === 'SUBSCRIPTION'
+    ) {
+      const until = new Date(subscription.endDate)
+      if (!Number.isNaN(until.getTime()) && until < nextMonth) return until
+    }
     return nextMonth
   }
 

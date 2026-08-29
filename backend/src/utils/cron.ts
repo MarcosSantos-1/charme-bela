@@ -38,6 +38,8 @@ async function runWakeMaintenance() {
     // Não inclui check de vouchers: avisaria de novo a cada cold start
     await cancelExpiredAppointments()
     await expireFreeMonthSubscriptions()
+    await processPastDueDunning()
+    await silenceAsaasEmailsBackfill()
     await autoCompletePreviousDayAppointments()
     await finalizeMachineRentals()
     logger.success('✅ Manutenção pós-wake concluída')
@@ -115,11 +117,20 @@ function setupIntervalJobs() {
     }
   }, 6 * 60 * 60 * 1000)
 
+  setInterval(async () => {
+    try {
+      await processPastDueDunning()
+    } catch (error) {
+      logger.error('Erro no dunning de assinatura:', error)
+    }
+  }, 6 * 60 * 60 * 1000)
+
   logger.success('✅ Cron jobs em modo always-on (FLY_ALWAYS_ON=true):')
   logger.info('   - Cancelamento automático: a cada 30min')
   logger.info('   - Auto-completar tratamentos: diariamente à meia-noite')
   logger.info('   - Notificar vouchers expirando: diariamente às 10:00')
   logger.info('   - Expirar meses grátis: a cada 6 horas')
+  logger.info('   - Retry/encerrar assinaturas em atraso: a cada 6 horas')
 }
 
 async function cancelExpiredAppointments() {
@@ -137,6 +148,24 @@ async function cancelExpiredAppointments() {
 
   if (data.canceled && data.canceled > 0) {
     logger.warning(`⏰ ${data.canceled} agendamento(s) expirado(s) cancelado(s)`)
+  }
+}
+
+async function processPastDueDunning() {
+  try {
+    const { processPastDueSubscriptions } = await import('./subscriptionDunning')
+    await processPastDueSubscriptions()
+  } catch (error) {
+    logger.error('Erro ao processar assinaturas em atraso:', error)
+  }
+}
+
+async function silenceAsaasEmailsBackfill() {
+  try {
+    const { silenceExistingAsaasCustomers } = await import('./subscriptionDunning')
+    await silenceExistingAsaasCustomers()
+  } catch (error) {
+    logger.error('Erro ao desligar e-mails Asaas existentes:', error)
   }
 }
 

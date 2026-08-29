@@ -31,6 +31,7 @@ import {
   getPaymentHistory,
   getPaymentMethods,
   reactivateSubscription,
+  retrySubscriptionPayment,
   updateSavedCard,
 } from '../../../lib/api';
 import {
@@ -43,7 +44,7 @@ import {
   type Plan,
   type ServiceCategory,
 } from '../../../types/commercial';
-import { brand } from '../../../theme/brand';
+import { brand, cardFaceGradient } from '../../../theme/brand';
 import type { ClientStackParamList } from '../../../navigation/ClientNavigator';
 
 function isCancelInProgress(sub?: { status?: string; endDate?: string | null; cancelInProgress?: boolean } | null) {
@@ -193,6 +194,20 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
     ]);
   };
 
+  const retryPayment = (savedCardId?: string) => {
+    if (!user) return;
+    void run(
+      'retry-sub',
+      async () => {
+        const result = await retrySubscriptionPayment({ userId: user.id, savedCardId });
+        if (!result.paid) {
+          throw new Error(result.message || 'Ainda não foi possível confirmar o pagamento.');
+        }
+      },
+      'Pagamento confirmado. Sua assinatura está ativa.',
+    );
+  };
+
   const setDefaultCard = (card: PaymentMethod) => {
     if (!user) return;
     if (card.kind === 'debit') {
@@ -205,7 +220,9 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
     void run(
       `default-${card.id}`,
       () => updateSavedCard(card.id, { userId: user.id, isDefault: true }),
-      `${savedCardLabel(card)} passa a ser debitado automaticamente.`,
+      subscription?.status === 'PAST_DUE'
+        ? 'Cartão atualizado. Se o débito passar, sua assinatura volta a ficar ativa.'
+        : `${savedCardLabel(card)} passa a ser debitado automaticamente.`,
     );
   };
 
@@ -430,6 +447,30 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
           </View>
         ) : null}
 
+        {subscription?.status === 'PAST_DUE' ? (
+          <View style={styles.pastDueCard}>
+            <Text style={styles.pastDueTitle}>Pagamento da assinatura não passou</Text>
+            <Text style={styles.pastDueText}>
+              Troque o cartão ou tente pagar de novo.
+              {subscription.graceDaysLeft != null
+                ? ` Você tem ${subscription.graceDaysLeft} dia(s) para regularizar.`
+                : ' Você tem até 7 dias para regularizar.'}{' '}
+              Depois o plano volta para sem assinatura e os horários do plano são cancelados.
+            </Text>
+            <TouchableOpacity
+              style={styles.pastDueButton}
+              onPress={() => retryPayment()}
+              disabled={busy === 'retry-sub'}
+            >
+              {busy === 'retry-sub' ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.pastDueButtonText}>Tentar pagar novamente</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>{subscription ? 'Trocar ou conhecer' : 'Escolha seu plano'}</Text>
           <Text style={styles.sectionHint}>{plans.length} opções</Text>
@@ -507,26 +548,20 @@ export function MyPlanScreen({ onBack }: { onBack: () => void }) {
           {loadingPayments ? (
             <ActivityIndicator color={brand.rose} />
           ) : methods.length ? (
-            methods.map((method) => {
+            methods.map((method, index) => {
               const settingDefault = busy === `default-${method.id}`;
               const deleting = busy === `delete-${method.id}`;
+              const colors = cardFaceGradient(method, index);
               return (
                 <View key={method.id} style={styles.cardBlock}>
-                  <View style={styles.paymentMethod}>
-                    <Image source={creditCard3dSource} style={styles.card3dIcon} resizeMode="contain" />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.methodTitle}>{savedCardLabel(method)}</Text>
-                      <Text style={styles.methodSubtitle}>
-                        {method.kind === 'debit' ? 'Débito' : 'Crédito'}
-                        {method.nickname
-                          ? ` · ${cardBrandLabel(method.brand)}${method.last4 ? ` •••• ${method.last4}` : ''}`
-                          : method.last4
-                            ? ` · ${cardBrandLabel(method.brand)} •••• ${method.last4}`
-                            : ''}
-                        {method.isDefault ? ' · débito automático' : ''}
-                      </Text>
-                    </View>
-                  </View>
+                  <LinearGradient colors={[...colors]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.cardFace}>
+                    <Text style={styles.cardFaceTitle}>{savedCardLabel(method)}</Text>
+                    <Text style={styles.cardFaceSub}>
+                      {method.kind === 'debit' ? 'Débito' : 'Crédito'}
+                      {method.last4 ? `  •••• ${method.last4}` : ''}
+                      {method.isDefault ? '  · débito automático' : ''}
+                    </Text>
+                  </LinearGradient>
                   <View style={styles.cardActions}>
                     {method.kind !== 'debit' && !method.isDefault ? (
                       <TouchableOpacity
@@ -1201,7 +1236,33 @@ const styles = StyleSheet.create({
   card3dIcon: { width: 52, height: 36 },
   methodTitle: { color: brand.ink, fontWeight: '700' },
   methodSubtitle: { color: brand.muted, fontSize: 12, marginTop: 3 },
-  cardActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingLeft: 64 },
+  cardFace: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 8,
+    minHeight: 92,
+    justifyContent: 'flex-end',
+  },
+  cardFaceTitle: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  cardFaceSub: { color: 'rgba(255,255,255,0.82)', fontSize: 12, marginTop: 6 },
+  pastDueCard: {
+    backgroundColor: '#fff7ed',
+    borderColor: '#fdba74',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 18,
+  },
+  pastDueTitle: { color: '#9a3412', fontWeight: '800', fontSize: 16, marginBottom: 6 },
+  pastDueText: { color: '#9a3412', fontSize: 13, lineHeight: 19, marginBottom: 12 },
+  pastDueButton: {
+    backgroundColor: brand.rose,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  pastDueButtonText: { color: '#fff', fontWeight: '800' },
+  cardActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   cardAction: {
     backgroundColor: brand.blush,
     borderRadius: 999,

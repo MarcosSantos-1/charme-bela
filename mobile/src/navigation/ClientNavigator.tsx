@@ -61,7 +61,7 @@ type GatePhase = 'loading' | 'anamnesis' | 'subscription' | 'ready';
 
 function isSubscriptionActive(subscription: Subscription | null | undefined) {
   if (!subscription) return false;
-  if (subscription.status === 'ACTIVE') return true;
+  if (subscription.status === 'ACTIVE' || subscription.status === 'PAST_DUE') return true;
   if (
     subscription.status === 'CANCELED' &&
     subscription.endDate &&

@@ -44,8 +44,6 @@ function isServiceInPlan(service: Service, subscription: Subscription | null) {
   if (!subscription) return false;
   const stillActive =
     subscription.status === 'ACTIVE' ||
-    subscription.status === 'PAUSED' ||
-    subscription.status === 'PAST_DUE' ||
     (subscription.status === 'CANCELED' && Boolean(subscription.endDate && new Date(subscription.endDate) > new Date()));
   if (!stillActive) return false;
   return subscription.plan.services.some((planService) => planService.id === service.id);

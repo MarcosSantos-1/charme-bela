@@ -49,6 +49,44 @@ export function isCancelInProgress(sub?: {
   return new Date(sub.endDate).getTime() > Date.now()
 }
 
+export type PlanBookingCheck = { ok: true } | { ok: false; error: string }
+
+/** Pode marcar horário pelo plano neste instante? PAST_DUE não; em cancelamento só até endDate. */
+export function canBookWithPlan(
+  sub:
+    | {
+        status?: string | null
+        endDate?: Date | string | null
+      }
+    | null
+    | undefined,
+  appointmentStart: Date,
+): PlanBookingCheck {
+  if (!sub) {
+    return { ok: false, error: 'Usuário não possui assinatura ativa' }
+  }
+  if (sub.status === 'PAST_DUE') {
+    return {
+      ok: false,
+      error: 'Regularize o pagamento da assinatura em Meu plano para marcar pelo plano. Avulso continua liberado.',
+    }
+  }
+  if (sub.status === 'PAUSED') {
+    return { ok: false, error: 'Usuário não possui assinatura ativa' }
+  }
+  if (sub.status === 'ACTIVE') return { ok: true }
+  if (isCancelInProgress(sub) && sub.endDate) {
+    if (appointmentStart.getTime() > new Date(sub.endDate).getTime()) {
+      return {
+        ok: false,
+        error: `Seu plano vale até ${formatPlanDatePtBr(sub.endDate)}. Não é possível agendar pelo plano após essa data.`,
+      }
+    }
+    return { ok: true }
+  }
+  return { ok: false, error: 'Usuário não possui assinatura ativa' }
+}
+
 export function formatPlanDatePtBr(value: Date | string) {
   return new Date(value).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 }
@@ -172,6 +210,7 @@ export async function applyPlanChange(userId: string, newPlanId: string) {
       endDate: null,
       canceledAt: null,
       cancelReason: null,
+      pastDueSince: null,
     },
     include: planInclude,
   })

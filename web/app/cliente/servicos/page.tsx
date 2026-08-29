@@ -23,7 +23,7 @@ function ServicosContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user } = useAuth()
-  const { subscription, hasSubscription, remainingTreatments } = useSubscription(user?.id)
+  const { subscription, hasSubscription, cancelInProgress, remainingTreatments } = useSubscription(user?.id)
   
   const [services, setServices] = useState<Service[]>([])
   const [vouchers, setVouchers] = useState<api.Voucher[]>([])
@@ -470,6 +470,7 @@ function ServicosContent() {
           onSuccess={handleBookingSuccess}
           availableVoucher={selectedService ? hasFreeVoucher(selectedService.id) : null}
           discountVoucher={activeDiscountVoucher}
+          planAccessUntil={cancelInProgress ? subscription?.endDate : undefined}
         />
       </ClientLayout>
     </ProtectedRoute>

@@ -501,6 +501,16 @@ export async function getPaymentStatus(paymentId: string) {
   }>(response.data);
 }
 
+export async function retrySubscriptionPayment(data: { userId?: string; savedCardId?: string }) {
+  const response = await api.post('/payments/retry-subscription', data);
+  return unwrap<{
+    paid: boolean;
+    paymentId: string | null;
+    status: string | null;
+    message?: string;
+  }>(response.data);
+}
+
 export async function chargeSavedCard(data: {
   userId?: string;
   paymentId?: string;

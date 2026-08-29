@@ -116,11 +116,17 @@ export function BookingScreen({ route, navigation }: Props) {
     });
   }, [preferredVoucherId, service?.id, vouchers]);
 
+  const cancelInProgress = Boolean(
+    subscription?.cancelInProgress ||
+      (subscription?.status === 'CANCELED' &&
+        subscription.endDate &&
+        new Date(subscription.endDate) > new Date()),
+  );
   const serviceInUserPlan = Boolean(
-    subscription?.status === 'ACTIVE' &&
+    (subscription?.status === 'ACTIVE' || cancelInProgress) &&
     service?.allowOnSubscription !== false &&
     !service?.machineKind &&
-    subscription.plan.services.some((item) => item.id === service?.id),
+    Boolean(subscription?.plan.services.some((item) => item.id === service?.id)),
   );
   // machineKind services default to avulso unless allowOnSubscription
   const machineBlocksPlan = Boolean(service?.machineKind && service.allowOnSubscription === false);
@@ -188,7 +194,12 @@ export function BookingScreen({ route, navigation }: Props) {
   }, [date, service]);
 
   const minDate = localDateKey(new Date());
-  const maxDate = service?.machineKind ? lastDayOfNextMonth() : addDays(minDate, 29);
+  const defaultMax = service?.machineKind ? lastDayOfNextMonth() : addDays(minDate, 29);
+  const planUntil =
+    cancelInProgress && subscription?.endDate
+      ? localDateKey(new Date(subscription.endDate))
+      : null;
+  const maxDate = planUntil && planUntil < defaultMax ? planUntil : defaultMax;
 
   useEffect(() => {
     if (!service) return;

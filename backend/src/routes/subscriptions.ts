@@ -21,6 +21,7 @@ import {
   resolveNextDueDate,
   scheduleDowngrade,
 } from '../utils/planChange'
+import { daysLeftInPastDueGrace } from '../utils/subscriptionDunning'
 
 /** Fim do ciclo já pago a partir do dia de aniversário da assinatura (fallback sem gateway). */
 function computeAccessUntilFromStartDate(startDate: Date, now: Date = new Date()): Date {
@@ -116,13 +117,16 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         cancelInProgress && subscription.endDate
           ? new Date(`${nextDueIsoAfterAccessUntil(subscription.endDate)}T12:00:00.000-03:00`)
           : await resolveNextDueDate(subscription)
-      
       logger.success(`Assinatura encontrada: ${subscription.id}`)
       return reply.status(200).send({
         success: true,
         data: {
           ...subscription,
           cancelInProgress,
+          graceDaysLeft:
+            subscription.status === 'PAST_DUE'
+              ? daysLeftInPastDueGrace(subscription.pastDueSince)
+              : null,
           nextDueDate: nextDueDate.toISOString(),
           currentMonthUsage: {
             totalTreatments: subscription.plan.maxTreatmentsPerMonth - remaining.thisMonth

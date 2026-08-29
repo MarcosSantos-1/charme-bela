@@ -34,6 +34,7 @@ interface BookingModalProps {
   onSuccess: (type: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER') => void
   availableVoucher?: any // Voucher de tratamento grátis ou desconto para este serviço
   discountVoucher?: any // Voucher de desconto geral
+  planAccessUntil?: string | null
 }
 
 export function BookingModal({
@@ -47,7 +48,8 @@ export function BookingModal({
   userId,
   onSuccess,
   availableVoucher,
-  discountVoucher
+  discountVoucher,
+  planAccessUntil
 }: BookingModalProps) {
   const router = useRouter()
   const [step, setStep] = useState<'details' | 'booking' | 'confirming' | 'success'>('details')
@@ -123,7 +125,9 @@ export function BookingModal({
       // Marcadores de calendário (fechado / laser / crio)
       const today = new Date()
       const from = today.toISOString().slice(0, 10)
-      const toDate = new Date(today.getFullYear(), today.getMonth() + 2, 0)
+      const toDate = planAccessUntil && new Date(planAccessUntil) < new Date(today.getFullYear(), today.getMonth() + 2, 0)
+        ? new Date(planAccessUntil)
+        : new Date(today.getFullYear(), today.getMonth() + 2, 0)
       const to = toDate.toISOString().slice(0, 10)
       void api.getDayMarkers(from, to).then((res) => {
         setDayMarkers(res.days || [])
@@ -152,14 +156,24 @@ export function BookingModal({
   const markerByDate = new Map(dayMarkers.map((d) => [d.date, d]))
   const machineKind = (service as api.Service).machineKind || null
 
-  // Calcular data máxima: último dia do próximo mês
+  // Calcular data máxima: último dia do próximo mês, limitado à vigência em cancelamento
   const getMaxDate = () => {
     const today = new Date()
-    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0) // Último dia do próximo mês
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0)
+    if (planAccessUntil) {
+      const until = new Date(planAccessUntil)
+      if (!Number.isNaN(until.getTime()) && until < nextMonth) return until
+    }
     return nextMonth
   }
 
   const isDateDisabled = (date: Date) => {
+    if (planAccessUntil) {
+      const until = new Date(planAccessUntil)
+      const day = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+      const last = new Date(until.getFullYear(), until.getMonth(), until.getDate())
+      if (day > last) return true
+    }
     const ymd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
     const marker = markerByDate.get(ymd)
     if (!marker) return false

@@ -359,21 +359,25 @@ export async function createCustomer(input: {
     ...(email ? { email } : {}),
     cpfCnpj: input.cpfCnpj,
     ...asaasAddressPayload(input.address),
-    notificationDisabled: false,
+    notificationDisabled: true,
     externalReference: input.externalReference,
   }
   try {
-    return await asaasFetch<AsaasCustomer>('/customers', {
+    const customer = await asaasFetch<AsaasCustomer>('/customers', {
       method: 'POST',
       body: JSON.stringify({ ...body, ...asaasPhonePayload(input.phone) }),
     })
+    await silenceAsaasCustomer(customer.id)
+    return customer
   } catch (error) {
     if (!isAsaasPhoneError(error)) throw error
     logger.warning('Asaas recusou o telefone na criação do cliente; repetindo sem phone/mobilePhone')
-    return asaasFetch<AsaasCustomer>('/customers', {
+    const customer = await asaasFetch<AsaasCustomer>('/customers', {
       method: 'POST',
       body: JSON.stringify(body),
     })
+    await silenceAsaasCustomer(customer.id)
+    return customer
   }
 }
 
@@ -393,19 +397,66 @@ export async function updateCustomer(
     ...(email ? { email } : {}),
     cpfCnpj: input.cpfCnpj,
     ...asaasAddressPayload(input.address),
+    notificationDisabled: true,
   }
   try {
-    return await asaasFetch<AsaasCustomer>(`/customers/${id}`, {
+    const customer = await asaasFetch<AsaasCustomer>(`/customers/${id}`, {
       method: 'PUT',
       body: JSON.stringify({ ...body, ...asaasPhonePayload(input.phone) }),
     })
+    await silenceAsaasCustomer(id)
+    return customer
   } catch (error) {
     if (!isAsaasPhoneError(error)) throw error
     logger.warning(`Asaas recusou o telefone ao atualizar ${id}; repetindo sem phone/mobilePhone`)
-    return asaasFetch<AsaasCustomer>(`/customers/${id}`, {
+    const customer = await asaasFetch<AsaasCustomer>(`/customers/${id}`, {
       method: 'PUT',
       body: JSON.stringify(body),
     })
+    await silenceAsaasCustomer(id)
+    return customer
+  }
+}
+
+type AsaasCustomerNotification = {
+  id: string
+  enabled?: boolean
+  emailEnabledForCustomer?: boolean
+  smsEnabledForCustomer?: boolean
+  phoneCallEnabledForCustomer?: boolean
+  whatsappEnabledForCustomer?: boolean
+}
+
+/** Desliga e-mail/SMS/WhatsApp do pagador. Evita o e-mail de Pix cancelado. */
+export async function silenceAsaasCustomer(customerId: string | null | undefined) {
+  if (!customerId) return
+  try {
+    await asaasFetch<AsaasCustomer>(`/customers/${customerId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ notificationDisabled: true }),
+    })
+  } catch (error: any) {
+    logger.warning(`Não foi possível marcar notificationDisabled em ${customerId}: ${error.message}`)
+  }
+  try {
+    const listed = await asaasFetch<AsaasList<AsaasCustomerNotification>>(
+      `/customers/${customerId}/notifications`,
+    )
+    const notifications = (listed.data || []).map((item) => ({
+      id: item.id,
+      enabled: false,
+      emailEnabledForCustomer: false,
+      smsEnabledForCustomer: false,
+      phoneCallEnabledForCustomer: false,
+      whatsappEnabledForCustomer: false,
+    }))
+    if (!notifications.length) return
+    await asaasFetch('/notifications/batch', {
+      method: 'POST',
+      body: JSON.stringify({ customer: customerId, notifications }),
+    })
+  } catch (error: any) {
+    logger.warning(`Não foi possível desligar notificações Asaas de ${customerId}: ${error.message}`)
   }
 }
 
@@ -433,7 +484,7 @@ export async function createPayment(input: {
       description: input.description.slice(0, 500),
       externalReference: input.externalReference.slice(0, 100),
       postalService: false,
-      notificationDisabled: input.notificationDisabled ?? false,
+      notificationDisabled: input.notificationDisabled ?? true,
     }),
   })
 }
@@ -577,6 +628,7 @@ export async function createPaymentWithCardToken(input: {
       creditCardToken: input.creditCardToken,
       remoteIp: input.remoteIp,
       postalService: false,
+      notificationDisabled: true,
     }),
   })
 }
@@ -635,6 +687,7 @@ export async function createSubscription(input: {
       cycle: input.cycle || 'MONTHLY',
       description: input.description.slice(0, 500),
       externalReference: input.externalReference.slice(0, 100),
+      notificationDisabled: true,
       ...(input.creditCardToken
         ? { creditCardToken: input.creditCardToken, remoteIp: input.remoteIp }
         : {}),

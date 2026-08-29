@@ -158,6 +158,8 @@ export interface Subscription {
   endDate?: string
   nextDueDate?: string | null
   cancelInProgress?: boolean
+  pastDueSince?: string | null
+  graceDaysLeft?: number | null
   pendingPlanId?: string | null
   pendingPlan?: Plan | null
   pendingChangeAt?: string | null
@@ -1468,6 +1470,18 @@ export async function deleteSavedCard(cardId: string, userId: string): Promise<P
 }
 
 // Buscar métodos de pagamento do usuário
+export async function retrySubscriptionPayment(data: { userId?: string; savedCardId?: string }) {
+  return apiRequest<{
+    paid: boolean
+    paymentId: string | null
+    status: string | null
+    message?: string
+  }>('/payments/retry-subscription', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
 export async function getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
   try {
     const methods = await apiRequest<PaymentMethod[]>(`/payments/methods/${userId}`)

@@ -340,22 +340,44 @@ export async function notifyPaymentFailed(
     currency: 'BRL'
   }).format(paymentData.amount)
   
-  let message = `O pagamento de ${formattedAmount} falhou`
+  let message = `O pagamento de ${formattedAmount} da assinatura não passou`
   if (paymentData.reason) {
     message += `. Motivo: ${paymentData.reason}`
   }
-  message += '. Por favor, atualize sua forma de pagamento.'
+  message +=
+    '. Troque o cartão ou tente pagar de novo em Meu plano. Se não regularizar em 7 dias, o plano volta para sem assinatura e os horários marcados pelo plano serão cancelados.'
   
   return createNotification({
     userId,
     type: 'PAYMENT_FAILED',
-    title: 'Falha no Pagamento',
+    title: 'Falha no Pagamento da Assinatura',
     message,
     icon: 'ALERT',
     priority: 'URGENT',
-    actionUrl: '/cliente/pagamentos',
-    actionLabel: 'Atualizar Pagamento',
+    actionUrl: '/cliente/plano',
+    actionLabel: 'Ir para Meu Plano',
     metadata: paymentData
+  })
+}
+
+export async function notifySubscriptionLapsed(
+  userId: string,
+  data: { planName: string; canceledAppointments: number }
+) {
+  const extra =
+    data.canceledAppointments > 0
+      ? ` ${data.canceledAppointments} horário(s) do plano ${data.canceledAppointments === 1 ? 'foi cancelado' : 'foram cancelados'}.`
+      : ''
+  return createNotification({
+    userId,
+    type: 'SUBSCRIPTION_CANCELED',
+    title: 'Assinatura encerrada',
+    message: `Não foi possível regularizar o pagamento do plano ${data.planName} em 7 dias. Seu status voltou para sem assinatura.${extra} Os horários pagos avulso foram mantidos.`,
+    icon: 'ALERT',
+    priority: 'URGENT',
+    actionUrl: '/cliente/plano',
+    actionLabel: 'Ver Planos',
+    metadata: data,
   })
 }
 

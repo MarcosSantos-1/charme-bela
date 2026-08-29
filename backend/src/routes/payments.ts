@@ -37,6 +37,7 @@ import {
   refundPayment,
   asaasCustomerEmail,
   chargeMatchesInstallments,
+  silenceAsaasCustomer,
   toCheckoutPayload,
   updateCustomer,
   updateSubscriptionCreditCard,
@@ -45,7 +46,6 @@ import { cancelUnpaidPackagePurchase, markPackagePurchasePaid } from '../utils/p
 import { markVoucherUsed, ensureVoucherConsumedForPackage } from '../utils/vouchers'
 import {
   notifyPaymentSucceeded,
-  notifyPaymentFailed,
   notifySubscriptionRenewed,
   notifySubscriptionActivated,
   notifySubscriptionCanceled,
@@ -56,6 +56,7 @@ import {
   clubAlreadyCoveredError,
   clubSubscriptionReference,
   hasPaidClubSubscription,
+  isCancelInProgress,
   isLikelyUpgradeHistoryPayment,
   isUpgradePaymentLabel,
   parseExternalReference,
@@ -64,6 +65,10 @@ import {
   upgradeHistoryDescription,
   upgradeReference,
 } from '../utils/planChange'
+import {
+  markSubscriptionPastDue,
+  retryOverdueSubscription,
+} from '../utils/subscriptionDunning'
 
 const MAX_PACKAGE_INSTALLMENTS = 3
 const MIN_PACKAGE_INSTALLMENT_VALUE = 5
@@ -395,13 +400,19 @@ async function ensurePixCharge(opts: {
   })
 }
 
-/** Cancela Pix pendente da mesma reserva para o Asaas não reenviar e-mail/SMS ao reabrir o checkout. */
+/** Cancela Pix pendente da mesma reserva. Desliga e-mails do cliente antes para o Asaas não avisar o cancelamento. */
 async function cancelPendingPixCharges(externalReference: string) {
   try {
     const listed = await listPayments({
       externalReference,
       limit: 20,
     })
+    const customers = new Set(
+      (listed.data || []).map((item) => item.customer).filter((id): id is string => Boolean(id)),
+    )
+    for (const customerId of customers) {
+      await silenceAsaasCustomer(customerId)
+    }
     for (const item of listed.data || []) {
       if (item.billingType !== 'PIX' || item.deleted) continue
       if (item.status === 'PENDING' || item.status === 'OVERDUE') {
@@ -1433,6 +1444,24 @@ export async function paymentsRoutes(app: FastifyInstance) {
               'Cartão marcado no app, mas o Asaas não atualizou o débito automático. Tente de novo em instantes.',
           })
         }
+        const currentSub = await prisma.subscription.findUnique({
+          where: { userId: resolved.userId },
+          select: { status: true },
+        })
+        if (currentSub?.status === 'PAST_DUE') {
+          try {
+            const retried = await retryOverdueSubscription({
+              userId: resolved.userId,
+              savedCardId: card.id,
+              remoteIp: clientIp(request),
+            })
+            if (retried.paid && retried.payment) {
+              await handlePaymentPaid(retried.payment)
+            }
+          } catch (error: any) {
+            logger.warning(`Retry após trocar cartão não passou: ${error.message}`)
+          }
+        }
       } else if (body.nickname !== undefined) {
         await prisma.savedCard.update({
           where: { id: card.id },
@@ -1785,6 +1814,48 @@ export async function paymentsRoutes(app: FastifyInstance) {
     }
   })
 
+  app.post('/payments/retry-subscription', async (request, reply) => {
+    logger.route('POST', '/payments/retry-subscription')
+    try {
+      if (!isAsaasConfigured()) {
+        return reply.status(503).send({ success: false, error: 'Asaas não configurado (ASAAS_API_KEY)' })
+      }
+      const body = (request.body || {}) as { userId?: string; savedCardId?: string }
+      const resolved = resolveUserId(request, body.userId)
+      if (resolved.error === 'forbidden') {
+        return reply.status(403).send({ success: false, error: 'Acesso negado' })
+      }
+      if (!resolved.userId) {
+        return reply.status(400).send({ success: false, error: 'Usuário não autenticado' })
+      }
+
+      const result = await retryOverdueSubscription({
+        userId: resolved.userId,
+        savedCardId: body.savedCardId,
+        remoteIp: clientIp(request),
+      })
+      if (result.paid && result.payment) {
+        await handlePaymentPaid(result.payment)
+      }
+      return reply.status(200).send({
+        success: true,
+        data: {
+          paid: result.paid,
+          paymentId: result.payment?.id || null,
+          status: result.payment?.status || null,
+          message: result.message || (result.paid ? 'Pagamento confirmado' : 'Pagamento não confirmado'),
+        },
+      })
+    } catch (error: any) {
+      logger.error('Erro ao retentar assinatura:', error)
+      const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500
+      return reply.status(status).send({
+        success: false,
+        error: error.message || 'Não foi possível refazer o pagamento da assinatura',
+      })
+    }
+  })
+
   app.get('/payments/history', async (request, reply) => {
     logger.route('GET', '/payments/history')
     try {
@@ -1960,6 +2031,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
           if (payload.payment) await handlePaymentPaid(payload.payment)
           break
         case 'PAYMENT_OVERDUE':
+        case 'PAYMENT_CREDIT_CARD_CAPTURE_REFUSED':
           if (payload.payment?.subscription) await handleSubscriptionPaymentFailed(payload.payment)
           break
         case 'PAYMENT_DELETED':
@@ -2381,6 +2453,7 @@ async function handleSubscriptionInvoicePaid(payment: AsaasPayment) {
       endDate: null,
       canceledAt: null,
       cancelReason: null,
+      pastDueSince: null,
     },
     create: {
       userId: user.id,
@@ -2496,17 +2569,36 @@ async function handleChargeback(payment: AsaasPayment) {
 async function handleSubscriptionUpdated(subscription: AsaasSubscription) {
   const db = await prisma.subscription.findFirst({
     where: { asaasSubscriptionId: subscription.id },
+    include: { plan: true },
   })
   if (!db) return
-  if (db.status === 'CANCELED' && db.endDate && db.endDate > new Date()) {
+  if (isCancelInProgress(db)) return
+
+  if (subscription.status === 'OVERDUE') {
+    await markSubscriptionPastDue({
+      userId: db.userId,
+      planName: db.plan.name,
+      amount: subscription.value,
+    })
     return
   }
+
+  const inGrace =
+    db.status === 'PAST_DUE' &&
+    db.pastDueSince &&
+    Date.now() - db.pastDueSince.getTime() < 7 * 24 * 60 * 60 * 1000
+  if ((subscription.status === 'INACTIVE' || subscription.status === 'EXPIRED') && inGrace) {
+    return
+  }
+
   let status: 'ACTIVE' | 'CANCELED' | 'PAST_DUE' | 'PAUSED' = 'ACTIVE'
   if (subscription.status === 'INACTIVE' || subscription.status === 'EXPIRED') status = 'CANCELED'
-  else if (subscription.status === 'OVERDUE') status = 'PAST_DUE'
   await prisma.subscription.update({
     where: { id: db.id },
-    data: { status },
+    data: {
+      status,
+      ...(status === 'ACTIVE' ? { pastDueSince: null } : {}),
+    },
   })
 }
 
@@ -2540,13 +2632,10 @@ async function handleSubscriptionPaymentFailed(payment: AsaasPayment) {
     include: { subscription: { include: { plan: true } } },
   })
   if (!user?.subscription) return
-  await prisma.subscription.updateMany({
-    where: { userId: user.id },
-    data: { status: 'PAST_DUE' },
-  })
-  await notifyPaymentFailed(user.id, {
+  await markSubscriptionPastDue({
+    userId: user.id,
     amount: payment.value,
-    description: `Assinatura ${user.subscription.plan.name}`,
+    planName: user.subscription.plan.name,
     reason: 'Pagamento da assinatura não confirmado no prazo',
   })
 }

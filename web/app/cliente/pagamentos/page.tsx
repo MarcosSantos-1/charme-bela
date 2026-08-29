@@ -29,6 +29,7 @@ import {
   PaymentMethod,
   PaymentHistory
 } from '@/lib/api'
+import { cardFaceClassName } from '@/lib/cardColors'
 
 // Componente separado que usa useSearchParams
 function PaymentAlerts() {
@@ -385,16 +386,8 @@ function PagamentosContent() {
 
             {paymentMethods.length > 0 ? (
               <div className="space-y-4">
-                {paymentMethods.map((card) => {
-                  const brandStyle = card.brand === 'visa' 
-                    ? 'bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800' 
-                    : card.brand === 'mastercard'
-                    ? 'bg-gradient-to-br from-orange-500 via-red-500 to-pink-600'
-                    : card.brand === 'amex'
-                    ? 'bg-gradient-to-br from-teal-600 via-cyan-700 to-blue-800'
-                    : card.brand === 'elo'
-                    ? 'bg-gradient-to-br from-yellow-500 via-orange-500 to-red-600'
-                    : 'bg-gradient-to-br from-gray-700 via-gray-800 to-slate-900'
+                {paymentMethods.map((card, index) => {
+                  const brandStyle = cardFaceClassName(card, index)
                   
                   return (
                     <div key={card.id} className="space-y-2">

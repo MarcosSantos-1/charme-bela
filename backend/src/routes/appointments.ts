@@ -25,6 +25,7 @@ import { cancelUnpaidPackagePurchase, releaseSessionOnCancel } from '../utils/pa
 import { attachCancelPolicies, resolveCancelPolicy, minHoursFromPolicy } from '../utils/cancelPolicy'
 import { settlePaidSingleCancel, retryAppointmentRefund } from '../utils/settlement'
 import { normalizePersonName } from '../utils/names'
+import { canBookWithPlan } from '../utils/planChange'
 
 // Lançado dentro da transação quando o slot foi ocupado por outra requisição
 class SlotTakenError extends Error {
@@ -551,10 +552,11 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       
       // 7. Se for de assinatura, valida limites do plano
       if (origin === 'SUBSCRIPTION') {
-        if (!user.subscription || user.subscription.status !== 'ACTIVE') {
+        const planCheck = canBookWithPlan(user.subscription, appointmentStart)
+        if (!planCheck.ok || !user.subscription) {
           return reply.status(400).send({
             success: false,
-            error: 'Usuário não possui assinatura ativa'
+            error: planCheck.ok ? 'Usuário não possui assinatura ativa' : planCheck.error,
           })
         }
         
@@ -1225,6 +1227,16 @@ export async function appointmentsRoutes(app: FastifyInstance) {
       const maxSimultaneous = config?.maxSimultaneous || 1
       const oldMonth = wallClockYearMonth(appointment.startTime)
       const newMonth = wallClockYearMonth(newStart)
+      if (appointment.origin === 'SUBSCRIPTION') {
+        const planCheck = canBookWithPlan(appointment.user.subscription, newStart)
+        if (!planCheck.ok) {
+          return reply.status(400).send({
+            success: false,
+            error: planCheck.error,
+          })
+        }
+      }
+
       const crossesMonth =
         appointment.origin === 'SUBSCRIPTION' && oldMonth.key !== newMonth.key
       const maxPerMonth = appointment.user.subscription?.plan.maxTreatmentsPerMonth

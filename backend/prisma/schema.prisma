@@ -161,6 +161,9 @@ model Subscription {
   endDate               DateTime?           // Fim do acesso (ex.: cancel_at_period_end)
   minimumCommitmentEnd  DateTime?           // LEGADO — fidelidade removida; não usar
   
+  /// Primeira falha de cobrança da assinatura (prazo de 7 dias).
+  pastDueSince          DateTime?
+
   // Controle
   canceledAt            DateTime?
   cancelReason          String?

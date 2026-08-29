@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSubscription } from '@/lib/hooks/useSubscription'
 import * as api from '@/lib/api'
+import { cardFaceClassName } from '@/lib/cardColors'
 import { Plan } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -16,9 +17,14 @@ export default function PlanoPage() {
   const router = useRouter()
   const { user } = useAuth()
   const { subscription, hasSubscription, cancelInProgress, remainingTreatments, cancelSubscription, reactivateSubscription, loading: subLoading, refetch } = useSubscription(user?.id)
+  const isPastDue = subscription?.status === 'PAST_DUE'
+  const showPlan = Boolean(subscription && (hasSubscription || isPastDue))
   
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
+  const [paymentMethods, setPaymentMethods] = useState<api.PaymentMethod[]>([])
+  const [retryingPayment, setRetryingPayment] = useState(false)
+  const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null)
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [showCancelResultModal, setShowCancelResultModal] = useState(false)
   const [cancelUntilLabel, setCancelUntilLabel] = useState<string | null>(null)
@@ -41,6 +47,48 @@ export default function PlanoPage() {
     }
     loadPlans()
   }, [])
+
+  useEffect(() => {
+    if (!user?.id) return
+    void api.getPaymentMethods(user.id).then(setPaymentMethods).catch(() => setPaymentMethods([]))
+  }, [user?.id, subscription?.id, subscription?.status])
+
+  const handleRetryPayment = async (savedCardId?: string) => {
+    if (!user) return
+    setRetryingPayment(true)
+    try {
+      const result = await api.retrySubscriptionPayment({ userId: user.id, savedCardId })
+      if (result.paid) {
+        toast.success('Pagamento confirmado. Sua assinatura está ativa.')
+        await refetch()
+      } else {
+        toast.error(result.message || 'Ainda não foi possível confirmar o pagamento.')
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Não foi possível refazer o pagamento')
+    } finally {
+      setRetryingPayment(false)
+    }
+  }
+
+  const handleSetDefaultCard = async (card: api.PaymentMethod) => {
+    if (!user) return
+    setSettingDefaultId(card.id)
+    try {
+      const next = await api.updateSavedCard(card.id, { userId: user.id, isDefault: true })
+      setPaymentMethods(next)
+      toast.success(
+        isPastDue
+          ? 'Cartão atualizado. Se o débito passar, sua assinatura volta a ficar ativa.'
+          : 'Cartão definido para o débito automático',
+      )
+      if (isPastDue) await refetch()
+    } catch (error: any) {
+      toast.error(error.message || 'Não foi possível atualizar o cartão')
+    } finally {
+      setSettingDefaultId(null)
+    }
+  }
 
   const handleCancelSubscription = async () => {
     if (!subscription) return
@@ -177,7 +225,7 @@ export default function PlanoPage() {
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600 mx-auto"></div>
             </div>
-          ) : hasSubscription && subscription ? (
+          ) : showPlan && subscription ? (
             <>
               {/* Current Plan Card */}
               <div className="bg-gradient-to-br from-pink-500 to-purple-600 rounded-2xl text-white p-6">
@@ -186,7 +234,7 @@ export default function PlanoPage() {
                   <span className={`px-3 py-1 backdrop-blur-sm rounded-full text-xs font-medium ${
                     cancelInProgress ? 'bg-amber-500/30' : subscription.status === 'ACTIVE' ? 'bg-green-500/30' : 'bg-red-500/30'
                   }`}>
-                    {cancelInProgress ? 'Em cancelamento' : subscription.status === 'ACTIVE' ? 'Ativo' : subscription.status}
+                    {cancelInProgress ? 'Em cancelamento' : subscription.status === 'ACTIVE' ? 'Ativo' : subscription.status === 'PAST_DUE' ? 'Pagamento pendente' : subscription.status}
                   </span>
                 </div>
                 <h2 className="text-2xl font-bold mb-1">{subscription.plan.name}</h2>
@@ -248,6 +296,73 @@ export default function PlanoPage() {
                   >
                     Desfazer troca
                   </button>
+                </div>
+              ) : null}
+
+              {isPastDue ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="font-semibold text-amber-950">Pagamento da assinatura não passou</h3>
+                      <p className="text-sm text-amber-900 mt-1">
+                        Troque o cartão ou tente pagar de novo.
+                        {subscription.graceDaysLeft != null
+                          ? ` Você tem ${subscription.graceDaysLeft} dia(s) para regularizar.`
+                          : ' Você tem até 7 dias para regularizar.'}{' '}
+                        Depois disso o plano volta para sem assinatura e os horários marcados pelo plano serão cancelados. Avulso continua valendo.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={() => void handleRetryPayment()}
+                      disabled={retryingPayment || paymentMethods.filter((c) => c.kind !== 'debit').length === 0}
+                    >
+                      {retryingPayment ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                          Tentando...
+                        </>
+                      ) : (
+                        'Tentar pagar novamente'
+                      )}
+                    </Button>
+                    <Button variant="secondary" onClick={() => router.push('/cliente/pagamentos')}>
+                      Gerenciar cartões
+                    </Button>
+                  </div>
+                  {paymentMethods.length > 0 ? (
+                    <div className="space-y-3 pt-1">
+                      {paymentMethods.map((card, index) => (
+                        <div key={card.id} className="space-y-2">
+                          <div className={`relative rounded-2xl p-5 text-white shadow ${cardFaceClassName(card, index)}`}>
+                            <div className="text-sm font-semibold">
+                              {card.nickname?.trim() || `${card.brand} •••• ${card.last4}`}
+                            </div>
+                            <div className="text-xs opacity-80 mt-1">
+                              {card.kind === 'debit' ? 'Débito' : 'Crédito'}
+                              {card.isDefault ? ' · débito automático' : ''}
+                            </div>
+                          </div>
+                          {card.kind !== 'debit' && !card.isDefault ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleSetDefaultCard(card)}
+                              disabled={Boolean(settingDefaultId)}
+                              className="text-sm font-semibold text-pink-700"
+                            >
+                              {settingDefaultId === card.id ? 'Definindo...' : 'Usar no débito automático e tentar pagar'}
+                            </button>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-amber-900">
+                      Nenhum cartão salvo. Pague uma vez no checkout seguro para guardar um cartão de crédito.
+                    </p>
+                  )}
                 </div>
               ) : null}
 

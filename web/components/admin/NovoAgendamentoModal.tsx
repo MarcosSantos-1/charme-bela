@@ -1,12 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { Calendar, Clock, User, Sparkles, CheckCircle, Search, Loader, X } from 'lucide-react'
 import toast from 'react-hot-toast'
-import ReactDatePicker from 'react-datepicker'
-import 'react-datepicker/dist/react-datepicker.css'
 import * as api from '@/lib/api'
 
 interface NovoAgendamentoModalProps {
@@ -15,7 +13,9 @@ interface NovoAgendamentoModalProps {
 }
 
 export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalProps) {
-  const [step, setStep] = useState<'cliente' | 'servico' | 'horario'>('cliente')
+  const STEPS = ['cliente', 'servico', 'data', 'horario'] as const
+  type Step = (typeof STEPS)[number]
+  const [step, setStep] = useState<Step>('cliente')
   const [formData, setFormData] = useState({
     clienteId: '',
     clienteNome: '',
@@ -23,7 +23,6 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
     servicoNome: '',
     data: undefined as Date | undefined,
     hora: '',
-    observacoes: '',
     paymentType: 'PENDING' as 'SUBSCRIPTION' | 'SINGLE' | 'PENDING'
   })
 
@@ -40,11 +39,16 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
   const [appointmentMonthUsage, setAppointmentMonthUsage] = useState<number>(0)
   const [loadingMonthUsage, setLoadingMonthUsage] = useState(false)
   const [buscaServico, setBuscaServico] = useState('')
+  const [pendingServico, setPendingServico] = useState<{ id: string; name: string } | null>(null)
+  const [pendingDia, setPendingDia] = useState<string | null>(null)
+  const [availableDays, setAvailableDays] = useState<string[]>([])
+  const [loadingDays, setLoadingDays] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
       loadClientes()
       loadServicos()
+      setShowClientesList(true)
     }
   }, [isOpen])
 
@@ -53,6 +57,35 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
       loadAvailableSlots()
     }
   }, [formData.data, formData.servicoId])
+
+  useEffect(() => {
+    if (step !== 'data' || !formData.servicoId) return
+
+    const selected = servicos.find((item) => item.id === formData.servicoId)
+    const minDate = localDateKey(new Date())
+    const maxDate = selected?.machineKind ? lastDayOfNextMonth() : addDaysYmd(minDate, 29)
+    let cancelled = false
+
+    setLoadingDays(true)
+    void (async () => {
+      try {
+        const res = await api.getAvailableDays(minDate, maxDate, formData.servicoId)
+        if (!cancelled) setAvailableDays((res.days || []).map((day) => day.date))
+      } catch (error) {
+        console.error('Erro ao carregar dias disponíveis:', error)
+        if (!cancelled) {
+          setAvailableDays([])
+          toast.error('Erro ao carregar dias disponíveis')
+        }
+      } finally {
+        if (!cancelled) setLoadingDays(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [step, formData.servicoId, servicos])
 
   // Calcular uso mensal quando data é selecionada
   useEffect(() => {
@@ -179,7 +212,7 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
     
     setLoadingSlots(true)
     try {
-      const dateStr = formData.data.toISOString().split('T')[0]
+      const dateStr = localDateKey(formData.data)
       // Admin usa endpoint especial com horários fixos 6h-21h
       const result = await api.getAdminAvailableSlots(dateStr, formData.servicoId)
       
@@ -255,13 +288,12 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
       }
 
       // Criar data e hora combinadas - IMPORTANTE: Força UTC para evitar problemas de timezone
-      const dateStr = formData.data.toISOString().split('T')[0]
+      const dateStr = localDateKey(formData.data)
       const startTime = new Date(`${dateStr}T${formData.hora}:00.000Z`)
       
       if (selectedService.category === 'COMBO') {
         if (pacoteAtivo && pacoteAtivo.remainingSessions > 0) {
           await api.schedulePackageSessions(pacoteAtivo.id, [startTime.toISOString()], {
-            notes: formData.observacoes || undefined,
             adminExtended: true,
           })
           toast.success(`Sessão ${pacoteAtivo.sessionsScheduled + 1}/${pacoteAtivo.sessionCount} agendada`)
@@ -271,7 +303,6 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
             serviceId: formData.servicoId,
             slots: [startTime.toISOString()],
             paidAtClinic: true,
-            notes: formData.observacoes || undefined,
           })
           toast.success('Pacote vendido e primeira sessão agendada')
         }
@@ -296,7 +327,6 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
         startTime: startTime.toISOString(),
         origin: formData.paymentType === 'SUBSCRIPTION' ? 'SUBSCRIPTION' : 
                 formData.paymentType === 'PENDING' ? 'ADMIN_CREATED' : 'SINGLE',
-        notes: formData.observacoes || undefined
       }
 
       // Se for pagamento pendente, adicionar informações de pagamento
@@ -331,7 +361,6 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
       servicoNome: '',
       data: undefined,
       hora: '',
-      observacoes: '',
       paymentType: 'PENDING'
     })
     setBuscaCliente('')
@@ -341,10 +370,91 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
     setBookedSlots([])
     setAppointmentMonthUsage(0)
     setClienteDetails(null)
+    setPendingServico(null)
+    setPendingDia(null)
+    setShowClientesList(false)
+    setAvailableDays([])
   }
 
   const servicoSelecionado = servicos.find(s => s.id === formData.servicoId)
   const clienteSelecionado = clientes.find(c => c.id === formData.clienteId)
+  const daysByMonth = useMemo(() => groupDaysByMonth(availableDays), [availableDays])
+  const selectedDayKey = formData.data ? localDateKey(formData.data) : ''
+  const isSearchingCliente = step === 'cliente' && showClientesList && !formData.clienteId
+  const isExpanded = isSearchingCliente || step === 'servico' || step === 'data'
+
+  const footer = step === 'cliente' ? (
+    <Button
+      type="button"
+      variant="primary"
+      className="w-full"
+      onClick={() => formData.clienteId && setStep('servico')}
+      disabled={!formData.clienteId}
+    >
+      Próximo: Escolher Serviço →
+    </Button>
+  ) : step === 'servico' ? (
+    <div className="flex gap-3">
+      <Button
+        type="button"
+        variant="outline"
+        className="flex-1"
+        onClick={() => setStep('cliente')}
+      >
+        ← Voltar
+      </Button>
+      <Button
+        type="button"
+        variant="primary"
+        className="flex-1"
+        onClick={() => formData.servicoId && setStep('data')}
+        disabled={!formData.servicoId}
+      >
+        Próximo: Escolher Data →
+      </Button>
+    </div>
+  ) : step === 'data' ? (
+    <div className="flex gap-3">
+      <Button
+        type="button"
+        variant="outline"
+        className="flex-1"
+        onClick={() => setStep('servico')}
+      >
+        ← Voltar
+      </Button>
+      <Button
+        type="button"
+        variant="primary"
+        className="flex-1"
+        onClick={() => formData.data && setStep('horario')}
+        disabled={!formData.data}
+      >
+        Próximo: Escolher Horário →
+      </Button>
+    </div>
+  ) : (
+    <div className="flex gap-3">
+      <Button
+        type="button"
+        variant="outline"
+        className="flex-1"
+        onClick={() => setStep('data')}
+      >
+        ← Voltar
+      </Button>
+      <Button
+        type="submit"
+        form="novo-agendamento-form"
+        variant="primary"
+        className="flex-1"
+        disabled={!formData.data || !formData.hora}
+      >
+        <CheckCircle className="w-5 h-5 mr-2" />
+        Confirmar
+      </Button>
+    </div>
+  )
 
   return (
     <Modal 
@@ -353,139 +463,135 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
       title={
         step === 'cliente' ? 'Selecionar Cliente' :
         step === 'servico' ? 'Escolher Serviço' :
-        'Agendar Horário'
+        step === 'data' ? 'Escolher Data' :
+        'Escolher Horário'
       } 
       size="xl"
+      expanded={isExpanded}
+      footer={footer}
+      contentClassName="flex flex-col !p-4 sm:!p-6"
     >
+      <div className="relative flex flex-col flex-1 min-h-0 min-w-0 overflow-x-hidden">
       {/* Progress Steps */}
-      <div className="flex items-center justify-between mb-6 px-4">
+      <div className="flex items-center justify-between mb-4 shrink-0">
         {[
           { id: 'cliente', label: 'Cliente', icon: User },
           { id: 'servico', label: 'Serviço', icon: Sparkles },
-          { id: 'horario', label: 'Horário', icon: Calendar }
+          { id: 'data', label: 'Data', icon: Calendar },
+          { id: 'horario', label: 'Horário', icon: Clock }
         ].map((s, index) => (
-          <div key={s.id} className="flex items-center flex-1">
-            <div className={`flex items-center justify-center w-10 h-10 rounded-full ${
+          <div key={s.id} className="flex items-center flex-1 min-w-0">
+            <div className={`flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full shrink-0 ${
               step === s.id ? 'bg-pink-600 text-white' :
-              (index < ['cliente', 'servico', 'horario'].indexOf(step)) ? 'bg-green-500 text-white' :
+              (index < STEPS.indexOf(step)) ? 'bg-green-500 text-white' :
               'bg-gray-200 text-gray-500'
             }`}>
-              <s.icon className="w-5 h-5" />
+              <s.icon className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            {index < 2 && (
-              <div className={`flex-1 h-1 mx-2 ${
-                index < ['cliente', 'servico', 'horario'].indexOf(step) ? 'bg-green-500' : 'bg-gray-200'
+            {index < 3 && (
+              <div className={`flex-1 h-1 mx-1 sm:mx-2 ${
+                index < STEPS.indexOf(step) ? 'bg-green-500' : 'bg-gray-200'
               }`} />
             )}
           </div>
         ))}
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6 p-4">
+      <form id="novo-agendamento-form" onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 min-w-0 overflow-x-hidden">
         {/* STEP 1: Selecionar Cliente */}
         {step === 'cliente' && (
-          <div className="space-y-4">
-        <div className="relative">
-          <label className="block text-xs font-medium text-gray-700 mb-2">
-                <Search className="w-3.5 h-3.5 inline mr-1" />
-                Buscar Cliente *
-          </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-                  value={buscaCliente || formData.clienteNome}
-            onChange={(e) => {
-              setBuscaCliente(e.target.value)
-              setShowClientesList(true)
-                    setFormData({ ...formData, clienteId: '', clienteNome: '' })
-            }}
-            onFocus={() => setShowClientesList(true)}
-                  placeholder="Digite nome, email ou telefone..."
-                  className="w-full pl-9 pr-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-sm text-gray-900 placeholder:text-gray-400"
-                />
-              </div>
+          <div className="flex flex-col flex-1 min-h-0 min-w-0">
+            <label className="block text-xs font-medium text-gray-700 mb-2 shrink-0">
+              <Search className="w-3.5 h-3.5 inline mr-1" />
+              Buscar Cliente *
+            </label>
+            <div className="relative shrink-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                name="busca-cliente"
+                inputMode="search"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={buscaCliente || formData.clienteNome}
+                onChange={(e) => {
+                  setBuscaCliente(e.target.value)
+                  setShowClientesList(true)
+                  setFormData({ ...formData, clienteId: '', clienteNome: '' })
+                }}
+                onFocus={() => setShowClientesList(true)}
+                placeholder="Digite nome ou telefone..."
+                className="w-full max-w-full pl-9 pr-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-base text-gray-900 placeholder:text-gray-400"
+              />
+            </div>
 
-              {showClientesList && (buscaCliente || !formData.clienteId) && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowClientesList(false)} />
-                  <div className="absolute z-20 w-full mt-2 bg-white border-2 border-pink-200 rounded-xl shadow-lg max-h-96 overflow-y-auto">
-              {clientesFiltrados.length > 0 ? (
-                clientesFiltrados.map(cliente => (
-                  <button
-                    key={cliente.id}
-                    type="button"
-                          onClick={() => {
-                            setFormData({ ...formData, clienteId: cliente.id, clienteNome: cliente.name })
-                            setBuscaCliente('')
-                            setShowClientesList(false)
-                          }}
-                    className="w-full px-3 py-2.5 hover:bg-pink-50 transition-colors text-left border-b border-gray-100 last:border-0"
-                  >
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-sm text-gray-900 truncate">{cliente.name}</div>
-                              <div className="text-xs text-gray-500 truncate">{cliente.email}</div>
-                              {cliente.phone && (
-                                <div className="text-xs text-gray-400">{cliente.phone}</div>
-                              )}
-                            </div>
-                            {cliente.hasSubscription && (
-                              <span className="ml-2 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full font-medium flex-shrink-0">
-                                Plano
-                              </span>
-                            )}
-                          </div>
-                  </button>
-                ))
-              ) : (
-                      <div className="px-4 py-8 text-center text-sm text-gray-500">
-                  Nenhum cliente encontrado
+            {isSearchingCliente && (
+              <div className="flex-1 min-h-0 min-w-0 mt-3 border-2 border-pink-200 rounded-xl overflow-y-auto overflow-x-hidden">
+                {clientesFiltrados.length > 0 ? (
+                  clientesFiltrados.map(cliente => (
+                    <button
+                      key={cliente.id}
+                      type="button"
+                      onClick={() => {
+                        setFormData({ ...formData, clienteId: cliente.id, clienteNome: cliente.name })
+                        setBuscaCliente('')
+                        setShowClientesList(false)
+                      }}
+                      className="w-full max-w-full px-3 py-2.5 hover:bg-pink-50 transition-colors text-left border-b border-gray-100 last:border-0"
+                    >
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm text-gray-900 truncate">{cliente.name}</div>
+                          <div className="text-xs text-gray-500 truncate">{cliente.email}</div>
+                          {cliente.phone && (
+                            <div className="text-xs text-gray-400 truncate">{cliente.phone}</div>
+                          )}
+                        </div>
+                        {cliente.hasSubscription && (
+                          <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full font-medium shrink-0">
+                            Plano
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-4 py-8 text-center text-sm text-gray-500">
+                    Nenhum cliente encontrado
+                  </div>
+                )}
+              </div>
+            )}
+
+            {formData.clienteId && (
+              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-xl shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm text-green-900 truncate">{formData.clienteNome}</div>
+                    {clienteSelecionado?.hasSubscription && (
+                      <div className="text-xs text-green-700 mt-0.5">
+                        Cliente possui plano ativo - pode usar sessões do plano
                       </div>
                     )}
                   </div>
-                </>
-              )}
-
-              {formData.clienteId && (
-                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-xl">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm text-green-900 truncate">{formData.clienteNome}</div>
-                      {clienteSelecionado?.hasSubscription && (
-                        <div className="text-xs text-green-700 mt-0.5">
-                          Cliente possui plano ativo - pode usar sessões do plano
-                        </div>
-                      )}
-                    </div>
-                  </div>
                 </div>
-              )}
-            </div>
-
-            <Button
-              type="button"
-              variant="primary"
-              className="w-full"
-              onClick={() => formData.clienteId && setStep('servico')}
-              disabled={!formData.clienteId}
-            >
-              Próximo: Escolher Serviço →
-            </Button>
-            </div>
-          )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* STEP 2: Escolher Serviço */}
         {step === 'servico' && (
-          <div className="space-y-4">
-            {/* Info sobre o plano do cliente */}
+          <div className="flex flex-col flex-1 min-h-0 min-w-0">
             {clienteDetails?.subscription?.status === 'ACTIVE' && (
-              <div className="bg-purple-50 border-l-4 border-purple-500 p-3 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-purple-600" />
-                  <div>
-                    <p className="text-xs font-semibold text-purple-900">
+              <div className="bg-purple-50 border-l-4 border-purple-500 p-3 rounded-lg mb-3 shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-purple-900 truncate">
                       Cliente possui: {clienteDetails.subscription.plan.name}
                     </p>
                     <p className="text-xs text-purple-700 mt-0.5">
@@ -496,15 +602,20 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
               </div>
             )}
 
-            {/* Busca de serviços */}
-            <div className="relative">
+            <div className="relative shrink-0 mb-3">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
+                name="busca-servico"
+                inputMode="search"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
                 value={buscaServico}
                 onChange={(e) => setBuscaServico(e.target.value)}
                 placeholder="Buscar serviço por nome, descrição ou categoria..."
-                className="w-full pl-9 pr-4 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-sm text-gray-900 placeholder:text-gray-400"
+                className="w-full max-w-full pl-9 pr-10 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-base text-gray-900 placeholder:text-gray-400"
               />
               {buscaServico && (
                 <button
@@ -529,9 +640,8 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
                 </button>
               </div>
             ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1 min-h-0 overflow-y-auto overflow-x-hidden content-start">
               {servicosFiltrados.map(servico => {
-                // Verificar se serviço está no plano do cliente
                 const servicoNoPlano = clienteDetails?.subscription?.status === 'ACTIVE' &&
                   clienteDetails.subscription.plan.services.some(
                     (s: any) => s.id === servico.id
@@ -543,8 +653,9 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
                   type="button"
                   onClick={() => {
                     setFormData({ ...formData, servicoId: servico.id, servicoNome: servico.name })
+                    setPendingServico({ id: servico.id, name: servico.name })
                   }}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${
+                  className={`p-4 rounded-xl border-2 text-left transition-all min-w-0 ${
                     formData.servicoId === servico.id
                       ? 'border-pink-500 bg-pink-50 shadow-md'
                       : servicoNoPlano
@@ -552,12 +663,12 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
                       : 'border-gray-200 hover:border-pink-300 hover:bg-gray-50'
                   }`}
                 >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-gray-900">{servico.name}</h3>
+                  <div className="flex items-start justify-between mb-2 gap-2 min-w-0">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="font-semibold text-gray-900 truncate">{servico.name}</h3>
                         {servicoNoPlano && (
-                          <span className="text-purple-600 text-sm">✨</span>
+                          <span className="text-purple-600 text-sm shrink-0">✨</span>
                         )}
                       </div>
                       {servicoNoPlano && (
@@ -567,7 +678,7 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
                       )}
                     </div>
                     {formData.servicoId === servico.id && (
-                      <CheckCircle className="w-5 h-5 text-pink-600 flex-shrink-0" />
+                      <CheckCircle className="w-5 h-5 text-pink-600 shrink-0" />
                     )}
                   </div>
                   <p className="text-sm text-gray-600 line-clamp-2 mb-2">{servico.description}</p>
@@ -582,145 +693,105 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
               })}
             </div>
             )}
+          </div>
+        )}
 
-            <div className="flex gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                onClick={() => setStep('cliente')}
-              >
-                ← Voltar
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                className="flex-1"
-                onClick={() => formData.servicoId && setStep('horario')}
-                disabled={!formData.servicoId}
-              >
-                Próximo: Escolher Horário →
-              </Button>
+        {/* STEP 3: Escolher Data */}
+        {step === 'data' && (
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+            <div>
+              <p className="text-sm font-semibold text-gray-900 mb-3">Escolha o melhor dia</p>
+              {loadingDays ? (
+                <div className="text-center py-12">
+                  <Loader className="w-8 h-8 animate-spin text-pink-600 mx-auto" />
+                  <p className="text-sm text-gray-600 mt-2">Buscando dias disponíveis...</p>
+                </div>
+              ) : daysByMonth.length === 0 ? (
+                <div className="text-center py-10 bg-gray-50 rounded-xl">
+                  <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-gray-700">Nenhum dia disponível</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {servicoSelecionado?.machineKind
+                      ? 'Este tratamento só pode ser agendado no dia liberado da máquina.'
+                      : 'Não há dias com horário nesta janela.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {servicoSelecionado?.machineKind && (
+                    <p className="text-xs text-gray-600">
+                      Este tratamento só pode ser agendado no dia liberado da máquina.
+                    </p>
+                  )}
+                  {daysByMonth.map((group) => (
+                    <div key={group.key}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-7 h-7 rounded-full bg-pink-50 flex items-center justify-center shrink-0">
+                          <Calendar className="w-3.5 h-3.5 text-pink-500" />
+                        </div>
+                        <span className="text-sm font-semibold text-gray-900">{group.title}</span>
+                        <div className="flex-1 h-px bg-pink-100" />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {group.days.map((day) => {
+                          const selected = selectedDayKey === day
+                          const isCurrentDay = day === localDateKey(new Date())
+                          return (
+                            <button
+                              key={day}
+                              type="button"
+                              onClick={() => {
+                                setFormData({
+                                  ...formData,
+                                  data: new Date(`${day}T12:00:00`),
+                                  hora: '',
+                                })
+                                setPendingDia(day)
+                              }}
+                              className={`flex flex-col items-center justify-center w-[30%] min-w-[88px] flex-grow min-h-[72px] rounded-xl border-2 transition-all ${
+                                selected
+                                  ? 'bg-pink-500 border-pink-500 text-white'
+                                  : 'bg-white border-gray-200 text-gray-900 hover:border-pink-300'
+                              }`}
+                            >
+                              <span className={`text-lg font-extrabold leading-none ${isCurrentDay && !selected ? 'text-pink-600' : ''}`}>
+                                {isCurrentDay ? 'Hoje' : dayNumber(day)}
+                              </span>
+                              <span className={`text-xs font-semibold mt-1 ${selected ? 'text-white' : 'text-gray-500'}`}>
+                                {weekdayShort(day)}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* STEP 3: Agendar Horário */}
+        {/* STEP 4: Escolher Horário */}
         {step === 'horario' && (
-          <div className="space-y-4">
-            {/* Resumo */}
-            <div className="bg-gradient-to-r from-pink-50 to-purple-50 border-2 border-pink-300 rounded-xl p-5">
-              <h3 className="font-bold text-gray-900 mb-3 text-base">Resumo do Agendamento</h3>
-              <div className="text-sm space-y-2">
-                <p className="text-gray-900"><strong className="font-semibold">Cliente:</strong> {formData.clienteNome}</p>
-                {clienteDetails?.subscription?.status === 'ACTIVE' ? (
-                  <div className="bg-purple-100 border border-purple-300 rounded-lg p-2 mt-1">
-                    <p className="text-purple-900 font-semibold text-xs">
-                      ✨ Cliente com Plano: {clienteDetails.subscription.plan.name}
-                    </p>
-                    {clienteDetails.subscription.remaining && (
-                      <p className="text-purple-800 text-xs mt-0.5">
-                        Sessões restantes: {clienteDetails.subscription.remaining.thisMonth}/{clienteDetails.subscription.limits.maxPerMonth} este mês
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-gray-600 text-xs italic">Cliente sem plano ativo</p>
-                )}
-                <p className="text-gray-900"><strong className="font-semibold">Serviço:</strong> {formData.servicoNome}</p>
-                {servicoSelecionado && (
-                  <p className="text-gray-900"><strong className="font-semibold">Valor:</strong> R$ {servicoSelecionado.price.toFixed(2)}</p>
-                )}
-              </div>
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-4">
+            <div className="bg-gradient-to-r from-pink-50 to-purple-50 border-2 border-pink-300 rounded-xl p-4">
+              <p className="text-sm text-gray-900">
+                <strong>Cliente:</strong> {formData.clienteNome}
+              </p>
+              <p className="text-sm text-gray-900 mt-1">
+                <strong>Serviço:</strong> {formData.servicoNome}
+              </p>
+              {formData.data && (
+                <p className="text-sm text-gray-900 mt-1">
+                  <strong>Data:</strong> {formData.data.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+                </p>
+              )}
             </div>
 
-            {/* Data */}
-          <div>
+            <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-                📅 Escolha a Data *
-            </label>
-              <div className="custom-datepicker-wrapper">
-                <ReactDatePicker
-                  selected={formData.data}
-                  onChange={(date) => {
-                    setFormData({ ...formData, data: date || undefined, hora: '' })
-                  }}
-                  minDate={new Date()} // Bloqueia datas passadas
-                  dateFormat="dd/MM/yyyy"
-                  placeholderText="Selecione a data"
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 font-medium bg-white hover:border-pink-400 transition-colors cursor-pointer"
-                  calendarClassName="custom-calendar"
-                  inline={false}
-                  showPopperArrow={false}
-                />
-              </div>
-              <style jsx global>{`
-                .custom-datepicker-wrapper .react-datepicker-wrapper {
-                  width: 100%;
-                }
-                .custom-datepicker-wrapper input {
-                  width: 100%;
-                }
-                .react-datepicker {
-                  border: 2px solid #e5e7eb;
-                  border-radius: 12px;
-                  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-                  font-family: inherit;
-                }
-                .react-datepicker__header {
-                  background-color: #ec4899;
-                  border-bottom: none;
-                  border-radius: 10px 10px 0 0;
-                  padding-top: 12px;
-                }
-                .react-datepicker__current-month,
-                .react-datepicker__day-name {
-                  color: white;
-                  font-weight: 600;
-                }
-                .react-datepicker__day {
-                  color: #374151;
-                  font-weight: 500;
-                  border-radius: 8px;
-                  margin: 2px;
-                }
-                .react-datepicker__day:hover {
-                  background-color: #fce7f3;
-                  color: #ec4899;
-                }
-                .react-datepicker__day--selected {
-                  background-color: #ec4899 !important;
-                  color: white !important;
-                  font-weight: 700;
-                }
-                .react-datepicker__day--keyboard-selected {
-                  background-color: #fbcfe8;
-                  color: #be185d;
-                }
-                .react-datepicker__day--disabled {
-                  color: #d1d5db !important;
-                  background-color: #f9fafb !important;
-                  cursor: not-allowed !important;
-                  pointer-events: none;
-                }
-                .react-datepicker__day--disabled:hover {
-                  background-color: #f9fafb !important;
-                  color: #d1d5db !important;
-                }
-                .react-datepicker__navigation-icon::before {
-                  border-color: white;
-                }
-                .react-datepicker__navigation:hover *::before {
-                  border-color: #fce7f3;
-                }
-              `}</style>
-          </div>
-
-            {/* Horários */}
-            {formData.data && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-                  ⏰ Horários Disponíveis *
+                  Horários disponíveis *
             </label>
 
                 {loadingSlots ? (
@@ -779,7 +850,6 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
                   </div>
                 )}
               </div>
-            )}
 
             {/* Tipo de Pagamento */}
             {formData.hora && formData.data && servicoSelecionado?.category === 'COMBO' && (
@@ -896,43 +966,125 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
         </div>
             )}
 
-        {/* Observações */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-                Observações (opcional)
-          </label>
-          <textarea
-            value={formData.observacoes}
-            onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
-                placeholder="Adicione observações sobre o agendamento..."
-            rows={3}
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 resize-none text-gray-900 placeholder:text-gray-400"
-          />
-        </div>
-
-            <div className="flex gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            className="flex-1"
-                onClick={() => setStep('servico')}
-          >
-                ← Voltar
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            className="flex-1"
-                disabled={!formData.data || !formData.hora}
-          >
-                <CheckCircle className="w-5 h-5 mr-2" />
-                Confirmar Agendamento
-          </Button>
-        </div>
           </div>
         )}
       </form>
+
+      {pendingServico && (
+        <div className="absolute inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl min-w-0">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Ir para escolher a data?</h3>
+            <p className="text-sm text-gray-600 mb-5">
+              Serviço selecionado: <strong className="text-gray-900">{pendingServico.name}</strong>
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="primary"
+                className="w-full"
+                onClick={() => {
+                  setPendingServico(null)
+                  setStep('data')
+                }}
+              >
+                Agora
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => setPendingServico(null)}
+              >
+                Continuar olhando
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingDia && (
+        <div className="absolute inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl min-w-0">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Ir para escolher o horário?</h3>
+            <p className="text-sm text-gray-600 mb-5">
+              Data selecionada:{' '}
+              <strong className="text-gray-900">
+                {new Date(`${pendingDia}T12:00:00`).toLocaleDateString('pt-BR', {
+                  weekday: 'long',
+                  day: '2-digit',
+                  month: 'long',
+                })}
+              </strong>
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="primary"
+                className="w-full"
+                onClick={() => {
+                  setPendingDia(null)
+                  setStep('horario')
+                }}
+              >
+                Agora
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => setPendingDia(null)}
+              >
+                Continuar olhando
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
     </Modal>
   )
+}
+
+function localDateKey(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+}
+
+function addDaysYmd(ymd: string, days: number) {
+  const dateValue = new Date(`${ymd}T12:00:00`)
+  dateValue.setDate(dateValue.getDate() + days)
+  return localDateKey(dateValue)
+}
+
+function lastDayOfNextMonth() {
+  const now = new Date()
+  return localDateKey(new Date(now.getFullYear(), now.getMonth() + 2, 0))
+}
+
+function dayNumber(ymd: string) {
+  return new Date(`${ymd}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit' })
+}
+
+function weekdayShort(ymd: string) {
+  const weekday = new Date(`${ymd}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short' })
+  return weekday.replace('.', '').replace(/^\w/, (letter) => letter.toUpperCase())
+}
+
+function monthTitle(ymd: string) {
+  const month = new Date(`${ymd}T12:00:00`).toLocaleDateString('pt-BR', { month: 'long' })
+  return month.replace(/^\w/, (letter) => letter.toUpperCase())
+}
+
+function groupDaysByMonth(days: string[]) {
+  const groups: Array<{ key: string; title: string; days: string[] }> = []
+  for (const day of days) {
+    const key = day.slice(0, 7)
+    const last = groups[groups.length - 1]
+    if (last && last.key === key) {
+      last.days.push(day)
+    } else {
+      groups.push({ key, title: monthTitle(day), days: [day] })
+    }
+  }
+  return groups
 }
 

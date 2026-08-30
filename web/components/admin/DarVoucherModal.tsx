@@ -291,6 +291,8 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
     setBuscaCliente('')
     setBuscaServico('')
     setClienteDetails(null)
+    setShowClientesList(false)
+    setShowServicosList(false)
   }
 
   const getTipoLabel = () => {
@@ -300,11 +302,33 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
     return 'Voucher'
   }
 
+  const isSearchingCliente = showClientesList && !formData.clienteId
+  const isSearchingServico = showServicosList && !formData.servicoId
+  const isExpanded = isSearchingCliente || isSearchingServico
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Dar Voucher: ${getTipoLabel()}`} size="xl">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Dar Voucher: ${getTipoLabel()}`}
+      size="xl"
+      expanded={isExpanded}
+      contentClassName={isExpanded ? 'flex flex-col' : ''}
+      footer={
+        <div className="flex flex-col-reverse sm:flex-row gap-3">
+          <Button type="button" variant="outline" onClick={() => { onClose(); resetForm(); }} className="flex-1">
+            Cancelar
+          </Button>
+          <Button type="submit" form="dar-voucher-form" variant="primary" className="flex-1" isLoading={loading}>
+            <Gift className="w-4 h-4 mr-2" />
+            Criar Voucher
+          </Button>
+        </div>
+      }
+    >
+      <form id="dar-voucher-form" onSubmit={handleSubmit} className={isExpanded ? 'flex flex-col flex-1 min-h-0 min-w-0 overflow-x-hidden' : 'space-y-4 min-w-0 overflow-x-hidden'}>
         {/* Cliente - Dropdown com busca */}
-        <div className="relative">
+        <div className={isSearchingCliente ? 'flex flex-col flex-1 min-h-0 min-w-0' : 'min-w-0'}>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             <User className="w-4 h-4 inline mr-1" />
             Cliente *
@@ -313,6 +337,12 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
+              name="busca-cliente"
+              inputMode="search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               value={buscaCliente || formData.clienteNome}
               onChange={(e) => {
                 setBuscaCliente(e.target.value)
@@ -321,45 +351,41 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
               }}
               onFocus={() => setShowClientesList(true)}
               placeholder="Digite para buscar cliente..."
-              className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-gray-900 placeholder:text-gray-400"
+              className="w-full max-w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-base text-gray-900 placeholder:text-gray-400"
             />
           </div>
 
-          {/* Lista de clientes */}
-          {showClientesList && (buscaCliente || !formData.clienteId) && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowClientesList(false)} />
-              <div className="absolute z-20 w-full mt-1 bg-white border-2 border-pink-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                {clientesFiltrados.length > 0 ? (
-                  clientesFiltrados.map(cliente => (
-                    <button
-                      key={cliente.id}
-                      type="button"
-                      onClick={() => {
-                        setFormData({ ...formData, clienteId: cliente.id, clienteNome: cliente.name })
-                        setBuscaCliente('')
-                        setShowClientesList(false)
-                      }}
-                      className="w-full px-4 py-3 hover:bg-pink-50 transition-colors text-left border-b border-gray-100 last:border-0"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-sm text-gray-900">{cliente.name}</div>
-                          <div className="text-xs text-gray-500 truncate">{cliente.email}</div>
-                        </div>
-                        {cliente.hasSubscription && (
-                          <span className="ml-2 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full font-medium flex-shrink-0">
-                            Plano
-                          </span>
-                        )}
+          {isSearchingCliente && (
+            <div className="flex-1 min-h-0 min-w-0 mt-2 border-2 border-pink-200 rounded-xl overflow-y-auto overflow-x-hidden">
+              {clientesFiltrados.length > 0 ? (
+                clientesFiltrados.map(cliente => (
+                  <button
+                    key={cliente.id}
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, clienteId: cliente.id, clienteNome: cliente.name })
+                      setBuscaCliente('')
+                      setShowClientesList(false)
+                    }}
+                    className="w-full max-w-full px-4 py-3 hover:bg-pink-50 transition-colors text-left border-b border-gray-100 last:border-0"
+                  >
+                    <div className="flex items-center justify-between gap-2 min-w-0">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm text-gray-900 truncate">{cliente.name}</div>
+                        <div className="text-xs text-gray-500 truncate">{cliente.email}</div>
                       </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="px-4 py-3 text-sm text-gray-500">Nenhum cliente encontrado</div>
-                )}
-              </div>
-            </>
+                      {cliente.hasSubscription && (
+                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full font-medium shrink-0">
+                          Plano
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="px-4 py-3 text-sm text-gray-500">Nenhum cliente encontrado</div>
+              )}
+            </div>
           )}
 
           {formData.clienteId && (
@@ -395,6 +421,61 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
           )}
         </div>
 
+        {isSearchingServico && formData.tipo === 'FREE_TREATMENT' && (
+          <div className="flex flex-col flex-1 min-h-0 min-w-0 mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Sparkles className="w-4 h-4 inline mr-1" />
+              Serviço / Tratamento *
+            </label>
+            <div className="relative shrink-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                name="busca-servico"
+                inputMode="search"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={buscaServico || formData.servicoNome}
+                onChange={(e) => {
+                  setBuscaServico(e.target.value)
+                  setShowServicosList(true)
+                  setFormData({ ...formData, servicoId: '', servicoNome: '' })
+                }}
+                onFocus={() => setShowServicosList(true)}
+                placeholder="Digite para buscar serviço..."
+                className="w-full max-w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-base text-gray-900 placeholder:text-gray-400"
+              />
+            </div>
+            <div className="flex-1 min-h-0 min-w-0 mt-2 border-2 border-pink-200 rounded-xl overflow-y-auto overflow-x-hidden">
+              {servicosFiltrados.length > 0 ? (
+                servicosFiltrados.map(servico => (
+                  <button
+                    key={servico.id}
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, servicoId: servico.id, servicoNome: servico.name })
+                      setBuscaServico('')
+                      setShowServicosList(false)
+                    }}
+                    className="w-full max-w-full px-4 py-3 hover:bg-pink-50 transition-colors text-left border-b border-gray-100 last:border-0"
+                  >
+                    <div className="font-semibold text-gray-900 truncate">{servico.name}</div>
+                    <div className="text-sm text-gray-500">
+                      {servico.duration} min • R$ {servico.price.toFixed(2)}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="px-4 py-3 text-sm text-gray-500">Nenhum serviço encontrado</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!isSearchingCliente && !isSearchingServico && (
+        <>
         {/* Tipo de Voucher */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -446,7 +527,7 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
 
         {/* Serviço (para tratamento grátis) */}
         {formData.tipo === 'FREE_TREATMENT' && (
-          <div className="relative">
+          <div className="min-w-0">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <Sparkles className="w-4 h-4 inline mr-1" />
               Serviço / Tratamento *
@@ -455,6 +536,12 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
+                name="busca-servico"
+                inputMode="search"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
                 value={buscaServico || formData.servicoNome}
                 onChange={(e) => {
                   setBuscaServico(e.target.value)
@@ -463,47 +550,17 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
                 }}
                 onFocus={() => setShowServicosList(true)}
                 placeholder="Digite para buscar serviço..."
-                className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-gray-900 placeholder:text-gray-400"
+                className="w-full max-w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-base text-gray-900 placeholder:text-gray-400"
               />
             </div>
-
-            {/* Lista de serviços */}
-            {showServicosList && (buscaServico || !formData.servicoId) && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowServicosList(false)} />
-                <div className="absolute z-20 w-full mt-1 bg-white border-2 border-pink-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                  {servicosFiltrados.length > 0 ? (
-                    servicosFiltrados.map(servico => (
-                      <button
-                        key={servico.id}
-                        type="button"
-                        onClick={() => {
-                          setFormData({ ...formData, servicoId: servico.id, servicoNome: servico.name })
-                          setBuscaServico('')
-                          setShowServicosList(false)
-                        }}
-                        className="w-full px-4 py-3 hover:bg-pink-50 transition-colors text-left border-b border-gray-100 last:border-0"
-                      >
-                        <div className="font-semibold text-gray-900">{servico.name}</div>
-                        <div className="text-sm text-gray-500">
-                          {servico.duration} min • R$ {servico.price.toFixed(2)}
-                        </div>
-                      </button>
-                    ))
-                  ) : (
-                    <div className="px-4 py-3 text-sm text-gray-500">Nenhum serviço encontrado</div>
-                  )}
-                </div>
-              </>
-            )}
 
             {formData.servicoId && (() => {
               const servico = servicos.find(s => s.id === formData.servicoId)
               return (
                 <div className="mt-2 space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-2 rounded-lg">
-                    <Sparkles className="w-4 h-4" />
-                    Serviço selecionado: <strong>{formData.servicoNome}</strong>
+                  <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-2 rounded-lg min-w-0">
+                    <Sparkles className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Serviço selecionado: <strong>{formData.servicoNome}</strong></span>
                   </div>
                   {servico && (
                     <div className="p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
@@ -612,16 +669,8 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
             className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 resize-none text-gray-900 placeholder:text-gray-400"
           />
         </div>
-
-        <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
-          <Button type="button" variant="outline" onClick={() => { onClose(); resetForm(); }} className="flex-1">
-            Cancelar
-          </Button>
-          <Button type="submit" variant="primary" className="flex-1" isLoading={loading}>
-            <Gift className="w-4 h-4 mr-2" />
-            Criar Voucher
-          </Button>
-        </div>
+        </>
+        )}
       </form>
     </Modal>
   )

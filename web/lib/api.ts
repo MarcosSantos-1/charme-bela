@@ -973,6 +973,18 @@ export async function getAdminAvailableSlots(date: string, serviceId?: string): 
   })
 }
 
+export async function getAvailableDays(
+  from: string,
+  to: string,
+  serviceId?: string,
+): Promise<{ days: Array<{ date: string }> }> {
+  const params = new URLSearchParams({ from, to })
+  if (serviceId) params.append('serviceId', serviceId)
+  return apiRequest(`/schedule/available-days?${params.toString()}`, {
+    method: 'GET',
+  })
+}
+
 export async function getManagerSchedule() {
   return apiRequest('/schedule/manager', { method: 'GET' })
 }

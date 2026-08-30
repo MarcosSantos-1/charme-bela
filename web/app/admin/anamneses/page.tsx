@@ -368,7 +368,7 @@ export default function AnamnesesPage() {
           title={`Anamnese - ${viewingAnamnese.user?.name}`}
           size="xl"
         >
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+          <div className="space-y-4 min-w-0">
             {/* Status Geral */}
             <div className={`border-2 rounded-xl p-4 ${
               isComplete 

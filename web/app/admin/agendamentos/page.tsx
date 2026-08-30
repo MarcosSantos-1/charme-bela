@@ -273,36 +273,36 @@ export default function AgendamentosPage() {
         </div>
       )}
       {/* Header with controls */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div className="flex items-center space-x-2 sm:space-x-4 overflow-x-auto">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
           {/* View toggle */}
-          <div className="flex bg-gray-100 rounded-lg p-1">
+          <div className="flex bg-gray-100 rounded-lg p-0.5 shrink-0">
             <button
               onClick={() => setViewMode('week')}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+              className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
                 viewMode === 'week'
                   ? 'bg-white text-pink-600 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              <List className="w-4 h-4 inline mr-1" />
+              <List className="hidden sm:inline w-4 h-4 mr-1" />
               Semana
             </button>
             <button
               onClick={() => setViewMode('month')}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+              className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
                 viewMode === 'month'
                   ? 'bg-white text-pink-600 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              <Grid3x3 className="w-4 h-4 inline mr-1" />
+              <Grid3x3 className="hidden sm:inline w-4 h-4 mr-1" />
               Mês
             </button>
           </div>
 
           {/* Navigation */}
-          <div className="flex items-center bg-white rounded-lg border border-gray-200">
+          <div className="flex items-center bg-white rounded-lg border border-gray-200 min-w-0">
             <button
               onClick={() => {
                 if (viewMode === 'week') {
@@ -311,14 +311,20 @@ export default function AgendamentosPage() {
                   setCurrentMonth(subMonths(currentMonth, 1))
                 }
               }}
-              className="p-2 hover:bg-gray-50"
+              className="p-1.5 sm:p-2 hover:bg-gray-50 shrink-0"
+              aria-label="Anterior"
             >
-              <ChevronLeft className="w-5 h-5 text-gray-600" />
+              <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
             </button>
-            <span className="px-4 py-2 text-sm font-medium text-gray-900 whitespace-nowrap">
+            <span className="px-1 sm:px-4 py-1.5 text-xs sm:text-sm font-medium text-gray-900 whitespace-nowrap tabular-nums">
               {viewMode === 'week' 
-                ? `${format(weekStart, "d 'de' MMM", { locale: ptBR })} - ${format(addDays(weekStart, 6), "d 'de' MMM", { locale: ptBR })}`
-                : format(currentMonth, "MMMM 'de' yyyy", { locale: ptBR })
+                ? `${format(weekStart, 'dd/MM')} → ${format(addDays(weekStart, 6), 'dd/MM')}`
+                : (
+                  <>
+                    <span className="md:hidden">{format(currentMonth, 'MM/yyyy')}</span>
+                    <span className="hidden md:inline">{format(currentMonth, "MMMM 'de' yyyy", { locale: ptBR })}</span>
+                  </>
+                )
               }
             </span>
             <button
@@ -329,15 +335,19 @@ export default function AgendamentosPage() {
                   setCurrentMonth(addMonths(currentMonth, 1))
                 }
               }}
-              className="p-2 hover:bg-gray-50"
+              className="p-1.5 sm:p-2 hover:bg-gray-50 shrink-0"
+              aria-label="Próximo"
             >
-              <ChevronRight className="w-5 h-5 text-gray-600" />
+              <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
             </button>
           </div>
+        </div>
 
+        <div className="flex items-center gap-1.5 shrink-0">
           <Button
             variant="outline"
             size="sm"
+            className="px-2 sm:px-3"
             onClick={() => {
               setCurrentWeek(new Date())
               setCurrentMonth(new Date())
@@ -345,16 +355,13 @@ export default function AgendamentosPage() {
           >
             Hoje
           </Button>
-        </div>
-
-        <div>
-          {/* New appointment */}
           <Button 
             variant="primary" 
             size="sm"
+            className="px-2 sm:px-3"
             onClick={() => setIsNovoAgendamentoOpen(true)}
           >
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4 sm:mr-2" />
             <span className="hidden sm:inline">Novo Agendamento</span>
             <span className="sm:hidden">Novo</span>
           </Button>
@@ -692,17 +699,18 @@ export default function AgendamentosPage() {
           {/* Calendar header - dias da semana */}
           <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
             {['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'].map((dia) => (
-              <div key={dia} className="p-3 text-center text-xs font-bold text-gray-600">
-                {dia}
+              <div key={dia} className="p-1 md:p-3 text-center text-[10px] md:text-xs font-bold text-gray-600 min-w-0">
+                <span className="md:hidden">{dia[0]}</span>
+                <span className="hidden md:inline">{dia}</span>
               </div>
             ))}
           </div>
 
           {/* Calendar body */}
-          <div className="grid grid-cols-7 divide-x divide-gray-100">
+          <div className="grid grid-cols-7">
             {/* Preencher dias vazios do início */}
             {Array.from({ length: monthStart.getDay() }).map((_, idx) => (
-              <div key={`empty-${idx}`} className="min-h-[100px] bg-gray-50 border-b border-gray-100"></div>
+              <div key={`empty-${idx}`} className="min-h-[52px] md:min-h-[100px] min-w-0 bg-gray-50 border-b border-r border-gray-100"></div>
             ))}
 
             {/* Dias do mês */}
@@ -714,12 +722,12 @@ export default function AgendamentosPage() {
               return (
                 <div
                   key={day.toISOString()}
-                  className={`min-h-[100px] p-2 border-b border-gray-100 ${
+                  className={`min-h-[52px] md:min-h-[100px] min-w-0 p-0.5 md:p-2 border-b border-r border-gray-100 overflow-hidden ${
                     isCurrentDay ? 'bg-pink-50' : feriadoInfo.isFeriado ? 'bg-red-50' : 'hover:bg-gray-50'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`text-sm font-bold ${
+                  <div className="flex items-center justify-center md:justify-between mb-0 md:mb-2">
+                    <span className={`text-[11px] md:text-sm font-bold ${
                       isCurrentDay ? 'text-pink-600' : feriadoInfo.isFeriado ? 'text-red-600' : 'text-gray-900'
                     }`}>
                       {format(day, 'd')}
@@ -727,24 +735,18 @@ export default function AgendamentosPage() {
                   </div>
 
                   {feriadoInfo.isFeriado && (
-                    <div className={`text-[10px] font-medium mb-1 ${
+                    <div className={`hidden md:block text-[10px] font-medium mb-1 truncate ${
                       feriadoInfo.tipo === 'nacional' ? 'text-red-700' : 'text-orange-700'
                     }`}>
                       {feriadoInfo.nome}
                     </div>
                   )}
 
-                  {/* Mobile: Apenas mostrar quantidade de clientes */}
                   {dayAppointments.length > 0 && (
-                    <div className="md:hidden">
-                      <div className="bg-pink-100 border-l-2 border-pink-600 rounded p-2 text-center">
-                        <div className="text-2xl font-bold text-pink-600">
-                          {dayAppointments.length}
-                        </div>
-                        <div className="text-[10px] text-pink-700 font-medium">
-                          {dayAppointments.length === 1 ? 'agendamento' : 'agendamentos'}
-                        </div>
-                      </div>
+                    <div className="md:hidden flex justify-center mt-0.5">
+                      <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-pink-500 text-white text-[10px] font-bold leading-[18px] text-center">
+                        {dayAppointments.length}
+                      </span>
                     </div>
                   )}
 
@@ -804,6 +806,9 @@ export default function AgendamentosPage() {
                 </div>
               )
             })}
+            {Array.from({ length: (7 - ((monthStart.getDay() + monthDays.length) % 7)) % 7 }).map((_, idx) => (
+              <div key={`empty-end-${idx}`} className="min-h-[52px] md:min-h-[100px] min-w-0 bg-gray-50 border-b border-r border-gray-100"></div>
+            ))}
           </div>
         </div>
       ))}

@@ -331,25 +331,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {mobileMoreMenuOpen && (
           <>
             <div
-              className="fixed inset-0 bg-gray-600 bg-opacity-75 z-[90] lg:hidden"
-              onClick={() => setMobileMoreMenuOpen(false)}
+              className="fixed inset-0 bg-black/50 z-[90] lg:hidden"
             />
-            <div className="fixed bottom-0 left-0 right-0 z-[95] bg-white rounded-t-2xl shadow-2xl lg:hidden max-h-[80vh] overflow-y-auto">
+            <div className="fixed bottom-0 left-0 right-0 z-[95] bg-white rounded-t-2xl shadow-2xl lg:hidden max-h-[80vh] overflow-hidden flex flex-col">
               {/* Header */}
-              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
-                <div className="flex items-center justify-between">
+              <div className="shrink-0 bg-white border-b border-gray-200 px-4 py-3 rounded-t-2xl">
+                <div className="flex items-center justify-between gap-3">
                   <h3 className="text-lg font-semibold text-gray-900">Menu</h3>
                   <button
                     onClick={() => setMobileMoreMenuOpen(false)}
-                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    aria-label="Fechar"
+                    className="shrink-0 flex items-center justify-center w-11 h-11 rounded-full bg-gray-100 border-2 border-gray-300 text-gray-700 hover:bg-pink-50 hover:border-pink-400 hover:text-pink-600 transition-colors"
                   >
-                    <X className="w-5 h-5 text-gray-500" />
+                    <X className="w-6 h-6" strokeWidth={2.5} />
                   </button>
                 </div>
               </div>
 
               {/* Menu items */}
-              <div className="px-4 py-4 space-y-2">
+              <div className="px-4 py-4 space-y-2 overflow-y-auto min-h-0">
                 {/* Configurações */}
                 <Link
                   href="/admin/configuracoes"

@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { Calendar, Clock, Plus, ChevronLeft, ChevronRight, Grid3x3, List, Loader2, AlertTriangle } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Calendar, Plus, ChevronLeft, ChevronRight, Grid3x3, List, Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/Button'
-import { format, addDays, startOfWeek, addWeeks, subWeeks, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths } from 'date-fns'
+import { format, addDays, startOfWeek, addWeeks, subWeeks, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { NovoAgendamentoModal } from '@/components/admin/NovoAgendamentoModal'
 import { ReagendarCancelarModal } from '@/components/admin/ReagendarCancelarModal'
@@ -43,6 +43,152 @@ function parseUTCasLocal(utcString: string): Date {
   )
 }
 
+function appointmentVisual(apt: Appointment) {
+  const isAdminPending = apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
+  const isSubscription = apt.origin === 'SUBSCRIPTION'
+  const isClientSingle = apt.origin === 'SINGLE'
+  const isPackage = apt.origin === 'PACKAGE'
+
+  if (isAdminPending) {
+    return {
+      bgColor: 'bg-yellow-50',
+      borderColor: 'border-yellow-400',
+      hoverBorder: 'hover:border-yellow-500',
+      timeBg: 'bg-yellow-600',
+      badge: '💰',
+      badgeBg: 'bg-yellow-200 text-yellow-800',
+    }
+  }
+  if (isSubscription) {
+    return {
+      bgColor: 'bg-purple-50',
+      borderColor: 'border-purple-300',
+      hoverBorder: 'hover:border-purple-400',
+      timeBg: 'bg-purple-600',
+      badge: '✨',
+      badgeBg: 'bg-purple-200 text-purple-800',
+    }
+  }
+  if (isPackage) {
+    return {
+      bgColor: 'bg-orange-100',
+      borderColor: 'border-orange-600',
+      hoverBorder: 'hover:border-orange-500',
+      timeBg: 'bg-orange-600',
+      badge: '🎁',
+      badgeBg: 'bg-orange-200 text-orange-800',
+    }
+  }
+  if (isClientSingle) {
+    return {
+      bgColor: 'bg-blue-50',
+      borderColor: 'border-blue-300',
+      hoverBorder: 'hover:border-blue-400',
+      timeBg: 'bg-blue-600',
+      badge: '💳',
+      badgeBg: 'bg-blue-200 text-blue-800',
+    }
+  }
+  return {
+    bgColor: 'bg-white',
+    borderColor: 'border-pink-200',
+    hoverBorder: 'hover:border-pink-400',
+    timeBg: 'bg-pink-600',
+    badge: '',
+    badgeBg: '',
+  }
+}
+
+function DayAppointmentCard({
+  apt,
+  onOpen,
+}: {
+  apt: Appointment
+  onOpen: (apt: Appointment) => void
+}) {
+  const visual = appointmentVisual(apt)
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(apt)}
+      className={`w-full border-2 rounded-xl p-4 hover:shadow-md transition-all text-left ${visual.bgColor} ${visual.borderColor} ${visual.hoverBorder}`}
+    >
+      <div className="flex items-center gap-3 mb-3">
+        <div className={`flex flex-col items-center justify-center w-16 h-16 rounded-lg text-white ${visual.timeBg}`}>
+          <span className="text-xl font-bold">
+            {format(apt.startTime, 'HH')}
+          </span>
+          <span className="text-xs">
+            {format(apt.startTime, 'mm')}
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h4 className="font-bold text-gray-900 text-base truncate">
+              {apt.clientName}
+            </h4>
+            {visual.badge && (
+              <span className={`text-xs px-1.5 py-0.5 rounded font-bold shrink-0 ${visual.badgeBg}`}>
+                {visual.badge}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-600 mt-0.5">
+            {apt.service}
+          </p>
+          {apt.packageSummary && (
+            <p className="text-xs text-orange-700 mt-0.5">{apt.packageSummary}</p>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+          apt.status === 'completed'
+            ? 'bg-green-500 text-white'
+            : apt.status === 'canceled'
+            ? 'bg-red-500 text-white'
+            : apt.status === 'scheduled'
+            ? 'bg-pink-500 text-white'
+            : 'bg-blue-500 text-white'
+        }`}>
+          {apt.status === 'completed' ? 'Concluído' :
+           apt.status === 'canceled' ? 'Cancelado' :
+           apt.status === 'scheduled' ? 'Agendado' : 'Confirmado'}
+        </span>
+        {apt.status !== 'completed' && apt.status !== 'canceled' && (
+          <span className="text-xs text-gray-500">
+            Toque para gerenciar
+          </span>
+        )}
+      </div>
+    </button>
+  )
+}
+
+function PaymentLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm">
+      <div className="flex items-center space-x-2">
+        <div className="w-4 h-4 bg-yellow-100 border-l-2 border-yellow-600 rounded"></div>
+        <span className="text-gray-600">💰 Pagar na Clínica</span>
+      </div>
+      <div className="flex items-center space-x-2">
+        <div className="w-4 h-4 bg-purple-100 border-l-2 border-purple-600 rounded"></div>
+        <span className="text-gray-600">✨ Plano/Assinatura</span>
+      </div>
+      <div className="flex items-center space-x-2">
+        <div className="w-4 h-4 bg-blue-100 border-l-2 border-blue-600 rounded"></div>
+        <span className="text-gray-600">💳 Cliente Avulso</span>
+      </div>
+      <div className="flex items-center space-x-2">
+        <div className="w-4 h-4 bg-orange-100 border-l-2 border-orange-600 rounded"></div>
+        <span className="text-gray-600">🎁 Pacote</span>
+      </div>
+    </div>
+  )
+}
+
 export default function AgendamentosPage() {
   const [currentWeek, setCurrentWeek] = useState(new Date())
   const [currentMonth, setCurrentMonth] = useState(new Date())
@@ -69,11 +215,29 @@ export default function AgendamentosPage() {
   const [manualRefunds, setManualRefunds] = useState<api.Appointment[]>([])
   const [retryingId, setRetryingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const swipeStart = useRef<{ x: number; y: number } | null>(null)
 
   // Buscar agendamentos do backend
   useEffect(() => {
     loadAppointments()
   }, [currentWeek, currentMonth, viewMode])
+
+  useEffect(() => {
+    const ws = startOfWeek(currentWeek, { weekStartsOn: 0 })
+    const inWeek = Array.from({ length: 7 }, (_, i) => addDays(ws, i))
+      .some((day) => isSameDay(day, selectedDate))
+    if (!inWeek) {
+      setSelectedDate(addDays(ws, selectedDate.getDay()))
+    }
+  }, [currentWeek])
+
+  useEffect(() => {
+    if (viewMode !== 'month') return
+    if (!isSameMonth(selectedDate, currentMonth)) {
+      const today = new Date()
+      setSelectedDate(isSameMonth(today, currentMonth) ? today : startOfMonth(currentMonth))
+    }
+  }, [currentMonth, viewMode])
 
   const loadAppointments = async () => {
     setLoading(true)
@@ -160,10 +324,10 @@ export default function AgendamentosPage() {
   const monthEnd = endOfMonth(currentMonth)
   const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd })
 
-  // Calcular horários dinamicamente baseado nos agendamentos
+  // Calcular horários dinamicamente baseado nos agendamentos (janela admin 6h–21h)
   const getHoursRange = () => {
     if (appointments.length === 0) {
-      return Array.from({ length: 11 }, (_, i) => i + 8) // 8h às 18h (padrão)
+      return Array.from({ length: 13 }, (_, i) => i + 8) // 8h às 20h (padrão)
     }
     
     // Encontrar hora mínima e máxima dos agendamentos
@@ -176,11 +340,10 @@ export default function AgendamentosPage() {
       if (hour > maxHour) maxHour = hour
     })
     
-    // Adicionar margem de 1 hora antes e depois
-    minHour = Math.max(7, minHour - 1)
-    maxHour = Math.min(20, maxHour + 2)
+    minHour = Math.max(6, minHour - 1)
+    maxHour = Math.min(21, maxHour + 1)
     
-    const hoursCount = maxHour - minHour
+    const hoursCount = Math.max(1, maxHour - minHour + 1)
     return Array.from({ length: hoursCount }, (_, i) => i + minHour)
   }
   
@@ -226,7 +389,35 @@ export default function AgendamentosPage() {
   }
 
   const getAppointmentsForDate = (date: Date) => {
-    return appointments.filter(apt => isSameDay(apt.startTime, date))
+    return appointments
+      .filter(apt => isSameDay(apt.startTime, date))
+      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
+  }
+
+  const selectedDayAppointments = getAppointmentsForDate(selectedDate)
+  const selectedFeriado = isFeriado(selectedDate)
+
+  const goToAdjacentDay = (delta: number) => {
+    const next = addDays(selectedDate, delta)
+    const nextWeekStart = startOfWeek(next, { weekStartsOn: 0 })
+    const shownWeekStart = startOfWeek(currentWeek, { weekStartsOn: 0 })
+    if (!isSameDay(nextWeekStart, shownWeekStart)) {
+      setCurrentWeek(next)
+    }
+    setSelectedDate(next)
+  }
+
+  const handleWeekSwipeStart = (event: React.TouchEvent) => {
+    swipeStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY }
+  }
+
+  const handleWeekSwipeEnd = (event: React.TouchEvent) => {
+    if (!swipeStart.current) return
+    const dx = event.changedTouches[0].clientX - swipeStart.current.x
+    const dy = event.changedTouches[0].clientY - swipeStart.current.y
+    swipeStart.current = null
+    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy)) return
+    goToAdjacentDay(dx < 0 ? 1 : -1)
   }
 
   // Buscar feriados baseado no modo de visualização
@@ -278,25 +469,31 @@ export default function AgendamentosPage() {
           {/* View toggle */}
           <div className="flex bg-gray-100 rounded-lg p-0.5 shrink-0">
             <button
-              onClick={() => setViewMode('week')}
-              className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
+              onClick={() => {
+                setViewMode('week')
+                setCurrentWeek(selectedDate)
+              }}
+              className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all inline-flex items-center ${
                 viewMode === 'week'
                   ? 'bg-white text-pink-600 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              <List className="hidden sm:inline w-4 h-4 mr-1" />
+              <List className="inline w-4 h-4 mr-1" />
               Semana
             </button>
             <button
-              onClick={() => setViewMode('month')}
-              className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
+              onClick={() => {
+                setViewMode('month')
+                setCurrentMonth(selectedDate)
+              }}
+              className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all inline-flex items-center ${
                 viewMode === 'month'
                   ? 'bg-white text-pink-600 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              <Grid3x3 className="hidden sm:inline w-4 h-4 mr-1" />
+              <Grid3x3 className="inline w-4 h-4 mr-1" />
               Mês
             </button>
           </div>
@@ -349,8 +546,10 @@ export default function AgendamentosPage() {
             size="sm"
             className="px-2 sm:px-3"
             onClick={() => {
-              setCurrentWeek(new Date())
-              setCurrentMonth(new Date())
+              const today = new Date()
+              setCurrentWeek(today)
+              setCurrentMonth(today)
+              setSelectedDate(today)
             }}
           >
             Hoje
@@ -521,175 +720,82 @@ export default function AgendamentosPage() {
           </div>
         </div>
 
-        {/* Calendar Mobile - Horizontal Swipe */}
-        <div className="md:hidden">
-          <div 
-            className="flex overflow-x-auto scrollbar-hide snap-x snap-mandatory touch-pan-x" 
-            style={{ WebkitOverflowScrolling: 'touch' }}
-            ref={(el) => {
-              // Auto-scroll para o dia de hoje ao carregar
-              if (el && !loading) {
-                const todayIndex = weekDays.findIndex(day => isToday(day))
-                if (todayIndex >= 0) {
-                  const cardWidth = el.scrollWidth / weekDays.length
-                  el.scrollLeft = cardWidth * todayIndex
-                }
-              }
-            }}
-          >
-            {weekDays.map((day, dayIndex) => {
-              const isCurrentDay = isToday(day)
-              const dayAppointmentsAll = appointments.filter(apt => isSameDay(apt.startTime, day))
+        {/* Calendar Mobile - faixa de dias + lista */}
+        <div
+          className="md:hidden"
+          onTouchStart={handleWeekSwipeStart}
+          onTouchEnd={handleWeekSwipeEnd}
+        >
+          <div className="grid grid-cols-7 gap-1 px-2 py-2 border-b border-gray-100">
+            {weekDays.map((day) => {
+              const selected = isSameDay(day, selectedDate)
+              const currentDay = isToday(day)
               const feriadoInfo = isFeriado(day)
-              
-              return (
-                <div
-                  key={dayIndex}
-                  className="min-w-[85vw] sm:min-w-[400px] snap-center px-2 first:pl-4 last:pr-4"
-                >
-                  {/* Day Header */}
-                  <div className={`mb-3 p-4 rounded-xl ${
-                    isCurrentDay ? 'bg-pink-600' : feriadoInfo.isFeriado ? 'bg-red-600' : 'bg-gray-100'
-                  }`}>
-                    <div className={`text-xs font-bold uppercase ${
-                      isCurrentDay || feriadoInfo.isFeriado ? 'text-white opacity-90' : 'text-gray-500'
-                    }`}>
-                      {format(day, 'EEEE', { locale: ptBR })}
-                    </div>
-                    <div className={`text-2xl font-bold ${
-                      isCurrentDay || feriadoInfo.isFeriado ? 'text-white' : 'text-gray-900'
-                    }`}>
-                      {format(day, "d 'de' MMMM", { locale: ptBR })}
-                    </div>
-                    {feriadoInfo.isFeriado && (
-                      <div className="mt-2 text-xs text-white bg-white/20 px-2 py-1 rounded-md inline-block">
-                        🎉 {feriadoInfo.nome}
-                      </div>
-                    )}
-                  </div>
+              const hasAppointments = getAppointmentsForDate(day).length > 0
 
-                  {/* Agendamentos do dia */}
-                  <div className="space-y-3 pb-4 min-h-[300px] flex flex-col">
-                    {dayAppointmentsAll.length === 0 ? (
-                      <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                        <Calendar className="w-16 h-16 mb-3 opacity-20" />
-                        <p className="text-sm font-medium">Nenhum agendamento</p>
-                        <p className="text-xs mt-1 opacity-60">Deslize para ver outros dias</p>
-                      </div>
-                    ) : (
-                      dayAppointmentsAll.map((apt) => {
-                        // ADMIN_CREATED sem paymentStatus = PENDING por padrão (fallback para registros antigos)
-                        const isAdminPending = apt.origin === 'ADMIN_CREATED' && (apt.paymentStatus === 'PENDING' || !apt.paymentStatus)
-                        const isSubscription = apt.origin === 'SUBSCRIPTION'
-                        const isClientSingle = apt.origin === 'SINGLE'
-                        const isPackage = apt.origin === 'PACKAGE'
-                        
-                        let bgColor = 'bg-white'
-                        let borderColor = 'border-pink-200'
-                        let hoverBorder = 'hover:border-pink-400'
-                        let timeBg = 'bg-pink-600'
-                        let badge = ''
-                        let badgeBg = ''
-                        
-                        if (isAdminPending) {
-                          bgColor = 'bg-yellow-50'
-                          borderColor = 'border-yellow-400'
-                          hoverBorder = 'hover:border-yellow-500'
-                          timeBg = 'bg-yellow-600'
-                          badge = '💰'
-                          badgeBg = 'bg-yellow-200 text-yellow-800'
-                        } else if (isSubscription) {
-                          bgColor = 'bg-purple-50'
-                          borderColor = 'border-purple-300'
-                          hoverBorder = 'hover:border-purple-400'
-                          timeBg = 'bg-purple-600'
-                          badge = '✨'
-                          badgeBg = 'bg-purple-200 text-purple-800'
-                        } else if (isPackage) {
-                          bgColor = 'bg-orange-100'
-                          borderColor = 'border-orange-600'
-                          hoverBorder = 'hover:border-orange-500'
-                          timeBg = 'bg-orange-600'
-                          badge = '🎁'
-                          badgeBg = 'bg-orange-200 text-orange-800'
-                        } else if (isClientSingle) {
-                          bgColor = 'bg-blue-50'
-                          borderColor = 'border-blue-300'
-                          hoverBorder = 'hover:border-blue-400'
-                          timeBg = 'bg-blue-600'
-                          badge = '💳'
-                          badgeBg = 'bg-blue-200 text-blue-800'
-                        }
-                        
-                        return (
-                        <button
-                          key={apt.id}
-                          onClick={() => openManage(apt)}
-                            className={`w-full border-2 rounded-xl p-4 hover:shadow-md transition-all text-left ${bgColor} ${borderColor} ${hoverBorder}`}
-                        >
-                          <div className="flex items-center gap-3 mb-3">
-                            <div className={`flex flex-col items-center justify-center w-16 h-16 rounded-lg text-white ${timeBg}`}>
-                              <span className="text-xl font-bold">
-                                {format(apt.startTime, 'HH')}
-                              </span>
-                              <span className="text-xs">
-                                {format(apt.startTime, 'mm')}
-                              </span>
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h4 className="font-bold text-gray-900 text-base">
-                                  {apt.clientName}
-                                </h4>
-                                {badge && (
-                                  <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${badgeBg}`}>
-                                    {badge}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-sm text-gray-600 mt-0.5">
-                                {apt.service}
-                              </p>
-                              {apt.packageSummary && (
-                                <p className="text-xs text-orange-700 mt-0.5">{apt.packageSummary}</p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${
-                              apt.status === 'completed'
-                                ? 'bg-green-500 text-white'
-                                : apt.status === 'canceled'
-                                ? 'bg-red-500 text-white'
-                                : apt.status === 'scheduled'
-                                ? 'bg-pink-500 text-white'
-                                : 'bg-blue-500 text-white'
-                            }`}>
-                              {apt.status === 'completed' ? '✅ Concluído' : 
-                               apt.status === 'canceled' ? '❌ Cancelado' :
-                               apt.status === 'scheduled' ? 'Agendado' : 'Confirmado'}
-                            </span>
-                            {apt.status !== 'completed' && apt.status !== 'canceled' && (
-                              <span className="text-xs text-gray-500">
-                                Toque para gerenciar →
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                        )
-                      })
-                    )}
-                  </div>
-                </div>
+              return (
+                <button
+                  key={day.toISOString()}
+                  type="button"
+                  onClick={() => setSelectedDate(day)}
+                  className={`flex flex-col items-center justify-center py-2 rounded-xl min-h-[56px] transition-colors ${
+                    selected
+                      ? 'bg-pink-600 text-white shadow-sm'
+                      : currentDay
+                      ? 'bg-pink-50 text-pink-600'
+                      : feriadoInfo.isFeriado
+                      ? 'bg-red-50 text-red-600'
+                      : 'text-gray-700'
+                  }`}
+                >
+                  <span className={`text-[10px] font-bold uppercase ${selected ? 'text-white/90' : ''}`}>
+                    {format(day, 'EEE', { locale: ptBR })}
+                  </span>
+                  <span className="text-base font-bold leading-tight">
+                    {format(day, 'd')}
+                  </span>
+                  {hasAppointments && (
+                    <span className={`mt-0.5 w-1.5 h-1.5 rounded-full ${selected ? 'bg-white' : 'bg-pink-400'}`} />
+                  )}
+                </button>
               )
             })}
           </div>
 
-          {/* Indicador de scroll */}
-          <div className="flex justify-center gap-1.5 py-3">
-            {weekDays.map((_, idx) => (
-              <div key={idx} className="w-1.5 h-1.5 rounded-full bg-gray-300"></div>
-            ))}
+          <div className="p-3">
+            <div className={`mb-3 p-4 rounded-xl ${
+              isToday(selectedDate) ? 'bg-pink-600' : selectedFeriado.isFeriado ? 'bg-red-600' : 'bg-gray-100'
+            }`}>
+              <div className={`text-xs font-bold uppercase ${
+                isToday(selectedDate) || selectedFeriado.isFeriado ? 'text-white/90' : 'text-gray-500'
+              }`}>
+                {format(selectedDate, 'EEEE', { locale: ptBR })}
+              </div>
+              <div className={`text-2xl font-bold ${
+                isToday(selectedDate) || selectedFeriado.isFeriado ? 'text-white' : 'text-gray-900'
+              }`}>
+                {format(selectedDate, "d 'de' MMMM", { locale: ptBR })}
+              </div>
+              {selectedFeriado.isFeriado && (
+                <div className="mt-2 text-xs text-white bg-white/20 px-2 py-1 rounded-md inline-block">
+                  {selectedFeriado.nome}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 pb-2">
+              {selectedDayAppointments.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-gray-400 py-10">
+                  <Calendar className="w-16 h-16 mb-3 opacity-20" />
+                  <p className="text-sm font-medium">Nenhum agendamento</p>
+                  <p className="text-xs mt-1 opacity-60">Deslize para outro dia</p>
+                </div>
+              ) : (
+                selectedDayAppointments.map((apt) => (
+                  <DayAppointmentCard key={apt.id} apt={apt} onOpen={openManage} />
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -717,18 +823,34 @@ export default function AgendamentosPage() {
             {monthDays.map((day) => {
               const dayAppointments = getAppointmentsForDate(day)
               const isCurrentDay = isToday(day)
+              const isSelected = isSameDay(day, selectedDate)
               const feriadoInfo = isFeriado(day)
               
               return (
                 <div
                   key={day.toISOString()}
-                  className={`min-h-[52px] md:min-h-[100px] min-w-0 p-0.5 md:p-2 border-b border-r border-gray-100 overflow-hidden ${
-                    isCurrentDay ? 'bg-pink-50' : feriadoInfo.isFeriado ? 'bg-red-50' : 'hover:bg-gray-50'
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedDate(day)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setSelectedDate(day)
+                    }
+                  }}
+                  className={`min-h-[52px] md:min-h-[100px] min-w-0 p-0.5 md:p-2 border-b border-r border-gray-100 overflow-hidden text-left cursor-pointer ${
+                    isSelected
+                      ? 'bg-pink-100 ring-2 ring-inset ring-pink-500'
+                      : isCurrentDay
+                      ? 'bg-pink-50'
+                      : feriadoInfo.isFeriado
+                      ? 'bg-red-50'
+                      : 'hover:bg-gray-50'
                   }`}
                 >
                   <div className="flex items-center justify-center md:justify-between mb-0 md:mb-2">
                     <span className={`text-[11px] md:text-sm font-bold ${
-                      isCurrentDay ? 'text-pink-600' : feriadoInfo.isFeriado ? 'text-red-600' : 'text-gray-900'
+                      isSelected || isCurrentDay ? 'text-pink-600' : feriadoInfo.isFeriado ? 'text-red-600' : 'text-gray-900'
                     }`}>
                       {format(day, 'd')}
                     </span>
@@ -788,7 +910,10 @@ export default function AgendamentosPage() {
                       return (
                         <button
                           key={apt.id}
-                          onClick={() => openManage(apt)}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            openManage(apt)
+                          }}
                           className={`w-full p-1.5 border-l-2 rounded text-[10px] hover:opacity-80 transition-colors text-left ${bgColor} ${borderColor}`}
                         >
                           <div className={`font-medium truncate ${textColor}`}>
@@ -813,34 +938,40 @@ export default function AgendamentosPage() {
         </div>
       ))}
 
-      {/* Legend */}
       {!loading && (
-      <div className="flex flex-wrap items-center gap-4 text-sm">
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-yellow-100 border-l-2 border-yellow-600 rounded"></div>
-          <span className="text-gray-600">💰 Pagar na Clínica (Admin)</span>
+        <div className="space-y-3">
+          <PaymentLegend />
+
+          {viewMode === 'month' && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-baseline justify-between gap-2 mb-3">
+                <h3 className="text-base font-bold text-gray-900 capitalize">
+                  {format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })}
+                </h3>
+                <span className="text-xs font-medium text-pink-600 shrink-0">
+                  {selectedDayAppointments.length} agendamento{selectedDayAppointments.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {selectedFeriado.isFeriado && (
+                <p className="text-xs text-red-600 font-medium mb-3">
+                  {selectedFeriado.nome}
+                </p>
+              )}
+              {selectedDayAppointments.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-gray-400 py-8">
+                  <Calendar className="w-12 h-12 mb-2 opacity-20" />
+                  <p className="text-sm font-medium">Nenhum agendamento</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {selectedDayAppointments.map((apt) => (
+                    <DayAppointmentCard key={apt.id} apt={apt} onOpen={openManage} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-purple-100 border-l-2 border-purple-600 rounded"></div>
-          <span className="text-gray-600">✨ Plano/Assinatura</span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-blue-100 border-l-2 border-blue-600 rounded"></div>
-          <span className="text-gray-600">💳 Cliente Avulso</span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-green-100 border-l-2 border-green-600 rounded"></div>
-          <span className="text-gray-600">Concluído</span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-red-50 border border-red-300 rounded"></div>
-          <span className="text-gray-600">Feriado Nacional</span>
-        </div>
-        <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-orange-50 border border-orange-300 rounded"></div>
-          <span className="text-gray-600">Feriado SP</span>
-        </div>
-      </div>
       )}
 
       {/* Modais */}

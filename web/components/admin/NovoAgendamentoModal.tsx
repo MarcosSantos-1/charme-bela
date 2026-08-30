@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { Calendar, Clock, User, Sparkles, CheckCircle, Search, Loader, X } from 'lucide-react'
@@ -43,6 +43,7 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
   const [pendingDia, setPendingDia] = useState<string | null>(null)
   const [availableDays, setAvailableDays] = useState<string[]>([])
   const [loadingDays, setLoadingDays] = useState(false)
+  const paymentSectionRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (isOpen) {
@@ -51,6 +52,14 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
       setShowClientesList(true)
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (!formData.hora || step !== 'horario') return
+    const frame = requestAnimationFrame(() => {
+      paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [formData.hora, step])
 
   useEffect(() => {
     if (formData.data && formData.servicoId) {
@@ -852,7 +861,9 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
               </div>
 
             {/* Tipo de Pagamento */}
-            {formData.hora && formData.data && servicoSelecionado?.category === 'COMBO' && (
+            {formData.hora && formData.data && (
+              <div ref={paymentSectionRef} className="scroll-mt-6">
+            {servicoSelecionado?.category === 'COMBO' && (
               <div className="rounded-xl border-2 border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
                 {pacoteAtivo && pacoteAtivo.remainingSessions > 0 ? (
                   <>Pacote ativo: {pacoteAtivo.sessionsScheduled}/{pacoteAtivo.sessionCount} sessões usadas. Esta data consome mais uma sessão, sem nova cobrança.</>
@@ -861,7 +872,7 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
                 )}
               </div>
             )}
-            {formData.hora && formData.data && servicoSelecionado?.category !== 'COMBO' && (
+            {servicoSelecionado?.category !== 'COMBO' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   💳 Forma de Pagamento *
@@ -964,6 +975,8 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
                   </button>
           </div>
         </div>
+            )}
+              </div>
             )}
 
           </div>

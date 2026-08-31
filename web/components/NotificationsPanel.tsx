@@ -149,6 +149,10 @@ export default function NotificationsPanel({ userId }: NotificationsPanelProps) 
     }
   }
 
+  const handleVerTodas = () => {
+    setIsOpen(true)
+  }
+
   const getIcon = (iconName: string) => {
     const iconMap: Record<string, any> = {
       CALENDAR: RiCalendar2Fill,

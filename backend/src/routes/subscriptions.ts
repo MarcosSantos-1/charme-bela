@@ -189,6 +189,10 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           error: 'Usuário já possui uma assinatura ativa'
         })
       }
+
+      // Ativação pelo admin = concessão sem cobrança (sem recorrência Asaas/Stripe)
+      const stripeId = stripeSubscriptionId || null
+      const asaasId = asaasSubscriptionId || null
       
       // Verifica se plano existe
       const plan = await prisma.subscriptionPlan.findUnique({
@@ -207,8 +211,8 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         where: { userId },
         update: {
           planId,
-          stripeSubscriptionId,
-          asaasSubscriptionId,
+          stripeSubscriptionId: stripeId,
+          asaasSubscriptionId: asaasId,
           status: 'ACTIVE',
           startDate: new Date(),
           minimumCommitmentEnd: null,
@@ -219,8 +223,8 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         create: {
           userId,
           planId,
-          stripeSubscriptionId,
-          asaasSubscriptionId,
+          stripeSubscriptionId: stripeId,
+          asaasSubscriptionId: asaasId,
           status: 'ACTIVE',
           startDate: new Date()
         },
@@ -288,11 +292,17 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
       }
       
       const now = new Date()
+      const isManagerGrant = !subscription.asaasSubscriptionId && !subscription.stripeSubscriptionId
       
       // Fim do período já pago: nextDueDate Asaas se houver; senão aniversário local.
+      // Concessão do gestor (sem recorrência): desativa na hora.
       let accessUntil: Date
+      let cancelMessage: string
 
-      if (subscription.asaasSubscriptionId) {
+      if (isManagerGrant) {
+        accessUntil = now
+        cancelMessage = 'Plano desativado imediatamente.'
+      } else if (subscription.asaasSubscriptionId) {
         try {
           const asaasSub = await getAsaasSubscription(subscription.asaasSubscriptionId)
           if (asaasSub.nextDueDate) {
@@ -306,12 +316,13 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
           logger.error('Erro ao ler assinatura Asaas (seguindo com cálculo local):', asaasError.message)
           accessUntil = computeAccessUntilFromStartDate(subscription.startDate, now)
         }
+        const untilLabel = formatPlanDatePtBr(accessUntil)
+        cancelMessage = `Não se preocupe, você tem até o dia ${untilLabel} para aproveitar seu plano.`
       } else {
         accessUntil = computeAccessUntilFromStartDate(subscription.startDate, now)
+        const untilLabel = formatPlanDatePtBr(accessUntil)
+        cancelMessage = `Não se preocupe, você tem até o dia ${untilLabel} para aproveitar seu plano.`
       }
-
-      const untilLabel = formatPlanDatePtBr(accessUntil)
-      const cancelMessage = `Não se preocupe, você tem até o dia ${untilLabel} para aproveitar seu plano.`
 
       const updatedSubscription = await prisma.subscription.update({
         where: { userId },
@@ -364,7 +375,10 @@ export async function subscriptionsRoutes(app: FastifyInstance) {
         success: true,
         data: {
           ...updatedSubscription,
-          cancelInProgress: true,
+          cancelInProgress: isCancelInProgress({
+            status: 'CANCELED',
+            endDate: accessUntil,
+          }),
         },
         accessUntil: accessUntil,
         message: cancelMessage,

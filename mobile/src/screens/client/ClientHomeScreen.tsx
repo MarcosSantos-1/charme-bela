@@ -32,7 +32,7 @@ const NO_PLAN_CARD = {
 };
 
 const CATEGORY_GRADIENT: Record<ServiceCategory, readonly [string, string]> = {
-  COMBO: ['#f472b6', '#db2777'],
+  COMBO: ['#94a3b8', '#475569'],
   FACIAL: ['#a78bfa', '#7c3aed'],
   CORPORAL: ['#60a5fa', '#2563eb'],
   MASSAGEM: ['#34d399', '#059669'],
@@ -340,7 +340,7 @@ export function ClientHomeScreen() {
                     activeOpacity={0.88}
                   >
                     <LinearGradient
-                      colors={['#fb7185', '#e11d48']}
+                      colors={['#94a3b8', '#475569']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.packageCardFill}
@@ -988,7 +988,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderRadius: 18,
     overflow: 'hidden',
-    shadowColor: '#e11d48',
+    shadowColor: '#475569',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.18,
     shadowRadius: 10,

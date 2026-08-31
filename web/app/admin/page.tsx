@@ -480,6 +480,11 @@ export default function AdminDashboard() {
                                 <div className="text-xs font-semibold text-slate-600 flex items-center gap-1.5 mt-1 truncate">
                                   <RiSparklingFill className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
                                   <span className="truncate">{appointment.service}</span>
+                                  {isAdminPending && appointment.paymentAmount != null && (
+                                    <span className="text-[11px] font-extrabold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded shrink-0">
+                                      R$ {appointment.paymentAmount.toFixed(2).replace('.', ',')}
+                                    </span>
+                                  )}
                                   {isPackage && packageSessionLabel && (
                                     <span className="text-[11px] font-bold text-orange-700 bg-orange-100/80 px-1.5 py-0.2 rounded shrink-0">
                                       {packageSessionLabel}

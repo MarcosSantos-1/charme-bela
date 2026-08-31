@@ -48,6 +48,7 @@ export function MachineRentalsSection() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [expandedMonths, setExpandedMonths] = useState<string[]>([])
+  const [openPickerId, setOpenPickerId] = useState<string | null>(null)
   
   const [preview, setPreview] = useState<{
     occId: string
@@ -265,7 +266,7 @@ export function MachineRentalsSection() {
           return (
             <div
               key={key}
-              className={`bg-white rounded-2xl border-2 transition-all shadow-xs overflow-hidden ${
+              className={`bg-white rounded-2xl border-2 transition-all shadow-xs ${
                 allDone ? 'border-slate-200 opacity-90' : 'border-slate-200'
               }`}
             >
@@ -273,7 +274,7 @@ export function MachineRentalsSection() {
               <button
                 type="button"
                 onClick={() => toggleMonth(key)}
-                className={`w-full px-4 sm:px-5 py-3.5 flex items-center justify-between transition-colors text-left ${
+                className={`w-full px-4 sm:px-5 py-3.5 flex items-center justify-between transition-colors text-left rounded-t-2xl ${
                   allDone
                     ? 'bg-slate-50 hover:bg-slate-100'
                     : 'bg-gradient-to-r from-rose-50/70 via-pink-50/30 to-white hover:from-rose-50'
@@ -317,7 +318,9 @@ export function MachineRentalsSection() {
                     return (
                       <div
                         key={occ.id}
-                        className="py-3.5 first:pt-1 last:pb-1 flex flex-col md:flex-row md:items-center justify-between gap-3.5"
+                        className={`py-3.5 first:pt-1 last:pb-1 flex flex-col md:flex-row md:items-center justify-between gap-3.5 ${
+                          openPickerId === occ.id ? 'relative z-30' : 'relative z-0'
+                        }`}
                       >
                         {/* Info Machine */}
                         <div className="flex items-center gap-3 min-w-[200px]">
@@ -363,6 +366,7 @@ export function MachineRentalsSection() {
                                   void requestDateChange(occ, ymd)
                                 }
                               }}
+                              onOpenChange={(open) => setOpenPickerId(open ? occ.id : null)}
                               minDate={new Date(occ.year, occ.month - 1, 1)}
                               maxDate={new Date(occ.year, occ.month, 0)}
                               placeholder="Selecione a data"

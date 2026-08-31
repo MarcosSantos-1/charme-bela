@@ -5,20 +5,19 @@ import { Button } from '@/components/Button'
 import {
   RiSearchLine,
   RiVipCrownFill,
-  RiCalendar2Fill,
   RiCloseLine,
   RiLoader4Line,
-  RiSparklingFill,
-  RiDeleteBin5Fill,
+  RiAlertFill,
 } from 'react-icons/ri'
 import * as api from '@/lib/api'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/hooks/useConfirm'
 
 interface User {
   id: string
   name: string
   email: string
-  subscription?: any
+  subscription?: api.Subscription
 }
 
 interface Plan {
@@ -26,6 +25,86 @@ interface Plan {
   name: string
   tier: string
   price: number
+}
+
+function isManagerGrant(sub?: api.Subscription | null) {
+  if (!sub) return false
+  return !sub.asaasSubscriptionId && !sub.stripeSubscriptionId
+}
+
+function isCancelInProgress(sub?: api.Subscription | null) {
+  if (!sub || sub.status !== 'CANCELED' || !sub.endDate) return false
+  return new Date(sub.endDate).getTime() > Date.now()
+}
+
+function formatPlanDate(value?: string | null) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime()) || date.getFullYear() < 1990) return null
+  return date.toLocaleDateString('pt-BR')
+}
+
+function planStatusCopy(sub?: api.Subscription | null) {
+  if (!sub) {
+    return { badge: 'Sem plano ativo', badgeClass: 'bg-slate-100 text-slate-600', detail: null as string | null }
+  }
+
+  if (sub.status === 'ACTIVE' && isManagerGrant(sub) && !sub.endDate) {
+    return {
+      badge: `Plano ativo pelo Gestor · ${sub.plan?.name || ''}`,
+      badgeClass: 'bg-slate-800 text-white border border-slate-700',
+      detail: 'Sem cobrança e sem validade (concessão administrativa)',
+    }
+  }
+
+  if (sub.status === 'ACTIVE' && (sub.asaasSubscriptionId || sub.stripeSubscriptionId)) {
+    return {
+      badge: `Plano Recorrente ativo · ${sub.plan?.name || ''}`,
+      badgeClass: 'bg-violet-100 text-violet-800 border border-violet-200',
+      detail: 'Recorrência no cartão ativa',
+    }
+  }
+
+  if (sub.status === 'ACTIVE' && sub.endDate) {
+    const until = formatPlanDate(sub.endDate)
+    return {
+      badge: `Plano ${sub.plan?.name || ''} ativo`,
+      badgeClass: 'bg-violet-100 text-violet-800 border border-violet-200',
+      detail: until ? `Válido até ${until}` : 'Plano Recorrente ativo',
+    }
+  }
+
+  if (sub.status === 'PAST_DUE') {
+    return {
+      badge: `Pagamento em atraso · ${sub.plan?.name || ''}`,
+      badgeClass: 'bg-amber-100 text-amber-800 border border-amber-200',
+      detail: 'Recorrência ainda ativa até regularizar ou cancelar',
+    }
+  }
+
+  if (isCancelInProgress(sub)) {
+    const until = formatPlanDate(sub.endDate)
+    return {
+      badge: `Em cancelamento · ${sub.plan?.name || ''}`,
+      badgeClass: 'bg-orange-100 text-orange-800 border border-orange-200',
+      detail: until ? `Acesso até ${until} · recorrência já desligada` : 'Recorrência desligada',
+    }
+  }
+
+  if (sub.status === 'CANCELED') {
+    const when = formatPlanDate(sub.endDate)
+    return {
+      badge: 'Plano cancelado',
+      badgeClass: 'bg-slate-100 text-slate-600',
+      detail: when ? `Cancelado em ${when}` : 'Cancelado',
+    }
+  }
+
+  return {
+    badge: 'Sem plano ativo',
+    badgeClass: 'bg-slate-100 text-slate-600',
+    detail: null,
+  }
 }
 
 export default function PlanosAdminPage() {
@@ -37,6 +116,7 @@ export default function PlanosAdminPage() {
   const [selectedPlan, setSelectedPlan] = useState<string>('')
   const [showModal, setShowModal] = useState(false)
   const [activating, setActivating] = useState(false)
+  const { confirm, ConfirmDialogComponent } = useConfirm()
 
   useEffect(() => {
     loadData()
@@ -72,16 +152,25 @@ export default function PlanosAdminPage() {
       return
     }
 
+    const planName = plans.find((item) => item.id === selectedPlan)?.name || 'selecionado'
+    const ok = await confirm({
+      type: 'warning',
+      title: 'Ativar plano pelo Gestor?',
+      message:
+        `Isso concede o plano ${planName} para ${selectedUser.name} sem pagamento e sem validade — equivalente a um voucher indefinido (uso administrativo). A cliente não será cobrada no cartão.`,
+      confirmText: 'Sim, ativar',
+      cancelText: 'Voltar',
+    })
+    if (!ok) return
+
     setActivating(true)
     try {
       await api.createSubscription({
         userId: selectedUser.id,
         planId: selectedPlan,
-        status: 'ACTIVE',
-        startDate: new Date().toISOString()
       })
 
-      toast.success('Plano ativado com sucesso!')
+      toast.success('Plano ativado pelo Gestor')
       setShowModal(false)
       loadData()
     } catch (error: any) {
@@ -92,16 +181,29 @@ export default function PlanosAdminPage() {
     }
   }
 
-  const handleCancelPlan = async (userId: string, subscriptionId: string) => {
-    if (!confirm('Tem certeza que deseja cancelar o plano deste cliente?')) return
+  const handleCancelPlan = async (user: User) => {
+    const sub = user.subscription
+    if (!sub) return
+
+    const paid = Boolean(sub.asaasSubscriptionId || sub.stripeSubscriptionId)
+    const ok = await confirm({
+      type: 'danger',
+      title: paid ? 'Cancelar recorrência do plano?' : 'Desativar plano do Gestor?',
+      message: paid
+        ? `A cliente ${user.name} continua com acesso até o fim do período já pago (Em cancelamento). A cobrança no cartão será desligada agora — o cartão não pode descontar no mês seguinte.`
+        : `O plano de ${user.name} foi concedido pelo Gestor (sem cobrança). A desativação é imediata.`,
+      confirmText: paid ? 'Cancelar recorrência' : 'Desativar agora',
+      cancelText: 'Voltar',
+    })
+    if (!ok) return
 
     try {
-      await api.cancelSubscription(subscriptionId, 'Cancelado pelo admin')
-      toast.success('Plano cancelado')
+      await api.cancelSubscription(user.id, 'Cancelado pelo admin')
+      toast.success(paid ? 'Recorrência desligada. Plano em cancelamento.' : 'Plano desativado')
       loadData()
     } catch (error: any) {
       console.error('Erro:', error)
-      toast.error('Erro ao cancelar plano')
+      toast.error(error.message || 'Não foi possível cancelar o plano')
     }
   }
 
@@ -141,7 +243,10 @@ export default function PlanosAdminPage() {
       ) : (
         <div className="space-y-3">
           {filteredUsers.map((user) => {
-            const hasPlan = user.subscription?.status === 'ACTIVE'
+            const sub = user.subscription
+            const status = planStatusCopy(sub)
+            const canCancel = sub?.status === 'ACTIVE' || sub?.status === 'PAST_DUE'
+            const canActivate = !canCancel && !isCancelInProgress(sub)
             
             return (
               <div key={user.id} className="bg-white rounded-2xl border-2 border-slate-200 p-4 shadow-xs hover:border-rose-300 transition-all">
@@ -160,38 +265,34 @@ export default function PlanosAdminPage() {
                     
                     {/* Plan Status */}
                     <div className="sm:ml-13">
-                      {hasPlan ? (
-                        <div className="space-y-1">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-violet-100 text-violet-800 rounded-full text-xs font-bold border border-violet-200">
-                            <RiVipCrownFill className="w-3.5 h-3.5 text-amber-500" />
-                            Plano {user.subscription.plan.name}
-                          </span>
-                          <p className="text-[11px] font-semibold text-slate-500">
-                            Válido até {new Date(user.subscription.endDate).toLocaleDateString('pt-BR')}
-                          </p>
-                        </div>
-                      ) : (
-                        <span className="inline-flex px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">
-                          Sem plano ativo
+                      <div className="space-y-1">
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${status.badgeClass}`}>
+                          <RiVipCrownFill className="w-3.5 h-3.5 text-amber-500" />
+                          {status.badge}
                         </span>
-                      )}
+                        {status.detail && (
+                          <p className="text-[11px] font-semibold text-slate-500">
+                            {status.detail}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                   
                   {/* Actions */}
                   <div className="flex gap-2 sm:shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-slate-100">
-                    {hasPlan ? (
+                    {canCancel ? (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleCancelPlan(user.id, user.subscription.id)}
+                        onClick={() => handleCancelPlan(user)}
                         className="text-rose-600 border-rose-200 hover:bg-rose-50 flex-1 sm:flex-initial text-xs font-bold"
                       >
                         <RiCloseLine className="w-4 h-4 sm:mr-1" />
                         <span className="hidden sm:inline">Cancelar Plano</span>
                         <span className="sm:hidden">Cancelar</span>
                       </Button>
-                    ) : (
+                    ) : canActivate ? (
                       <Button
                         variant="primary"
                         size="sm"
@@ -201,7 +302,7 @@ export default function PlanosAdminPage() {
                         <RiVipCrownFill className="w-4 h-4 mr-1 text-amber-300" />
                         Ativar Plano
                       </Button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -259,10 +360,10 @@ export default function PlanosAdminPage() {
               </div>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-              <p className="text-xs text-blue-800 font-semibold">
-                <RiCalendar2Fill className="w-3.5 h-3.5 inline mr-1 text-blue-600" />
-                A cliente poderá cancelar a qualquer momento e continua usando o plano até o fim do período já pago.
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <p className="text-xs text-amber-900 font-semibold">
+                <RiAlertFill className="w-3.5 h-3.5 inline mr-1 text-amber-600" />
+                Ativar por aqui é uma concessão do Gestor: sem pagamento, sem validade e sem recorrência no cartão. Use só em casos administrativos.
               </p>
             </div>
 
@@ -288,6 +389,8 @@ export default function PlanosAdminPage() {
           </div>
         </div>
       )}
+
+      {ConfirmDialogComponent}
     </div>
   )
 }

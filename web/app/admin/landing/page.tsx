@@ -154,11 +154,13 @@ export default function LandingPageAdmin() {
         </div>
       ) : (
         /* Testimonials List */
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {testimonials.map((testimonial) => (
             <div 
               key={testimonial.id} 
               className={`bg-white rounded-2xl border-2 p-4 sm:p-6 transition-all shadow-xs ${
+                editingId === testimonial.id ? 'md:col-span-3' : ''
+              } ${
                 testimonial.isActive === false 
                   ? 'border-slate-200 opacity-60' 
                   : 'border-slate-200 hover:border-rose-300'

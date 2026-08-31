@@ -14,6 +14,7 @@ interface DatePickerProps {
   minDate?: Date
   maxDate?: Date
   showYearPicker?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 export default function DatePicker({ 
@@ -22,16 +23,22 @@ export default function DatePicker({
   placeholder = 'Selecione uma data',
   minDate,
   maxDate,
-  showYearPicker = false
+  showYearPicker = false,
+  onOpenChange,
 }: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(value || new Date())
   const [displayMonth, setDisplayMonth] = useState<Date>(value || new Date())
 
+  const setOpen = (open: boolean) => {
+    setIsOpen(open)
+    onOpenChange?.(open)
+  }
+
   const handleSelect = (date: Date | undefined) => {
     setSelectedDate(date)
     onChange(date)
-    setIsOpen(false)
+    setOpen(false)
   }
 
   const currentYear = displayMonth.getFullYear()
@@ -44,10 +51,10 @@ export default function DatePicker({
   ]
 
   return (
-    <div className="relative">
+    <div className={`relative ${isOpen ? 'z-30' : ''}`}>
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setOpen(!isOpen)}
         className="w-full flex items-center justify-between px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 bg-white hover:border-gray-400 transition-colors"
       >
         <div className="flex items-center space-x-2">
@@ -70,9 +77,9 @@ export default function DatePicker({
         <>
           <div 
             className="fixed inset-0 z-40" 
-            onClick={() => setIsOpen(false)}
+            onClick={() => setOpen(false)}
           />
-          <div className="absolute z-50 mt-2 bg-white rounded-2xl shadow-xl border border-gray-200 p-4">
+          <div className="absolute z-[60] mt-2 max-md:bottom-full max-md:mb-2 max-md:mt-0 bg-white rounded-2xl shadow-xl border border-gray-200 p-4">
             <style jsx global>{`
               .rdp {
                 --rdp-cell-size: 40px;

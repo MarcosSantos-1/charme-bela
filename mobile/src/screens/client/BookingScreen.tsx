@@ -466,7 +466,7 @@ export function BookingScreen({ route, navigation }: Props) {
               <View style={styles.packageItems}>
                 {(packageItemsOf(service).length ? packageItemsOf(service) : []).map((item) => (
                   <View key={item.name} style={styles.packageItemRow}>
-                    <Ionicons name="flower-outline" size={16} color="#ec4899" />
+                    <Ionicons name="flower-outline" size={16} color={CATEGORY_META.COMBO.color} />
                     <Text style={styles.packageItemName}>{item.name}</Text>
                     <Text style={styles.packageItemDuration}>{item.durationMinutes} min</Text>
                   </View>
@@ -1187,7 +1187,7 @@ const styles = StyleSheet.create({
   packageItemRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   packageItemName: { flex: 1, color: '#111827', fontWeight: '600' },
   packageItemDuration: { color: '#9f1239', fontSize: 12, fontWeight: '700' },
-  packageMeta: { marginTop: 6, color: '#be185d', fontWeight: '800', fontSize: 13 },
+  packageMeta: { marginTop: 6, color: '#475569', fontWeight: '800', fontSize: 13 },
   summaryRow: { flexDirection: 'row', gap: 12 },
   summary: {
     flex: 1,

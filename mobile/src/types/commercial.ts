@@ -245,7 +245,7 @@ export interface CheckoutPayload {
 }
 
 export const CATEGORY_META: Record<ServiceCategory, { label: string; color: string; icon: string }> = {
-  COMBO: { label: 'Pacotes', color: '#ec4899', icon: 'gift-outline' },
+  COMBO: { label: 'Pacotes', color: '#64748b', icon: 'gift-outline' },
   FACIAL: { label: 'Faciais', color: '#8b5cf6', icon: 'face-woman-outline' },
   CORPORAL: { label: 'Corporais', color: '#3b82f6', icon: 'human' },
   MASSAGEM: { label: 'Massagens', color: '#10b981', icon: 'hand-heart-outline' },
@@ -269,8 +269,11 @@ export function voucherCreditBalance(
 }
 
 export function isVoucherAvailable(
-  voucher: Pick<Voucher, 'type' | 'discountAmount' | 'discountPercent' | 'remainingAmount' | 'isUsed' | 'expiresAt'>,
+  voucher: Pick<Voucher, 'type' | 'discountAmount' | 'discountPercent' | 'remainingAmount' | 'isUsed' | 'expiresAt' | 'description'>,
 ): boolean {
+  if (voucher.type === 'FREE_TREATMENT' && voucher.description?.startsWith('Crédito para reagendar')) {
+    return false;
+  }
   if (voucher.expiresAt && new Date(voucher.expiresAt) < new Date()) return false;
   if (isAmountCreditVoucher(voucher)) return voucherCreditBalance(voucher) > 0.009;
   return !voucher.isUsed;

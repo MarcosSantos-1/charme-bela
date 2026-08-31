@@ -89,6 +89,31 @@ export function HomePromoCarousel({
 
   if (slides.length === 0) return null;
 
+  const renderSlide = (slide: Slide) => (
+    <View key={slide.key} style={styles.slide}>
+      {slide.kind === 'config'
+        ? configSlide
+        : slide.kind === 'plan'
+          ? planSlide
+          : (
+            <Pressable
+              style={{ flex: 1 }}
+              onPress={() => {
+                if (slide.banner.machineKind || slide.banner.linkPath) {
+                  onBannerPress?.(slide.banner);
+                }
+              }}
+            >
+              <Image
+                source={{ uri: slide.banner.imageUrl }}
+                style={styles.bannerImage}
+                resizeMode="cover"
+              />
+            </Pressable>
+          )}
+    </View>
+  );
+
   const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const next = Math.round(e.nativeEvent.contentOffset.x / SLIDE_WIDTH);
     setIndex(Math.max(0, Math.min(next, slides.length - 1)));
@@ -97,48 +122,29 @@ export function HomePromoCarousel({
   return (
     <View style={styles.container}>
       <View style={styles.frame}>
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          pagingEnabled
-          nestedScrollEnabled
-          showsHorizontalScrollIndicator={false}
-          onScrollBeginDrag={() => {
-            if (autoplayEnabled) {
-              pauseUntilRef.current = Date.now() + autoplayMs + 1500;
-            }
-          }}
-          onMomentumScrollEnd={onScrollEnd}
-          decelerationRate="fast"
-          snapToInterval={SLIDE_WIDTH}
-          snapToAlignment="start"
-          disableIntervalMomentum
-        >
-          {slides.map((slide) => (
-            <View key={slide.key} style={styles.slide}>
-              {slide.kind === 'config'
-                ? configSlide
-                : slide.kind === 'plan'
-                  ? planSlide
-                  : (
-                    <Pressable
-                      style={{ flex: 1 }}
-                      onPress={() => {
-                        if (slide.banner.machineKind || slide.banner.linkPath) {
-                          onBannerPress?.(slide.banner);
-                        }
-                      }}
-                    >
-                      <Image
-                        source={{ uri: slide.banner.imageUrl }}
-                        style={styles.bannerImage}
-                        resizeMode="cover"
-                      />
-                    </Pressable>
-                  )}
-            </View>
-          ))}
-        </ScrollView>
+        {slides.length === 1 ? (
+          renderSlide(slides[0])
+        ) : (
+          <ScrollView
+            ref={scrollRef}
+            horizontal
+            pagingEnabled
+            nestedScrollEnabled
+            showsHorizontalScrollIndicator={false}
+            onScrollBeginDrag={() => {
+              if (autoplayEnabled) {
+                pauseUntilRef.current = Date.now() + autoplayMs + 1500;
+              }
+            }}
+            onMomentumScrollEnd={onScrollEnd}
+            decelerationRate="fast"
+            snapToInterval={SLIDE_WIDTH}
+            snapToAlignment="start"
+            disableIntervalMomentum
+          >
+            {slides.map((slide) => renderSlide(slide))}
+          </ScrollView>
+        )}
 
         {slides.length > 1 ? (
           <View style={styles.dots} pointerEvents="none">

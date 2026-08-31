@@ -159,7 +159,7 @@ export default function AdminDashboard() {
                   apt.status === 'CONFIRMED' ? 'confirmed' as const :
                   apt.status === 'COMPLETED' ? 'completed' as const : 'pending' as const,
           paymentStatus: apt.paymentStatus,
-          paymentAmount: apt.paymentAmount,
+          paymentAmount: apt.paymentAmount ?? apt.service?.price,
           origin: apt.origin,
           startTime: apt.startTime,
           machineKind: apt.service?.machineKind,
@@ -263,7 +263,7 @@ export default function AdminDashboard() {
   }
 
   const requestCompletePaid = async (appointment: TodayAppointment) => {
-    const formattedAmount = appointment.paymentAmount
+    const formattedAmount = appointment.paymentAmount != null
       ? `R$ ${appointment.paymentAmount.toFixed(2).replace('.', ',')}`
       : 'o valor pendente'
     const confirmed = await confirm({
@@ -401,10 +401,11 @@ export default function AdminDashboard() {
                   ) : (
                     <div className="space-y-3">
                       {todayAppointments.map((appointment) => {
-                        const isAdminPending = appointment.origin === 'ADMIN_CREATED' && appointment.paymentStatus === 'PENDING'
+                        const isAdminPending = appointment.origin === 'ADMIN_CREATED' && (appointment.paymentStatus === 'PENDING' || !appointment.paymentStatus)
                         const isClientSingle = appointment.origin === 'SINGLE'
                         const isSubscription = appointment.origin === 'SUBSCRIPTION'
                         const isPackage = appointment.origin === 'PACKAGE'
+                        const clinicAmount = appointment.paymentAmount
                         const packageSessionLabel = appointment.packageSessionIndex
                           ? `(${appointment.packageSessionIndex}/${appointment.packageSessionCount || 5}ª Sessão)`
                           : ''
@@ -480,9 +481,9 @@ export default function AdminDashboard() {
                                 <div className="text-xs font-semibold text-slate-600 flex items-center gap-1.5 mt-1 truncate">
                                   <RiSparklingFill className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
                                   <span className="truncate">{appointment.service}</span>
-                                  {isAdminPending && appointment.paymentAmount != null && (
+                                  {isAdminPending && clinicAmount != null && (
                                     <span className="text-[11px] font-extrabold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded shrink-0">
-                                      R$ {appointment.paymentAmount.toFixed(2).replace('.', ',')}
+                                      R$ {clinicAmount.toFixed(2).replace('.', ',')}
                                     </span>
                                   )}
                                   {isPackage && packageSessionLabel && (

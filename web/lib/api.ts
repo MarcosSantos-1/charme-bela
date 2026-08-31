@@ -1187,10 +1187,14 @@ export interface TodayAppointment {
     id: string
     name: string
     duration: number
+    price?: number
   }
   paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
+  paymentAmount?: number
   origin: 'SUBSCRIPTION' | 'SINGLE' | 'VOUCHER' | 'ADMIN_CREATED' | 'PACKAGE'
   confirmedByAdmin: boolean
+  packageSessionIndex?: number | null
+  packagePurchase?: { sessionCount?: number } | null
 }
 
 export interface RecentActivity {
@@ -1257,8 +1261,11 @@ export async function getTodayAppointments(): Promise<TodayAppointment[]> {
       user: apt.user || { id: '', name: 'Cliente', email: '' },
       service: apt.service || { id: '', name: 'Serviço', duration: 60 },
       paymentStatus: apt.paymentStatus,
+      paymentAmount: apt.paymentAmount ?? apt.service?.price,
       origin: apt.origin,
-      confirmedByAdmin: apt.confirmedByAdmin
+      confirmedByAdmin: apt.confirmedByAdmin,
+      packageSessionIndex: apt.packageSessionIndex,
+      packagePurchase: apt.packagePurchase,
     }))
   } catch (error) {
     console.error('Erro ao buscar agendamentos de hoje:', error)

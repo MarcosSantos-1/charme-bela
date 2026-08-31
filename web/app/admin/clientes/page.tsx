@@ -54,7 +54,9 @@ function ClientCard({
   const [menuOpen, setMenuOpen] = useState(false)
 
   return (
-    <div className="bg-white rounded-2xl border-2 border-slate-200 p-4 shadow-xs hover:border-rose-300 transition-all">
+    <div className={`bg-white rounded-2xl border-2 border-slate-200 p-4 shadow-xs hover:border-rose-300 transition-all overflow-visible ${
+      menuOpen ? 'relative z-[60]' : 'relative'
+    }`}>
       {/* Header with avatar and menu */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -107,7 +109,7 @@ function ClientCard({
                 className="fixed inset-0 z-[100]" 
                 onClick={() => setMenuOpen(false)}
               />
-              <div className="absolute right-0 top-full mt-1.5 w-48 bg-white rounded-2xl shadow-xl border-2 border-slate-200 z-[101] overflow-hidden py-1">
+              <div className="absolute right-0 top-full mt-1.5 w-48 bg-white rounded-2xl shadow-xl border-2 border-slate-200 z-[120] overflow-hidden py-1">
                 <button
                   onClick={() => {
                     onToggleStatus(client.id, client.status === 'active')
@@ -372,8 +374,8 @@ export default function ClientesPage() {
           </div>
 
           {/* Desktop Table */}
-          <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
+          <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-xs">
+            <div className="overflow-visible">
               <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
@@ -402,7 +404,7 @@ export default function ClientesPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredClients.map((client) => (
-                <tr key={client.id} className="hover:bg-slate-50/80 transition-colors">
+                <tr key={client.id} className={`hover:bg-slate-50/80 transition-colors ${openMenuId === client.id ? 'relative z-40' : ''}`}>
                   <td className="px-6 py-4">
                     <div className="flex items-center">
                       <div className="w-10 h-10 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center mr-3 font-extrabold text-sm border border-rose-200 shadow-xs">
@@ -482,16 +484,11 @@ export default function ClientesPage() {
                       {client.status === 'active' ? '✓ Ativa' : '✗ Inativa'}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="relative">
+                  <td className="px-6 py-4 text-right relative z-10 overflow-visible">
+                    <div className={`relative overflow-visible ${openMenuId === client.id ? 'z-40' : ''}`}>
                       <button 
                         onClick={(e) => {
-                          const buttonRect = e.currentTarget.getBoundingClientRect()
-                          const spaceBelow = window.innerHeight - buttonRect.bottom
-                          const menuHeight = 180
-                          const shouldOpenUp = spaceBelow < menuHeight
-                          e.currentTarget.dataset.openUp = shouldOpenUp.toString()
-                          
+                          e.stopPropagation()
                           setOpenMenuId(openMenuId === client.id ? null : client.id)
                         }}
                         className="p-1.5 hover:bg-slate-100 rounded-xl transition-colors text-slate-500"
@@ -502,10 +499,10 @@ export default function ClientesPage() {
                       {openMenuId === client.id && (
                         <>
                           <div 
-                            className="fixed inset-0 z-[100]" 
+                            className="fixed inset-0 z-[110]" 
                             onClick={() => setOpenMenuId(null)}
                           />
-                          <div className="absolute right-0 bottom-full mb-2 w-56 bg-white rounded-2xl shadow-xl border-2 border-slate-200 z-[101] overflow-hidden py-1">
+                          <div className="absolute right-0 top-full mt-1.5 w-56 bg-white rounded-2xl shadow-xl border-2 border-slate-200 z-[120] overflow-hidden py-1">
                             <button
                               onClick={() => {
                                 handleToggleStatus(client.id, client.status === 'active')

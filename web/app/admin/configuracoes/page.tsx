@@ -203,7 +203,7 @@ export default function ConfiguracoesPage() {
                 className="text-xs font-bold"
                 onClick={() => setIsDefinirHorariosOpen(true)}
               >
-                Editar Horários
+                Editar horários
               </Button>
             </div>
 

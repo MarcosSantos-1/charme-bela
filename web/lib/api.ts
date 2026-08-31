@@ -1002,6 +1002,93 @@ export async function setManagerSchedule(data: {
   })
 }
 
+export interface ScheduleImpactItem {
+  appointmentId: string
+  clientName: string
+  serviceName: string
+  date: string
+  time: string
+  reason: string
+}
+
+export interface ScheduleWeekDay {
+  date: string
+  dayOfWeek: number
+  name: string
+  isPast: boolean
+  isCustom: boolean
+  isAvailable: boolean
+  availableSlots: Array<{ start: string; end: string }>
+  defaultAvailable: boolean
+  defaultSlots: Array<{ start: string; end: string }>
+  reason?: string | null
+}
+
+export interface ScheduleWeek {
+  weekStart: string
+  weekEnd: string
+  days: ScheduleWeekDay[]
+}
+
+export interface WeekDayPayload {
+  date: string
+  isAvailable: boolean
+  availableSlots?: Array<{ start: string; end: string }>
+  useDefault?: boolean
+}
+
+export async function getScheduleWeek(weekStart: string): Promise<ScheduleWeek> {
+  return apiRequest(`/schedule/week?weekStart=${encodeURIComponent(weekStart)}`, { method: 'GET' })
+}
+
+export async function previewScheduleWeek(data: {
+  weekStart: string
+  days: WeekDayPayload[]
+}): Promise<{ affectedCount: number; affected: ScheduleImpactItem[] }> {
+  return apiRequest('/schedule/week/preview', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function saveScheduleWeek(data: {
+  weekStart: string
+  days: WeekDayPayload[]
+  confirm: boolean
+  adminUserId?: string
+}): Promise<{ canceledCount: number }> {
+  return apiRequest('/schedule/week', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function previewManagerSchedule(days: Array<{
+  dayOfWeek: number
+  isAvailable: boolean
+  availableSlots: Array<{ start: string; end: string }>
+}>): Promise<{ affectedCount: number; affected: ScheduleImpactItem[] }> {
+  return apiRequest('/schedule/manager/preview', {
+    method: 'POST',
+    body: JSON.stringify({ days }),
+  })
+}
+
+export async function saveManagerScheduleBatch(data: {
+  days: Array<{
+    dayOfWeek: number
+    isAvailable: boolean
+    availableSlots: Array<{ start: string; end: string }>
+  }>
+  confirm: boolean
+  adminUserId?: string
+}): Promise<{ canceledCount: number }> {
+  return apiRequest('/schedule/manager/batch', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
 export async function getScheduleOverrides(filters?: {
   startDate?: string
   endDate?: string

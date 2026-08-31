@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Modal } from '../Modal'
-import { Button } from '../Button'
-import { RiCalendarScheduleFill, RiCheckFill, RiCloseLine, RiTimeFill } from 'react-icons/ri'
+import { RiCheckFill } from 'react-icons/ri'
 import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
+import { useAuth } from '@/contexts/AuthContext'
+import { AffectedClientsModal } from './AffectedClientsModal'
+import { HorarioDiaCampos } from './HorarioDiaCampos'
 
 interface DefinirHorariosModalProps {
   isOpen: boolean
@@ -21,17 +23,29 @@ interface Horario {
   almoco: { inicio: string; fim: string }
 }
 
+const diasSemana = [
+  { nome: 'Domingo', dayOfWeek: 0 },
+  { nome: 'Segunda', dayOfWeek: 1 },
+  { nome: 'Terça', dayOfWeek: 2 },
+  { nome: 'Quarta', dayOfWeek: 3 },
+  { nome: 'Quinta', dayOfWeek: 4 },
+  { nome: 'Sexta', dayOfWeek: 5 },
+  { nome: 'Sábado', dayOfWeek: 6 }
+]
+
+function slotsFromHorario(horario: Horario): Array<{ start: string; end: string }> {
+  if (!horario.ativo) return []
+  if (horario.almoco.inicio && horario.almoco.fim && horario.almoco.inicio !== horario.almoco.fim) {
+    return [
+      { start: horario.inicio, end: horario.almoco.inicio },
+      { start: horario.almoco.fim, end: horario.fim },
+    ]
+  }
+  return [{ start: horario.inicio, end: horario.fim }]
+}
+
 export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalProps) {
-  const diasSemana = [
-    { nome: 'Domingo', dayOfWeek: 0 },
-    { nome: 'Segunda', dayOfWeek: 1 },
-    { nome: 'Terça', dayOfWeek: 2 },
-    { nome: 'Quarta', dayOfWeek: 3 },
-    { nome: 'Quinta', dayOfWeek: 4 },
-    { nome: 'Sexta', dayOfWeek: 5 },
-    { nome: 'Sábado', dayOfWeek: 6 }
-  ]
-  
+  const { user } = useAuth()
   const [horarios, setHorarios] = useState<Horario[]>(
     diasSemana.map(dia => ({
       dia: dia.nome,
@@ -44,6 +58,7 @@ export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalPr
   )
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [preview, setPreview] = useState<api.ScheduleImpactItem[] | null>(null)
 
   const loadHorarios = useCallback(async () => {
     setLoading(true)
@@ -105,6 +120,7 @@ export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalPr
 
   useEffect(() => {
     if (isOpen) {
+      setPreview(null)
       loadHorarios()
     }
   }, [isOpen, loadHorarios])
@@ -127,46 +143,58 @@ export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalPr
     setHorarios(novosHorarios)
   }
 
-  const handleSubmit = async () => {
+  const payloadDays = () =>
+    horarios.map((horario) => ({
+      dayOfWeek: horario.dayOfWeek,
+      isAvailable: horario.ativo,
+      availableSlots: slotsFromHorario(horario),
+    }))
+
+  const applySave = async () => {
     setSaving(true)
     try {
-      for (const horario of horarios) {
-        const availableSlots: Array<{ start: string; end: string }> = []
-        
-        if (horario.ativo) {
-          if (horario.almoco.inicio && horario.almoco.fim && 
-              horario.almoco.inicio !== horario.almoco.fim) {
-            availableSlots.push(
-              { start: horario.inicio, end: horario.almoco.inicio },
-              { start: horario.almoco.fim, end: horario.fim }
-            )
-          } else {
-            availableSlots.push({ start: horario.inicio, end: horario.fim })
-          }
-        }
-        
-        await api.setManagerSchedule({
-          dayOfWeek: horario.dayOfWeek,
-          isAvailable: horario.ativo,
-          availableSlots
-        })
-      }
-      
-      toast.success('Agenda semanal atualizada com sucesso! ✨')
+      const result = await api.saveManagerScheduleBatch({
+        days: payloadDays(),
+        confirm: true,
+        adminUserId: user?.id,
+      })
+      toast.success(
+        result.canceledCount > 0
+          ? `Horário salvo. ${result.canceledCount} agendamento(s) cancelado(s).`
+          : 'Horário de funcionamento atualizado!'
+      )
+      setPreview(null)
       onClose()
     } catch (error) {
       console.error('Erro ao salvar horários:', error)
-      toast.error('Erro ao salvar horários de funcionamento')
+      toast.error(error instanceof Error ? error.message : 'Erro ao salvar horários de funcionamento')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSubmit = async () => {
+    setSaving(true)
+    try {
+      const data = await api.previewManagerSchedule(payloadDays())
+      if (data.affectedCount === 0) {
+        await applySave()
+        return
+      }
+      setPreview(data.affected)
+    } catch (error) {
+      console.error('Erro ao revisar impacto:', error)
+      toast.error(error instanceof Error ? error.message : 'Erro ao revisar agendamentos afetados')
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Agenda Semanal & Disponibilidade" size="lg">
+    <Modal isOpen={isOpen} onClose={() => { if (!preview) onClose() }} title="Horário de funcionamento" size="lg">
       <div className="mb-4">
         <p className="text-xs sm:text-sm text-slate-600">
-          Ative ou desative os dias em que estará atendendo na clínica e personalize os horários de início, término e intervalo de almoço.
+          Este é o horário padrão da clínica. Semanas ou dias específicos podem ser ajustados na Agenda Semanal, no Home.
         </p>
       </div>
 
@@ -216,48 +244,19 @@ export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalPr
               </div>
 
               {horario.ativo && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-indigo-100">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Abertura</label>
-                    <input
-                      type="time"
-                      value={horario.inicio}
-                      onChange={(e) => updateHorario(index, 'inicio', e.target.value)}
-                      className="w-full px-2.5 py-2 border-2 border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 bg-white"
-                      style={{ colorScheme: 'light' }}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Fechamento</label>
-                    <input
-                      type="time"
-                      value={horario.fim}
-                      onChange={(e) => updateHorario(index, 'fim', e.target.value)}
-                      className="w-full px-2.5 py-2 border-2 border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 bg-white"
-                      style={{ colorScheme: 'light' }}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Almoço (início)</label>
-                    <input
-                      type="time"
-                      value={horario.almoco.inicio}
-                      onChange={(e) => updateHorario(index, 'almocoInicio', e.target.value)}
-                      className="w-full px-2.5 py-2 border-2 border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 bg-white"
-                      style={{ colorScheme: 'light' }}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Almoço (fim)</label>
-                    <input
-                      type="time"
-                      value={horario.almoco.fim}
-                      onChange={(e) => updateHorario(index, 'almocoFim', e.target.value)}
-                      className="w-full px-2.5 py-2 border-2 border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 bg-white"
-                      style={{ colorScheme: 'light' }}
-                    />
-                  </div>
-                </div>
+                <HorarioDiaCampos
+                  inicio={horario.inicio}
+                  almocoInicio={horario.almoco.inicio}
+                  almocoFim={horario.almoco.fim}
+                  fim={horario.fim}
+                  onChange={(field, value) => {
+                    if (field === 'fechamento') {
+                      updateHorario(index, 'fim', value)
+                    } else {
+                      updateHorario(index, field, value)
+                    }
+                  }}
+                />
               )}
             </div>
           ))}
@@ -277,14 +276,21 @@ export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalPr
               className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 text-white font-bold text-xs shadow-md shadow-rose-600/25 hover:from-rose-700 hover:to-pink-700 active:scale-95 transition-all disabled:opacity-50"
               disabled={saving}
             >
-              {saving ? 'Salvando...' : 'Salvar Agenda Semanal'}
+              {saving ? 'Salvando...' : 'Salvar horário de funcionamento'}
             </button>
           </div>
         </div>
       )}
+
+      {preview && (
+        <AffectedClientsModal
+          affected={preview}
+          message={`Ao mudar o horário padrão, ${preview.length} agendamento(s) futuros (sem personalização na Agenda Semanal) serão cancelados e receberão crédito para remarcar.`}
+          confirming={saving}
+          onBack={() => setPreview(null)}
+          onConfirm={() => void applySave()}
+        />
+      )}
     </Modal>
   )
 }
-
-
-

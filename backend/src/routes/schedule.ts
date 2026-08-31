@@ -12,6 +12,20 @@ import {
   spTodayYmd,
   ymdToDate,
 } from '../utils/machineRental'
+import { cancelClinicAppointments } from '../utils/clinicCancellations'
+import {
+  applyManagerSchedule,
+  applyWeekSchedule,
+  computeWeekImpact,
+  findManagerScheduleImpact,
+  isYmd,
+  mondayOfWeek,
+  normalizeSlots,
+  toImpactItem,
+  weekDatesFromMonday,
+  type ManagerDayInput,
+  type WeekDayInput,
+} from '../utils/scheduleHours'
 
 // ============================================================================
 // Helpers de horário (slots dinâmicos)
@@ -435,8 +449,11 @@ export async function scheduleRoutes(app: FastifyInstance) {
         })
       }
       
-      // 2. Se não tem override, verifica configuração do dia da semana
-      if (!override) {
+      let availablePeriods: Array<{ start: string; end: string }> = []
+
+      if (override) {
+        availablePeriods = normalizeSlots(override.availableSlots as Array<{ start: string; end: string }>)
+      } else {
         const managerSchedule = await prisma.managerSchedule.findUnique({
           where: { dayOfWeek }
         })
@@ -455,6 +472,21 @@ export async function scheduleRoutes(app: FastifyInstance) {
             }
           })
         }
+        availablePeriods = normalizeSlots(managerSchedule.availableSlots as Array<{ start: string; end: string }>)
+      }
+
+      if (availablePeriods.length === 0) {
+        return reply.status(200).send({
+          success: true,
+          data: {
+            date,
+            available: false,
+            reason: 'Não há horários de atendimento configurados para esta data',
+            slots: [],
+            bookedSlots: [],
+            totalAppointments: 0
+          }
+        })
       }
       
       logger.info(`✅ Dia ${date} está configurado para atender`)
@@ -475,9 +507,15 @@ export async function scheduleRoutes(app: FastifyInstance) {
         }
       }
       
-      // ADMIN: horários estendidos das 6h às 21h, mas na mesma grade de `slotDuration`,
-      // garantindo que o serviço inteiro caiba na janela.
-      let candidateSlots = generateSlotStarts('06:00', '21:00', slotDuration, serviceDuration)
+      // Grade do horário efetivo do dia (override ou padrão da clínica)
+      let candidateSlots: string[] = []
+      for (const period of availablePeriods) {
+        candidateSlots = [
+          ...candidateSlots,
+          ...generateSlotStarts(period.start, period.end, slotDuration, serviceDuration)
+        ]
+      }
+      candidateSlots = Array.from(new Set(candidateSlots))
       
       // 4. Se for hoje (usando horário de São Paulo), filtrar horários que já passaram
       const now = new Date()
@@ -641,6 +679,191 @@ export async function scheduleRoutes(app: FastifyInstance) {
     }
   })
 
+  const WEEKDAY_NAMES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
+
+  app.get('/schedule/week', async (request, reply) => {
+    logger.route('GET', '/schedule/week')
+    try {
+      const { weekStart } = request.query as { weekStart?: string }
+      const today = spTodayYmd()
+      const monday = mondayOfWeek(isYmd(weekStart) ? weekStart : today)
+      const dates = weekDatesFromMonday(monday)
+      const weekEnd = dates[6]
+
+      const [schedules, overrides] = await Promise.all([
+        prisma.managerSchedule.findMany(),
+        prisma.scheduleOverride.findMany({
+          where: {
+            date: {
+              gte: ymdToDate(monday),
+              lte: ymdToDate(weekEnd),
+            },
+          },
+        }),
+      ])
+
+      const byDow = new Map(schedules.map((row) => [row.dayOfWeek, row]))
+      const overrideByYmd = new Map(overrides.map((row) => [dateToYmd(row.date), row]))
+
+      const days = dates.map((ymd) => {
+        const dow = ymdToDate(ymd).getUTCDay()
+        const def = byDow.get(dow)
+        const defaultAvailable = Boolean(def?.isAvailable)
+        const defaultSlots = normalizeSlots(def?.availableSlots as Array<{ start: string; end: string }>)
+        const override = overrideByYmd.get(ymd)
+        const isCustom = Boolean(override)
+        const isAvailable = override ? override.isAvailable : defaultAvailable
+        const availableSlots = override
+          ? (override.isAvailable ? normalizeSlots(override.availableSlots as Array<{ start: string; end: string }>) : [])
+          : defaultSlots
+
+        return {
+          date: ymd,
+          dayOfWeek: dow,
+          name: WEEKDAY_NAMES[dow],
+          isPast: ymd < today,
+          isCustom,
+          isAvailable,
+          availableSlots,
+          defaultAvailable,
+          defaultSlots,
+          reason: override?.reason || null,
+        }
+      })
+
+      return reply.status(200).send({
+        success: true,
+        data: { weekStart: monday, weekEnd, days },
+      })
+    } catch (error) {
+      logger.error('Erro ao buscar agenda da semana:', error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Erro ao buscar agenda da semana',
+      })
+    }
+  })
+
+  app.post('/schedule/week/preview', async (request, reply) => {
+    logger.route('POST', '/schedule/week/preview')
+    try {
+      const body = request.body as { weekStart?: string; days?: WeekDayInput[] }
+      if (!isYmd(body.weekStart) || !Array.isArray(body.days)) {
+        return reply.status(400).send({ success: false, error: 'weekStart e days são obrigatórios' })
+      }
+
+      const affected = await computeWeekImpact(body.weekStart, body.days)
+      return reply.status(200).send({
+        success: true,
+        data: {
+          affectedCount: affected.length,
+          affected: affected.map((apt) => toImpactItem(apt, apt.cancelReason)),
+        },
+      })
+    } catch (error) {
+      logger.error('Erro no preview da agenda semanal:', error)
+      return reply.status(500).send({ success: false, error: 'Erro ao calcular impacto' })
+    }
+  })
+
+  app.post('/schedule/week', async (request, reply) => {
+    logger.route('POST', '/schedule/week')
+    try {
+      const body = request.body as {
+        weekStart?: string
+        days?: WeekDayInput[]
+        confirm?: boolean
+        adminUserId?: string
+      }
+
+      if (!isYmd(body.weekStart) || !Array.isArray(body.days)) {
+        return reply.status(400).send({ success: false, error: 'weekStart e days são obrigatórios' })
+      }
+      if (!body.confirm) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Confirme a alteração (confirm: true) após revisar o impacto',
+        })
+      }
+
+      const affected = await computeWeekImpact(body.weekStart, body.days)
+      await cancelClinicAppointments(
+        affected,
+        'Horário da clínica alterado',
+        'credit',
+        body.adminUserId || 'system'
+      )
+      await applyWeekSchedule(body.weekStart, body.days)
+
+      return reply.status(200).send({
+        success: true,
+        data: { canceledCount: affected.length },
+      })
+    } catch (error) {
+      logger.error('Erro ao salvar agenda da semana:', error)
+      return reply.status(500).send({ success: false, error: 'Erro ao salvar agenda da semana' })
+    }
+  })
+
+  app.post('/schedule/manager/preview', async (request, reply) => {
+    logger.route('POST', '/schedule/manager/preview')
+    try {
+      const body = request.body as { days?: ManagerDayInput[] }
+      if (!Array.isArray(body.days) || body.days.length === 0) {
+        return reply.status(400).send({ success: false, error: 'days é obrigatório' })
+      }
+
+      const affected = await findManagerScheduleImpact(body.days)
+      return reply.status(200).send({
+        success: true,
+        data: {
+          affectedCount: affected.length,
+          affected: affected.map((apt) => toImpactItem(apt, apt.cancelReason)),
+        },
+      })
+    } catch (error) {
+      logger.error('Erro no preview do horário padrão:', error)
+      return reply.status(500).send({ success: false, error: 'Erro ao calcular impacto' })
+    }
+  })
+
+  app.post('/schedule/manager/batch', async (request, reply) => {
+    logger.route('POST', '/schedule/manager/batch')
+    try {
+      const body = request.body as {
+        days?: ManagerDayInput[]
+        confirm?: boolean
+        adminUserId?: string
+      }
+      if (!Array.isArray(body.days) || body.days.length === 0) {
+        return reply.status(400).send({ success: false, error: 'days é obrigatório' })
+      }
+      if (!body.confirm) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Confirme a alteração (confirm: true) após revisar o impacto',
+        })
+      }
+
+      const affected = await findManagerScheduleImpact(body.days)
+      await cancelClinicAppointments(
+        affected,
+        'Horário de funcionamento alterado',
+        'credit',
+        body.adminUserId || 'system'
+      )
+      await applyManagerSchedule(body.days)
+
+      return reply.status(200).send({
+        success: true,
+        data: { canceledCount: affected.length },
+      })
+    } catch (error) {
+      logger.error('Erro ao salvar horário padrão:', error)
+      return reply.status(500).send({ success: false, error: 'Erro ao salvar horário de funcionamento' })
+    }
+  })
+
   // GET - Listar exceções de horário (feriados, folgas)
   app.get('/schedule/overrides', async (request, reply) => {
     logger.route('GET', '/schedule/overrides')
@@ -653,10 +876,10 @@ export async function scheduleRoutes(app: FastifyInstance) {
       
       const overrides = await prisma.scheduleOverride.findMany({
         where: {
-          ...(startDate && endDate && {
+          ...(isYmd(startDate) && isYmd(endDate) && {
             date: {
-              gte: new Date(startDate),
-              lte: new Date(endDate)
+              gte: ymdToDate(startDate),
+              lte: ymdToDate(endDate)
             }
           })
         },
@@ -693,8 +916,15 @@ export async function scheduleRoutes(app: FastifyInstance) {
         availableSlots?: Array<{ start: string, end: string }>
         reason?: string
       }
+
+      if (!isYmd(date)) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Data inválida (formato: YYYY-MM-DD)'
+        })
+      }
       
-      const targetDate = new Date(date)
+      const targetDate = ymdToDate(date)
       
       // Upsert
       const override = await prisma.scheduleOverride.upsert({
@@ -732,7 +962,14 @@ export async function scheduleRoutes(app: FastifyInstance) {
     logger.route('DELETE', `/schedule/overrides/${date}`)
     
     try {
-      const targetDate = new Date(date)
+      if (!isYmd(date)) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Data inválida (formato: YYYY-MM-DD)'
+        })
+      }
+
+      const targetDate = ymdToDate(date)
       
       await prisma.scheduleOverride.delete({
         where: { date: targetDate }

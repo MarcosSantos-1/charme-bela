@@ -34,7 +34,7 @@ import { useConfirm } from '@/hooks/useConfirm'
 import { NovoAgendamentoModal } from '@/components/admin/NovoAgendamentoModal'
 import { AdicionarClienteModal } from '@/components/admin/AdicionarClienteModal'
 import { DarVoucherModal } from '@/components/admin/DarVoucherModal'
-import { DefinirHorariosModal } from '@/components/admin/DefinirHorariosModal'
+import { AgendaSemanalModal } from '@/components/admin/AgendaSemanalModal'
 import { ReagendarCancelarModal } from '@/components/admin/ReagendarCancelarModal'
 
 interface Stats {
@@ -401,6 +401,7 @@ export default function AdminDashboard() {
                   ) : (
                     <div className="space-y-3">
                       {todayAppointments.map((appointment) => {
+                        const isCompleted = appointment.status === 'completed'
                         const isAdminPending = appointment.origin === 'ADMIN_CREATED' && (appointment.paymentStatus === 'PENDING' || !appointment.paymentStatus)
                         const isClientSingle = appointment.origin === 'SINGLE'
                         const isSubscription = appointment.origin === 'SUBSCRIPTION'
@@ -410,27 +411,28 @@ export default function AdminDashboard() {
                           ? `(${appointment.packageSessionIndex}/${appointment.packageSessionCount || 5}ª Sessão)`
                           : ''
                         
-                        // Cores fortes e vibrantes
                         let cardBg = 'bg-white hover:bg-slate-50/80'
                         let cardBorder = 'border-slate-200'
                         let timeBg = 'bg-slate-900 text-white'
                         
-                        if (isAdminPending) {
-                          cardBg = 'bg-gradient-to-r from-amber-500/10 via-amber-50/40 to-white'
-                          cardBorder = 'border-amber-300 ring-1 ring-amber-400/20'
-                          timeBg = 'bg-amber-600 text-white'
-                        } else if (isSubscription) {
-                          cardBg = 'bg-gradient-to-r from-violet-500/10 via-purple-50/40 to-white'
-                          cardBorder = 'border-violet-300'
-                          timeBg = 'bg-violet-700 text-white'
-                        } else if (isPackage) {
-                          cardBg = 'bg-gradient-to-r from-orange-500/10 via-orange-50/40 to-white'
-                          cardBorder = 'border-orange-300'
-                          timeBg = 'bg-orange-600 text-white'
-                        } else if (isClientSingle) {
-                          cardBg = 'bg-gradient-to-r from-blue-500/10 via-blue-50/40 to-white'
-                          cardBorder = 'border-blue-300'
-                          timeBg = 'bg-blue-600 text-white'
+                        if (!isCompleted) {
+                          if (isAdminPending) {
+                            cardBg = 'bg-gradient-to-r from-amber-500/10 via-amber-50/40 to-white'
+                            cardBorder = 'border-amber-300 ring-1 ring-amber-400/20'
+                            timeBg = 'bg-amber-600 text-white'
+                          } else if (isSubscription) {
+                            cardBg = 'bg-gradient-to-r from-violet-500/10 via-purple-50/40 to-white'
+                            cardBorder = 'border-violet-300'
+                            timeBg = 'bg-violet-700 text-white'
+                          } else if (isPackage) {
+                            cardBg = 'bg-gradient-to-r from-orange-500/10 via-orange-50/40 to-white'
+                            cardBorder = 'border-orange-300'
+                            timeBg = 'bg-orange-600 text-white'
+                          } else if (isClientSingle) {
+                            cardBg = 'bg-gradient-to-r from-blue-500/10 via-blue-50/40 to-white'
+                            cardBorder = 'border-blue-300'
+                            timeBg = 'bg-blue-600 text-white'
+                          }
                         }
                         
                         return (
@@ -452,25 +454,25 @@ export default function AdminDashboard() {
                                   </span>
 
                                   {/* Strong Contrast Origin Badges */}
-                                  {isAdminPending && (
+                                  {!isCompleted && isAdminPending && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-amber-500 text-white shadow-xs">
                                       <RiHandCoinFill className="w-3 h-3" />
                                       Pagar na Clínica
                                     </span>
                                   )}
-                                  {isSubscription && (
+                                  {!isCompleted && isSubscription && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-violet-600 text-white shadow-xs">
                                       <RiSparklingFill className="w-3 h-3" />
                                       Plano VIP
                                     </span>
                                   )}
-                                  {isPackage && (
+                                  {!isCompleted && isPackage && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-orange-600 text-white shadow-xs">
                                       <RiGiftFill className="w-3 h-3" />
                                       Pacote {packageSessionLabel}
                                     </span>
                                   )}
-                                  {isClientSingle && (
+                                  {!isCompleted && isClientSingle && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-blue-600 text-white shadow-xs">
                                       <RiBankCardFill className="w-3 h-3" />
                                       Avulso
@@ -481,13 +483,17 @@ export default function AdminDashboard() {
                                 <div className="text-xs font-semibold text-slate-600 flex items-center gap-1.5 mt-1 truncate">
                                   <RiSparklingFill className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
                                   <span className="truncate">{appointment.service}</span>
-                                  {isAdminPending && clinicAmount != null && (
+                                  {isAdminPending && !isCompleted && clinicAmount != null && (
                                     <span className="text-[11px] font-extrabold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded shrink-0">
                                       R$ {clinicAmount.toFixed(2).replace('.', ',')}
                                     </span>
                                   )}
                                   {isPackage && packageSessionLabel && (
-                                    <span className="text-[11px] font-bold text-orange-700 bg-orange-100/80 px-1.5 py-0.2 rounded shrink-0">
+                                    <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                                      isCompleted
+                                        ? 'text-slate-600 bg-slate-100'
+                                        : 'text-orange-700 bg-orange-100/80'
+                                    }`}>
                                       {packageSessionLabel}
                                     </span>
                                   )}
@@ -772,7 +778,7 @@ export default function AdminDashboard() {
         onClose={() => setShowVoucherModal(false)}
       />
       
-      <DefinirHorariosModal 
+      <AgendaSemanalModal 
         isOpen={showHorariosModal}
         onClose={() => setShowHorariosModal(false)}
       />

@@ -31,9 +31,7 @@ function generateSlotStarts(
 
 /**
  * Valida se `startTime` (fake-UTC wall-clock) está na grade de funcionamento.
- * Clientes: ManagerSchedule / ScheduleOverride.
- * ADMIN_CREATED: janela estendida 06:00–21:00 (igual /schedule/admin-slots),
- * mas ainda respeita dias fechados (override / dia não atende).
+ * Clientes e admin: horário efetivo do dia (ScheduleOverride ou ManagerSchedule).
  */
 export async function assertStartTimeOnSchedule(
   startTime: Date,
@@ -73,11 +71,6 @@ export async function assertStartTimeOnSchedule(
       return { ok: false, error: 'A clínica não atende neste dia da semana' }
     }
     periods = (managerSchedule.availableSlots as Array<{ start: string; end: string }>) || []
-  }
-
-  // Admin: grade estendida 06–21, mas o dia precisa estar aberto
-  if (options.adminExtended) {
-    periods = [{ start: '06:00', end: '21:00' }]
   }
 
   if (periods.length === 0) {

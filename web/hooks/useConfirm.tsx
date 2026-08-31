@@ -1,7 +1,5 @@
-'use client'
-
 import { useState } from 'react'
-import { X, AlertCircle, CheckCircle } from 'lucide-react'
+import { RiAlertFill, RiCheckboxCircleFill, RiInformationFill } from 'react-icons/ri'
 import { Button } from '@/components/Button'
 
 interface ConfirmDialogProps {
@@ -24,41 +22,41 @@ export function ConfirmDialog({
   type = 'warning'
 }: ConfirmDialogProps) {
   const colors = {
-    warning: 'from-yellow-500 to-orange-500',
-    danger: 'from-red-500 to-pink-500',
-    info: 'from-blue-500 to-purple-500'
+    warning: 'from-amber-500 to-orange-500',
+    danger: 'from-rose-600 to-red-600',
+    info: 'from-blue-600 to-indigo-600'
   }
 
   const icons = {
-    warning: AlertCircle,
-    danger: AlertCircle,
-    info: CheckCircle
+    warning: RiAlertFill,
+    danger: RiAlertFill,
+    info: RiCheckboxCircleFill
   }
 
   const Icon = icons[type]
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md p-6">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[150] flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border-2 border-slate-200">
         <div className="text-center mb-6">
-          <div className={`w-16 h-16 bg-gradient-to-br ${colors[type]} rounded-full flex items-center justify-center mx-auto mb-4`}>
-            <Icon className="w-8 h-8 text-white" />
+          <div className={`w-14 h-14 bg-gradient-to-br ${colors[type]} rounded-2xl flex items-center justify-center mx-auto mb-3.5 shadow-md`}>
+            <Icon className="w-7 h-7 text-white" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">{title}</h2>
-          <p className="text-gray-600">{message}</p>
+          <h2 className="text-lg font-extrabold text-slate-900 mb-1.5 tracking-tight">{title}</h2>
+          <p className="text-xs sm:text-sm font-semibold text-slate-600 leading-relaxed">{message}</p>
         </div>
 
-        <div className="flex space-x-3">
+        <div className="flex gap-2.5">
           <Button
             variant="outline"
-            className="flex-1"
+            className="flex-1 font-bold text-xs"
             onClick={onCancel}
           >
             {cancelText}
           </Button>
           <Button
-            variant="primary"
-            className="flex-1"
+            variant={type === 'danger' ? 'danger' : 'primary'}
+            className="flex-1 font-bold text-xs shadow-xs"
             onClick={onConfirm}
           >
             {confirmText}

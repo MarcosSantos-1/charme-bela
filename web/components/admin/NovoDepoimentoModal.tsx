@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
-import { Star, User, MessageSquare } from 'lucide-react'
+import { RiStarFill, RiUser3Fill, RiChat3Fill } from 'react-icons/ri'
 import toast from 'react-hot-toast'
 
 interface NovoDepoimentoModalProps {
@@ -56,36 +56,36 @@ export function NovoDepoimentoModal({ isOpen, onClose, onSuccess }: NovoDepoimen
     <Modal isOpen={isOpen} onClose={onClose} title="Novo Depoimento" size="md">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <User className="w-4 h-4 inline mr-1" />
-            Nome do Cliente *
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <RiUser3Fill className="w-3.5 h-3.5 inline mr-1 text-rose-600" />
+            Nome da Cliente *
           </label>
           <input
             type="text"
             value={formData.nome}
             onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
             placeholder="Maria Silva"
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 placeholder:text-gray-400"
+            className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Plano/Cargo
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            Plano / Observação
           </label>
           <input
             type="text"
             value={formData.plano}
             onChange={(e) => setFormData({ ...formData, plano: e.target.value })}
             placeholder="Ex: Assinante Plano Ouro"
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 placeholder:text-gray-400"
+            className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <Star className="w-4 h-4 inline mr-1" />
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <RiStarFill className="w-3.5 h-3.5 inline mr-1 text-amber-500" />
             Avaliação *
           </label>
           <div className="flex gap-2">
@@ -94,13 +94,13 @@ export function NovoDepoimentoModal({ isOpen, onClose, onSuccess }: NovoDepoimen
                 key={star}
                 type="button"
                 onClick={() => setFormData({ ...formData, avaliacao: star })}
-                className="focus:outline-none"
+                className="focus:outline-none p-1 hover:scale-110 transition-transform"
               >
-                <Star
-                  className={`w-8 h-8 ${
+                <RiStarFill
+                  className={`w-7 h-7 ${
                     star <= formData.avaliacao
-                      ? 'fill-yellow-400 text-yellow-400'
-                      : 'text-gray-300'
+                      ? 'text-amber-400 drop-shadow-xs'
+                      : 'text-slate-200'
                   }`}
                 />
               </button>
@@ -109,8 +109,8 @@ export function NovoDepoimentoModal({ isOpen, onClose, onSuccess }: NovoDepoimen
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <MessageSquare className="w-4 h-4 inline mr-1" />
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <RiChat3Fill className="w-3.5 h-3.5 inline mr-1 text-rose-600" />
             Depoimento *
           </label>
           <textarea
@@ -118,16 +118,16 @@ export function NovoDepoimentoModal({ isOpen, onClose, onSuccess }: NovoDepoimen
             onChange={(e) => setFormData({ ...formData, depoimento: e.target.value })}
             placeholder="Escreva o depoimento do cliente..."
             rows={4}
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
+            className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 resize-none text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white"
             required
           />
         </div>
 
-        <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+        <div className="flex flex-col-reverse sm:flex-row gap-2.5 pt-4">
           <Button type="button" variant="outline" onClick={onClose} className="flex-1" disabled={saving}>
             Cancelar
           </Button>
-          <Button type="submit" variant="primary" className="flex-1" isLoading={saving}>
+          <Button type="submit" variant="primary" className="flex-1 shadow-xs" isLoading={saving}>
             Adicionar Depoimento
           </Button>
         </div>

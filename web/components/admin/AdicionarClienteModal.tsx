@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { PhoneInput } from '../PhoneInput'
-import { User, Mail, Phone, MapPin, Calendar } from 'lucide-react'
+import { RiUser3Fill, RiMailFill, RiPhoneFill, RiMapPin2Fill, RiCalendar2Fill } from 'react-icons/ri'
 import toast from 'react-hot-toast'
 import DatePicker from '../DatePicker'
 import * as api from '@/lib/api'
@@ -80,7 +80,7 @@ export function AdicionarClienteModal({ isOpen, onClose, editingClient }: Adicio
         }
 
         await api.createUser(userData)
-        toast.success('Cliente adicionado com sucesso!')
+        toast.success('Cliente adicionada com sucesso! ✨')
       }
       
       onClose()
@@ -107,15 +107,15 @@ export function AdicionarClienteModal({ isOpen, onClose, editingClient }: Adicio
     <Modal 
       isOpen={isOpen} 
       onClose={onClose} 
-      title={editingClient ? "Editar Cliente" : "Adicionar Novo Cliente"} 
+      title={editingClient ? "Editar Cliente" : "Adicionar Nova Cliente"} 
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Nome e Email */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <User className="w-4 h-4 inline mr-1" />
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <RiUser3Fill className="w-3.5 h-3.5 inline mr-1 text-rose-600" />
               Nome Completo *
             </label>
             <input
@@ -123,14 +123,14 @@ export function AdicionarClienteModal({ isOpen, onClose, editingClient }: Adicio
               value={formData.nome}
               onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
               placeholder="Maria Silva"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 placeholder:text-gray-400"
+              className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Mail className="w-4 h-4 inline mr-1" />
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <RiMailFill className="w-3.5 h-3.5 inline mr-1 text-slate-500" />
               Email
             </label>
             <input
@@ -138,17 +138,17 @@ export function AdicionarClienteModal({ isOpen, onClose, editingClient }: Adicio
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               placeholder="maria@email.com"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 placeholder:text-gray-400"
+              className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white"
             />
           </div>
         </div>
 
         {/* Telefone e Data Nascimento */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Phone className="w-4 h-4 inline mr-1" />
-              Telefone *
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <RiPhoneFill className="w-3.5 h-3.5 inline mr-1 text-emerald-600" />
+              Telefone / WhatsApp *
             </label>
             <PhoneInput
               value={formData.telefone}
@@ -159,8 +159,8 @@ export function AdicionarClienteModal({ isOpen, onClose, editingClient }: Adicio
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Calendar className="w-4 h-4 inline mr-1" />
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <RiCalendar2Fill className="w-3.5 h-3.5 inline mr-1 text-purple-600" />
               Data de Nascimento
             </label>
             <DatePicker
@@ -175,21 +175,21 @@ export function AdicionarClienteModal({ isOpen, onClose, editingClient }: Adicio
 
         {/* Endereço */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <MapPin className="w-4 h-4 inline mr-1" />
-            Endereço
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <RiMapPin2Fill className="w-3.5 h-3.5 inline mr-1 text-rose-500" />
+            Endereço (opcional)
           </label>
           <input
             type="text"
             value={formData.endereco}
             onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
             placeholder="Rua, número, bairro, cidade"
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 placeholder:text-gray-400"
+            className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white"
           />
         </div>
 
         {/* Botões */}
-        <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+        <div className="flex flex-col-reverse sm:flex-row gap-2.5 pt-4">
           <Button
             type="button"
             variant="outline"
@@ -211,4 +211,5 @@ export function AdicionarClienteModal({ isOpen, onClose, editingClient }: Adicio
     </Modal>
   )
 }
+
 

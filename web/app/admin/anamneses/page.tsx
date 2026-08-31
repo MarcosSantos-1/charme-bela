@@ -1,7 +1,21 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Search, FileText, Eye, Download, Plus, Calendar, AlertCircle, User, Edit2, Mail } from 'lucide-react'
+import {
+  RiSearchLine,
+  RiFileList3Fill,
+  RiEyeFill,
+  RiDownload2Fill,
+  RiAddLine,
+  RiCalendar2Fill,
+  RiAlertFill,
+  RiUser3Fill,
+  RiEdit2Fill,
+  RiMailFill,
+  RiCloseLine,
+  RiLoader4Line,
+  RiCheckboxCircleFill,
+} from 'react-icons/ri'
 import { Button } from '@/components/Button'
 import { CriarAnamneseModal } from '@/components/admin/CriarAnamneseModal'
 import { EditarAnamneseModal } from '@/components/admin/EditarAnamneseModal'
@@ -14,23 +28,23 @@ function AnamneseCard({ anamnese, onView, onEdit }: any) {
   const isComplete = anamnese.termsAccepted === true
 
   return (
-    <div className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:shadow-md transition-all">
+    <div className="bg-white rounded-2xl border-2 border-slate-200 p-4 shadow-xs hover:border-rose-300 transition-all">
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center flex-shrink-0">
-            <FileText className="w-6 h-6 text-pink-600" />
+          <div className="w-11 h-11 bg-rose-100 rounded-2xl flex items-center justify-center shrink-0 border border-rose-200 shadow-xs">
+            <RiFileList3Fill className="w-5 h-5 text-rose-600" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-gray-900 text-base truncate">
+            <h3 className="font-extrabold text-slate-900 text-sm sm:text-base truncate">
               {anamnese.user?.name || 'Cliente'}
             </h3>
             <div className="flex items-center gap-2 mt-1">
               <span
-                className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${
+                className={`inline-flex px-2 py-0.5 text-[11px] font-bold rounded-full ${
                   isComplete
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-yellow-100 text-yellow-700'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-amber-100 text-amber-800'
                 }`}
               >
                 {isComplete ? '✓ Completa' : '⏳ Pendente'}
@@ -41,35 +55,35 @@ function AnamneseCard({ anamnese, onView, onEdit }: any) {
       </div>
 
       {/* Info */}
-      <div className="space-y-2 mb-3">
-        <div className="flex items-center text-sm text-gray-600">
-          <Mail className="w-4 h-4 mr-2 text-gray-400 flex-shrink-0" />
+      <div className="space-y-1.5 mb-3 bg-slate-50 p-2.5 rounded-xl text-xs font-semibold text-slate-700">
+        <div className="flex items-center">
+          <RiMailFill className="w-3.5 h-3.5 mr-2 text-rose-500 shrink-0" />
           <span className="truncate">{anamnese.user?.email || '-'}</span>
         </div>
-        <div className="flex items-center text-sm text-gray-600">
-          <Calendar className="w-4 h-4 mr-2 text-gray-400 flex-shrink-0" />
+        <div className="flex items-center">
+          <RiCalendar2Fill className="w-3.5 h-3.5 mr-2 text-rose-500 shrink-0" />
           <span>Criada em {createdDate.toLocaleDateString('pt-BR')}</span>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2 pt-3 border-t border-gray-100">
+      <div className="flex gap-2 pt-2 border-t border-slate-100">
         <Button 
           variant="outline" 
           size="sm" 
-          className="flex-1"
+          className="flex-1 text-xs font-bold"
           onClick={() => onView(anamnese)}
         >
-          <Eye className="w-4 h-4 mr-1.5" />
+          <RiEyeFill className="w-3.5 h-3.5 mr-1 text-slate-500" />
           Ver
         </Button>
         <Button 
           variant="outline" 
           size="sm" 
-          className="flex-1"
+          className="flex-1 text-xs font-bold"
           onClick={() => onEdit(anamnese)}
         >
-          <Edit2 className="w-4 h-4 mr-1.5" />
+          <RiEdit2Fill className="w-3.5 h-3.5 mr-1 text-slate-500" />
           Editar
         </Button>
       </div>
@@ -211,37 +225,40 @@ export default function AnamnesesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Anamneses</h2>
-          <p className="text-gray-600 mt-1">Visualize e gerencie as fichas de anamnese dos clientes</p>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Fichas de Anamnese</h2>
+          <p className="text-xs sm:text-sm font-semibold text-slate-500 mt-0.5">Visualize e gerencie as fichas de saúde e objetivos das clientes</p>
         </div>
         <Button 
           variant="primary"
           onClick={() => setIsCriarAnamneseOpen(true)}
+          className="shadow-xs"
         >
-          <Plus className="w-5 h-5 mr-2" />
+          <RiAddLine className="w-4 h-4 mr-1.5" />
           Nova Anamnese
         </Button>
       </div>
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <RiSearchLine className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
         <input
           type="text"
-          placeholder="Buscar por nome do cliente..."
+          placeholder="Buscar por nome da cliente..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 font-medium"
+          className="w-full pl-10 pr-4 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-base sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white touch-manipulation"
         />
       </div>
 
       {/* Content */}
       {loading ? (
-        <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600 mx-auto"></div>
-          <p className="text-gray-600 mt-4">Carregando anamneses...</p>
+        <div className="flex items-center justify-center py-12 bg-white rounded-2xl border border-slate-200">
+          <div className="text-center">
+            <RiLoader4Line className="w-8 h-8 animate-spin text-rose-600 mx-auto mb-2" />
+            <p className="text-slate-600 text-xs font-bold">Carregando fichas de anamnese...</p>
+          </div>
         </div>
       ) : filteredAnamneses.length > 0 ? (
         <>
@@ -258,58 +275,59 @@ export default function AnamnesesPage() {
           </div>
 
           {/* Desktop Table */}
-          <div className="hidden lg:block bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3.5 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Cliente
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3.5 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Email
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3.5 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Data de Criação
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3.5 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase">
+                <th className="px-6 py-3.5 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Ações
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-slate-100">
               {filteredAnamneses.map((anamnese) => {
                 const createdDate = new Date(anamnese.createdAt)
-                // Simples: Completa = termos aceitos
                 const isComplete = anamnese.termsAccepted === true
                 
                 return (
-                  <tr key={anamnese.id} className="hover:bg-gray-50">
+                  <tr key={anamnese.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center">
-                        <FileText className="w-5 h-5 text-pink-600 mr-3" />
-                        <span className="font-medium text-gray-900">
+                        <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mr-3 border border-rose-200 shadow-xs">
+                          <RiFileList3Fill className="w-4 h-4" />
+                        </div>
+                        <span className="font-bold text-slate-900 text-sm">
                           {anamnese.user?.name || 'Cliente'}
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
+                    <td className="px-6 py-4 text-xs font-semibold text-slate-600">
                       {anamnese.user?.email || '-'}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
+                    <td className="px-6 py-4 text-xs font-semibold text-slate-600">
                       <div className="flex items-center">
-                        <Calendar className="w-4 h-4 mr-1 text-gray-400" />
+                        <RiCalendar2Fill className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
                         {createdDate.toLocaleDateString('pt-BR')}
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <span
-                        className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                        className={`inline-flex px-2.5 py-0.5 text-xs font-bold rounded-full ${
                           isComplete
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-yellow-100 text-yellow-700'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
                         }`}
                       >
                         {isComplete ? '✓ Completa' : '⏳ Pendente'}
@@ -320,17 +338,19 @@ export default function AnamnesesPage() {
                       <Button 
                         variant="ghost" 
                         size="sm"
+                        className="text-xs font-bold"
                         onClick={() => setViewingAnamnese(anamnese)}
                       >
-                        <Eye className="w-4 h-4 mr-2" />
+                        <RiEyeFill className="w-3.5 h-3.5 mr-1 text-slate-500" />
                         Ver
                       </Button>
                       <Button 
                         variant="ghost" 
                         size="sm"
+                        className="text-xs font-bold"
                         onClick={() => setEditingAnamnese(anamnese)}
                       >
-                        <Edit2 className="w-4 h-4 mr-2" />
+                        <RiEdit2Fill className="w-3.5 h-3.5 mr-1 text-slate-500" />
                         Editar
                       </Button>
                       </div>
@@ -343,12 +363,12 @@ export default function AnamnesesPage() {
           </div>
         </>
       ) : (
-        <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
-          <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-600 font-medium mb-2">
+        <div className="text-center py-12 bg-white rounded-2xl border border-slate-200">
+          <RiFileList3Fill className="w-14 h-14 text-slate-200 mx-auto mb-3" />
+          <p className="text-slate-600 font-bold text-sm mb-1">
             {searchTerm ? 'Nenhuma anamnese encontrada' : 'Nenhuma anamnese cadastrada'}
           </p>
-          <p className="text-sm text-gray-500">
+          <p className="text-xs text-slate-400">
             {searchTerm 
               ? 'Tente buscar por outro termo'
               : 'Clique em "Nova Anamnese" para criar a primeira'}
@@ -370,47 +390,47 @@ export default function AnamnesesPage() {
         >
           <div className="space-y-4 min-w-0">
             {/* Status Geral */}
-            <div className={`border-2 rounded-xl p-4 ${
+            <div className={`border-2 rounded-2xl p-4 ${
               isComplete 
-                ? 'bg-green-50 border-green-300' 
-                : 'bg-orange-50 border-orange-300'
+                ? 'bg-emerald-50 border-emerald-300' 
+                : 'bg-amber-50 border-amber-300'
             }`}>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   {isComplete ? (
                     <>
-                      <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center">
-                        <span className="text-white font-bold">✓</span>
+                      <div className="w-9 h-9 bg-emerald-600 text-white rounded-xl flex items-center justify-center font-bold text-sm shadow-xs">
+                        ✓
                       </div>
                       <div>
-                        <p className="font-bold text-green-900">Anamnese Completa</p>
-                        <p className="text-xs text-green-700">Termos aceitos e dados preenchidos</p>
+                        <p className="font-extrabold text-emerald-900 text-sm">Anamnese Completa</p>
+                        <p className="text-xs text-emerald-700 font-semibold">Termos aceitos e dados preenchidos</p>
                       </div>
                     </>
                   ) : (
                     <>
-                      <AlertCircle className="w-8 h-8 text-orange-600" />
+                      <RiAlertFill className="w-8 h-8 text-amber-600" />
                       <div>
-                        <p className="font-bold text-orange-900">Anamnese Pendente</p>
-                        <p className="text-xs text-orange-700">Cliente ainda não aceitou os termos</p>
+                        <p className="font-extrabold text-amber-900 text-sm">Anamnese Pendente</p>
+                        <p className="text-xs text-amber-700 font-semibold">Cliente ainda não aceitou os termos</p>
                       </div>
                     </>
                   )}
                 </div>
-                <div className="text-right text-xs text-gray-600">
+                <div className="text-right text-xs text-slate-500 font-semibold">
                   <p>Criada em:</p>
-                  <p className="font-medium">{createdDate.toLocaleString('pt-BR')}</p>
+                  <p className="font-bold text-slate-800">{createdDate.toLocaleString('pt-BR')}</p>
                 </div>
               </div>
             </div>
 
             {/* Dados Pessoais */}
-            <div className="bg-white border-2 border-gray-200 rounded-xl p-4">
-              <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2 pb-2 border-b border-gray-200">
-                <User className="w-5 h-5 text-pink-600" />
+            <div className="bg-white border-2 border-slate-200 rounded-2xl p-4">
+              <h3 className="font-extrabold text-slate-900 mb-3 flex items-center gap-2 pb-2 border-b border-slate-100 text-sm">
+                <RiUser3Fill className="w-4 h-4 text-rose-600" />
                 Dados Pessoais
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm font-semibold">
                 {renderField('Nome Completo', viewingAnamnese.personalData?.fullName || viewingAnamnese.personalData?.name)}
                 {renderField('Data de Nascimento', formatBirthDate(viewingAnamnese.personalData?.birthDate))}
                 {renderField('Sexo', formatSex(viewingAnamnese.personalData?.sex))}
@@ -707,23 +727,23 @@ function Modal({ isOpen, onClose, title, size = 'md', children }: any) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 pb-24 sm:pb-4">
-      <div className={`bg-white rounded-2xl w-full ${
+    <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 pb-24 sm:pb-4">
+      <div className={`bg-white rounded-3xl w-full ${
         size === 'sm' ? 'max-w-md' :
         size === 'md' ? 'max-w-2xl' :
         size === 'lg' ? 'max-w-4xl' :
         'max-w-6xl'
-      } max-h-[85vh] overflow-hidden flex flex-col shadow-2xl`}>
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+      } max-h-[85vh] overflow-hidden flex flex-col shadow-2xl border border-slate-200`}>
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="text-lg sm:text-xl font-extrabold text-slate-900">{title}</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full"
+            className="p-1.5 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"
           >
-            <span className="text-gray-900 text-xl">×</span>
+            <RiCloseLine className="w-5 h-5" />
           </button>
         </div>
-        <div className="p-6 overflow-y-auto">
+        <div className="p-4 sm:p-6 overflow-y-auto">
           {children}
         </div>
       </div>

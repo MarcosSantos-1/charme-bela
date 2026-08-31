@@ -3,7 +3,16 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
-import { Calendar, Clock, User, Sparkles, CheckCircle, Search, Loader, X } from 'lucide-react'
+import {
+  RiCalendar2Fill,
+  RiTimeFill,
+  RiUser3Fill,
+  RiSparklingFill,
+  RiCheckboxCircleFill,
+  RiSearchLine,
+  RiLoader4Line,
+  RiCloseLine,
+} from 'react-icons/ri'
 import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
 
@@ -459,7 +468,7 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
         className="flex-1"
         disabled={!formData.data || !formData.hora}
       >
-        <CheckCircle className="w-5 h-5 mr-2" />
+        <RiCheckboxCircleFill className="w-5 h-5 mr-2" />
         Confirmar
       </Button>
     </div>
@@ -484,22 +493,22 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
       {/* Progress Steps */}
       <div className="flex items-center justify-between mb-4 shrink-0">
         {[
-          { id: 'cliente', label: 'Cliente', icon: User },
-          { id: 'servico', label: 'Serviço', icon: Sparkles },
-          { id: 'data', label: 'Data', icon: Calendar },
-          { id: 'horario', label: 'Horário', icon: Clock }
+          { id: 'cliente', label: 'Cliente', icon: RiUser3Fill },
+          { id: 'servico', label: 'Serviço', icon: RiSparklingFill },
+          { id: 'data', label: 'Data', icon: RiCalendar2Fill },
+          { id: 'horario', label: 'Horário', icon: RiTimeFill }
         ].map((s, index) => (
           <div key={s.id} className="flex items-center flex-1 min-w-0">
             <div className={`flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full shrink-0 ${
-              step === s.id ? 'bg-pink-600 text-white' :
-              (index < STEPS.indexOf(step)) ? 'bg-green-500 text-white' :
-              'bg-gray-200 text-gray-500'
+              step === s.id ? 'bg-rose-600 text-white shadow-xs' :
+              (index < STEPS.indexOf(step)) ? 'bg-emerald-600 text-white' :
+              'bg-slate-200 text-slate-500'
             }`}>
               <s.icon className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             {index < 3 && (
               <div className={`flex-1 h-1 mx-1 sm:mx-2 ${
-                index < STEPS.indexOf(step) ? 'bg-green-500' : 'bg-gray-200'
+                index < STEPS.indexOf(step) ? 'bg-emerald-600' : 'bg-slate-200'
               }`} />
             )}
           </div>
@@ -510,12 +519,12 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
         {/* STEP 1: Selecionar Cliente */}
         {step === 'cliente' && (
           <div className="flex flex-col flex-1 min-h-0 min-w-0">
-            <label className="block text-xs font-medium text-gray-700 mb-2 shrink-0">
-              <Search className="w-3.5 h-3.5 inline mr-1" />
+            <label className="block text-xs font-bold text-slate-700 mb-2 shrink-0">
+              <RiSearchLine className="w-3.5 h-3.5 inline mr-1 text-rose-600" />
               Buscar Cliente *
             </label>
             <div className="relative shrink-0">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <RiSearchLine className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
                 name="busca-cliente"
@@ -575,13 +584,13 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
             )}
 
             {formData.clienteId && (
-              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-xl shrink-0">
+              <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
-                  <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
+                  <RiCheckboxCircleFill className="w-4 h-4 text-emerald-600 shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm text-green-900 truncate">{formData.clienteNome}</div>
+                    <div className="font-bold text-sm text-emerald-900 truncate">{formData.clienteNome}</div>
                     {clienteSelecionado?.hasSubscription && (
-                      <div className="text-xs text-green-700 mt-0.5">
+                      <div className="text-xs text-emerald-700 mt-0.5">
                         Cliente possui plano ativo - pode usar sessões do plano
                       </div>
                     )}
@@ -598,9 +607,9 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
             {clienteDetails?.subscription?.status === 'ACTIVE' && (
               <div className="bg-purple-50 border-l-4 border-purple-500 p-3 rounded-lg mb-3 shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+                  <RiSparklingFill className="w-4 h-4 text-purple-600 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-purple-900 truncate">
+                    <p className="text-xs font-bold text-purple-900 truncate">
                       Cliente possui: {clienteDetails.subscription.plan.name}
                     </p>
                     <p className="text-xs text-purple-700 mt-0.5">
@@ -612,7 +621,7 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
             )}
 
             <div className="relative shrink-0 mb-3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <RiSearchLine className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
                 name="busca-servico"
@@ -624,37 +633,28 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
                 value={buscaServico}
                 onChange={(e) => setBuscaServico(e.target.value)}
                 placeholder="Buscar serviço por nome, descrição ou categoria..."
-                className="w-full max-w-full pl-9 pr-10 py-2.5 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-base text-gray-900 placeholder:text-gray-400"
+                className="w-full max-w-full pl-9 pr-10 py-2.5 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-sm sm:text-base text-slate-900 placeholder:text-slate-400 bg-white"
               />
               {buscaServico && (
                 <button
                   type="button"
                   onClick={() => setBuscaServico('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
-                  <X className="w-4 h-4" />
+                  <RiCloseLine className="w-4 h-4" />
                 </button>
               )}
             </div>
 
             {servicosFiltrados.length === 0 ? (
-              <div className="text-center py-12 bg-gray-50 rounded-xl">
-                <p className="text-sm text-gray-500">Nenhum serviço encontrado</p>
-                <button
-                  type="button"
-                  onClick={() => setBuscaServico('')}
-                  className="text-xs text-pink-600 hover:text-pink-700 mt-2"
-                >
-                  Limpar busca
-                </button>
+              <div className="text-center py-12 bg-slate-50 rounded-xl">
+                <p className="text-sm font-semibold text-slate-500">Nenhum serviço encontrado</p>
               </div>
             ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1 min-h-0 overflow-y-auto overflow-x-hidden content-start">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 overflow-y-auto flex-1 min-h-0 pr-1">
               {servicosFiltrados.map(servico => {
-                const servicoNoPlano = clienteDetails?.subscription?.status === 'ACTIVE' &&
-                  clienteDetails.subscription.plan.services.some(
-                    (s: any) => s.id === servico.id
-                  )
+                const servicoNoPlano = clienteDetails?.subscription?.status === 'ACTIVE' && 
+                  clienteDetails.subscription.plan.services.some((s: any) => s.id === servico.id)
                 
                 return (
                 <button
@@ -664,36 +664,36 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
                     setFormData({ ...formData, servicoId: servico.id, servicoNome: servico.name })
                     setPendingServico({ id: servico.id, name: servico.name })
                   }}
-                  className={`p-4 rounded-xl border-2 text-left transition-all min-w-0 ${
+                  className={`w-full max-w-full p-4 rounded-xl border-2 text-left transition-all min-w-0 ${
                     formData.servicoId === servico.id
-                      ? 'border-pink-500 bg-pink-50 shadow-md'
+                      ? 'border-rose-600 bg-rose-50/50 shadow-sm'
                       : servicoNoPlano
                       ? 'border-purple-300 hover:border-purple-400 bg-purple-50/30'
-                      : 'border-gray-200 hover:border-pink-300 hover:bg-gray-50'
+                      : 'border-slate-200 hover:border-rose-300 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-start justify-between mb-2 gap-2 min-w-0">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 min-w-0">
-                        <h3 className="font-semibold text-gray-900 truncate">{servico.name}</h3>
+                        <h3 className="font-bold text-slate-900 truncate">{servico.name}</h3>
                         {servicoNoPlano && (
                           <span className="text-purple-600 text-sm shrink-0">✨</span>
                         )}
                       </div>
                       {servicoNoPlano && (
-                        <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full mt-1 inline-block">
+                        <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full mt-1 inline-block font-bold">
                           Incluso no plano
                         </span>
                       )}
                     </div>
                     {formData.servicoId === servico.id && (
-                      <CheckCircle className="w-5 h-5 text-pink-600 shrink-0" />
+                      <RiCheckboxCircleFill className="w-5 h-5 text-rose-600 shrink-0" />
                     )}
                   </div>
-                  <p className="text-sm text-gray-600 line-clamp-2 mb-2">{servico.description}</p>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-500">{servico.duration} min</span>
-                    <span className={`font-semibold ${servicoNoPlano ? 'text-purple-600' : 'text-pink-600'}`}>
+                  <p className="text-xs text-slate-600 line-clamp-2 mb-2">{servico.description}</p>
+                  <div className="flex items-center justify-between text-xs sm:text-sm font-semibold">
+                    <span className="text-slate-500">{servico.duration} min</span>
+                    <span className={`font-bold ${servicoNoPlano ? 'text-purple-600' : 'text-rose-600'}`}>
                       {servicoNoPlano ? 'Plano' : `R$ ${servico.price.toFixed(2)}`}
                     </span>
                   </div>
@@ -709,17 +709,17 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
         {step === 'data' && (
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
             <div>
-              <p className="text-sm font-semibold text-gray-900 mb-3">Escolha o melhor dia</p>
+              <p className="text-sm font-bold text-slate-900 mb-3">Escolha o melhor dia</p>
               {loadingDays ? (
                 <div className="text-center py-12">
-                  <Loader className="w-8 h-8 animate-spin text-pink-600 mx-auto" />
-                  <p className="text-sm text-gray-600 mt-2">Buscando dias disponíveis...</p>
+                  <RiLoader4Line className="w-8 h-8 animate-spin text-rose-600 mx-auto" />
+                  <p className="text-xs font-semibold text-slate-600 mt-2">Buscando dias disponíveis...</p>
                 </div>
               ) : daysByMonth.length === 0 ? (
-                <div className="text-center py-10 bg-gray-50 rounded-xl">
-                  <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                  <p className="text-sm font-medium text-gray-700">Nenhum dia disponível</p>
-                  <p className="text-xs text-gray-500 mt-1">
+                <div className="text-center py-10 bg-slate-50 rounded-2xl">
+                  <RiCalendar2Fill className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm font-bold text-slate-700">Nenhum dia disponível</p>
+                  <p className="text-xs text-slate-500 mt-1">
                     {servicoSelecionado?.machineKind
                       ? 'Este tratamento só pode ser agendado no dia liberado da máquina.'
                       : 'Não há dias com horário nesta janela.'}
@@ -728,47 +728,43 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
               ) : (
                 <div className="space-y-5">
                   {servicoSelecionado?.machineKind && (
-                    <p className="text-xs text-gray-600">
+                    <p className="text-xs text-slate-600 font-medium">
                       Este tratamento só pode ser agendado no dia liberado da máquina.
                     </p>
                   )}
                   {daysByMonth.map((group) => (
                     <div key={group.key}>
                       <div className="flex items-center gap-2 mb-3">
-                        <div className="w-7 h-7 rounded-full bg-pink-50 flex items-center justify-center shrink-0">
-                          <Calendar className="w-3.5 h-3.5 text-pink-500" />
+                        <div className="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
+                          <RiCalendar2Fill className="w-3.5 h-3.5 text-rose-600" />
                         </div>
-                        <span className="text-sm font-semibold text-gray-900">{group.title}</span>
-                        <div className="flex-1 h-px bg-pink-100" />
+                        <span className="text-sm font-bold text-slate-900 capitalize">{group.title}</span>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                         {group.days.map((day) => {
-                          const selected = selectedDayKey === day
-                          const isCurrentDay = day === localDateKey(new Date())
+                          const dateObj = new Date(`${day}T12:00:00`)
+                          const isSelected = selectedDayKey === day
+                          const dayName = dateObj.toLocaleDateString('pt-BR', { weekday: 'short' })
+                          const dayNumberStr = dateObj.toLocaleDateString('pt-BR', { day: '2-digit' })
+
                           return (
                             <button
                               key={day}
                               type="button"
                               onClick={() => {
-                                setFormData({
-                                  ...formData,
-                                  data: new Date(`${day}T12:00:00`),
-                                  hora: '',
-                                })
+                                setFormData({ ...formData, data: dateObj, hora: '' })
                                 setPendingDia(day)
                               }}
-                              className={`flex flex-col items-center justify-center w-[30%] min-w-[88px] flex-grow min-h-[72px] rounded-xl border-2 transition-all ${
-                                selected
-                                  ? 'bg-pink-500 border-pink-500 text-white'
-                                  : 'bg-white border-gray-200 text-gray-900 hover:border-pink-300'
+                              className={`p-3 rounded-xl border-2 text-center transition-all ${
+                                isSelected
+                                  ? 'border-rose-600 bg-rose-600 text-white shadow-sm'
+                                  : 'border-slate-200 bg-white hover:border-rose-300 text-slate-800'
                               }`}
                             >
-                              <span className={`text-lg font-extrabold leading-none ${isCurrentDay && !selected ? 'text-pink-600' : ''}`}>
-                                {isCurrentDay ? 'Hoje' : dayNumber(day)}
-                              </span>
-                              <span className={`text-xs font-semibold mt-1 ${selected ? 'text-white' : 'text-gray-500'}`}>
-                                {weekdayShort(day)}
-                              </span>
+                              <div className={`text-[11px] font-bold uppercase ${isSelected ? 'text-rose-100' : 'text-slate-500'}`}>
+                                {dayName}
+                              </div>
+                              <div className="text-lg font-extrabold">{dayNumberStr}</div>
                             </button>
                           )
                         })}
@@ -784,201 +780,215 @@ export function NovoAgendamentoModal({ isOpen, onClose }: NovoAgendamentoModalPr
         {/* STEP 4: Escolher Horário */}
         {step === 'horario' && (
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-4">
-            <div className="bg-gradient-to-r from-pink-50 to-purple-50 border-2 border-pink-300 rounded-xl p-4">
-              <p className="text-sm text-gray-900">
-                <strong>Cliente:</strong> {formData.clienteNome}
-              </p>
-              <p className="text-sm text-gray-900 mt-1">
-                <strong>Serviço:</strong> {formData.servicoNome}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+              <p className="text-xs text-slate-600 font-medium">Resumo:</p>
+              <p className="text-sm font-bold text-slate-900 mt-0.5">
+                {formData.servicoNome}
               </p>
               {formData.data && (
-                <p className="text-sm text-gray-900 mt-1">
-                  <strong>Data:</strong> {formData.data.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+                <p className="text-xs text-slate-600 font-semibold capitalize mt-0.5">
+                  {formData.data.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
                 </p>
               )}
             </div>
 
             <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Horários disponíveis *
-            </label>
+              <label className="block text-xs font-bold text-slate-700 mb-2">
+                Horários disponíveis *
+              </label>
 
-                {loadingSlots ? (
-                  <div className="text-center py-12 bg-gray-50 rounded-xl">
-                    <Loader className="w-8 h-8 animate-spin text-pink-600 mx-auto" />
-                    <p className="text-sm text-gray-600 mt-2">Buscando horários...</p>
+              {loadingSlots ? (
+                <div className="text-center py-12 bg-slate-50 rounded-2xl">
+                  <RiLoader4Line className="w-8 h-8 animate-spin text-rose-600 mx-auto" />
+                  <p className="text-xs text-slate-600 font-semibold mt-2">Buscando horários...</p>
+                </div>
+              ) : getAllSlots().length > 0 ? (
+                <>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {getAllSlots().map((slot) => {
+                      const isBooked = isSlotBooked(slot)
+                      
+                      return (
+                        <button
+                          key={slot}
+                          type="button"
+                          onClick={() => !isBooked && setFormData({ ...formData, hora: slot })}
+                          disabled={isBooked}
+                          className={`px-3 py-2.5 rounded-xl font-bold text-sm transition-all ${
+                            isBooked
+                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200 line-through'
+                              : formData.hora === slot
+                              ? 'bg-rose-600 text-white shadow-sm'
+                              : 'bg-white border-2 border-slate-200 text-slate-800 hover:border-rose-400'
+                          }`}
+                        >
+                          {slot}
+                        </button>
+                      )
+                    })}
                   </div>
-                ) : getAllSlots().length > 0 ? (
-                  <>
-                    <div className="grid grid-cols-3 gap-2">
-                      {getAllSlots().map((slot) => {
-                        const isBooked = isSlotBooked(slot)
-                        
-                        return (
-                          <button
-                            key={slot}
-                            type="button"
-                            onClick={() => !isBooked && setFormData({ ...formData, hora: slot })}
-                            disabled={isBooked}
-                            className={`px-4 py-3 rounded-lg font-medium transition-all ${
-                              isBooked
-                                ? 'bg-gray-200 text-gray-400 cursor-not-allowed border-2 border-gray-300'
-                                : formData.hora === slot
-                                ? 'bg-pink-600 text-white shadow-md'
-                                : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-pink-500'
-                            }`}
-                          >
-                            {slot}
-                            {isBooked && (
-                              <span className="block text-xs mt-0.5">Ocupado</span>
-                            )}
-                          </button>
-                        )
-                      })}
+                  
+                  {/* Legenda */}
+                  <div className="flex items-center gap-4 mt-3 text-xs font-semibold text-slate-600">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3.5 h-3.5 bg-white border-2 border-slate-300 rounded-md"></div>
+                      <span>Livre</span>
                     </div>
-                    
-                    {/* Legenda */}
-                    <div className="flex items-center gap-4 mt-4 text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 bg-white border-2 border-gray-200 rounded"></div>
-                        <span className="text-gray-600">Disponível</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 bg-pink-600 rounded"></div>
-                        <span className="text-gray-600">Selecionado</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 bg-gray-200 border-2 border-gray-300 rounded"></div>
-                        <span className="text-gray-600">Ocupado</span>
-                      </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3.5 h-3.5 bg-rose-600 rounded-md"></div>
+                      <span>Selecionado</span>
                     </div>
-                  </>
-                ) : (
-                  <div className="text-center py-8 bg-gray-50 rounded-xl">
-                    <p className="text-gray-600">Nenhum horário disponível para esta data</p>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3.5 h-3.5 bg-slate-200 rounded-md"></div>
+                      <span>Ocupado</span>
+                    </div>
                   </div>
-                )}
-              </div>
+                </>
+              ) : (
+                <div className="text-center py-8 bg-slate-50 rounded-2xl">
+                  <p className="text-xs font-semibold text-slate-600">Nenhum horário disponível para esta data</p>
+                </div>
+              )}
+            </div>
 
             {/* Tipo de Pagamento */}
             {formData.hora && formData.data && (
               <div ref={paymentSectionRef} className="scroll-mt-6">
-            {servicoSelecionado?.category === 'COMBO' && (
-              <div className="rounded-xl border-2 border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
-                {pacoteAtivo && pacoteAtivo.remainingSessions > 0 ? (
-                  <>Pacote ativo: {pacoteAtivo.sessionsScheduled}/{pacoteAtivo.sessionCount} sessões usadas. Esta data consome mais uma sessão, sem nova cobrança.</>
-                ) : (
-                  <>Venda do pacote na clínica: a cliente paga o valor total agora e esta fica como a 1ª sessão.</>
+                {servicoSelecionado?.category === 'COMBO' && (
+                  <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-xs font-semibold text-amber-900">
+                    {pacoteAtivo && pacoteAtivo.remainingSessions > 0 ? (
+                      <>Pacote ativo: {pacoteAtivo.sessionsScheduled}/{pacoteAtivo.sessionCount} sessões usadas. Esta data consome mais uma sessão, sem nova cobrança.</>
+                    ) : (
+                      <>Venda do pacote na clínica: a cliente paga o valor total agora e esta fica como a 1ª sessão.</>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
-            {servicoSelecionado?.category !== 'COMBO' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  💳 Forma de Pagamento *
-                </label>
-                <div className="space-y-2">
-                  {clienteDetails?.subscription?.status === 'ACTIVE' && (() => {
-                    // Verificar se o serviço está no plano
-                    const servicoNoPlano = servicoSelecionado && clienteDetails.subscription.plan.services.some(
-                      (s: any) => s.id === servicoSelecionado.id
-                    )
-                    
-                    if (!servicoNoPlano) {
-                      return null // Não mostra opção de plano se serviço não está incluído
-                    }
-                    
-                    // Calcular sessões restantes para o MÊS DO AGENDAMENTO
-                    const maxPerMonth = clienteDetails.subscription.plan.maxTreatmentsPerMonth
-                    const remainingForMonth = maxPerMonth - appointmentMonthUsage
-                    const hasRemaining = remainingForMonth > 0
-                    
-                    const appointmentMonth = formData.data.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-                    const isCurrentMonth = formData.data.getMonth() === new Date().getMonth() && 
-                                          formData.data.getFullYear() === new Date().getFullYear()
-                    
-                    console.log('🔍 Verificando sessões para', appointmentMonth, {
-                      maxPerMonth,
-                      usedInMonth: appointmentMonthUsage,
-                      remaining: remainingForMonth,
-                      hasRemaining,
-                      isCurrentMonth
-                    })
-                    
-                    return (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (hasRemaining) {
-                          setFormData({ ...formData, paymentType: 'SUBSCRIPTION' })
-                        } else {
-                          toast.error(`Cliente não tem sessões disponíveis em ${appointmentMonth}`)
-                        }
-                      }}
-                      disabled={!hasRemaining || loadingMonthUsage}
-                      className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
-                        !hasRemaining || loadingMonthUsage
-                          ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
-                          : formData.paymentType === 'SUBSCRIPTION'
-                          ? 'border-purple-500 bg-purple-50'
-                          : 'border-gray-200 hover:border-purple-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="font-semibold text-gray-900">Usar Sessão do Plano</div>
-                          <div className="text-sm text-gray-600">
-                            {loadingMonthUsage ? (
-                              <span className="text-gray-500">⏳ Calculando...</span>
-                            ) : hasRemaining ? (
-                              <>
-                                Sessões restantes em <strong className="text-purple-700">{appointmentMonth}</strong>: <strong>{remainingForMonth}/{maxPerMonth}</strong>
-                                {!isCurrentMonth && (
-                                  <span className="block text-xs text-purple-600 mt-1">
-                                    ℹ️ Contabilizado para {appointmentMonth}
-                                  </span>
-                                )}
-                              </>
-                            ) : (
-                              <span className="text-red-600 font-medium">❌ Sem sessões disponíveis em {appointmentMonth}</span>
-                            )}
+                {servicoSelecionado?.category !== 'COMBO' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-2">
+                      💳 Forma de Pagamento *
+                    </label>
+                    <div className="space-y-2">
+                      {clienteDetails?.subscription?.status === 'ACTIVE' && (() => {
+                        const servicoNoPlano = servicoSelecionado && clienteDetails.subscription.plan.services.some(
+                          (s: any) => s.id === servicoSelecionado.id
+                        )
+                        
+                        if (!servicoNoPlano) return null
+                        
+                        const maxPerMonth = clienteDetails.subscription.plan.maxTreatmentsPerMonth
+                        const remainingForMonth = maxPerMonth - appointmentMonthUsage
+                        const hasRemaining = remainingForMonth > 0
+                        const appointmentMonth = formData.data?.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+                        
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (hasRemaining) {
+                                setFormData({ ...formData, paymentType: 'SUBSCRIPTION' })
+                              } else {
+                                toast.error(`Cliente não tem sessões disponíveis em ${appointmentMonth}`)
+                              }
+                            }}
+                            disabled={!hasRemaining || loadingMonthUsage}
+                            className={`w-full p-3.5 rounded-2xl border-2 text-left transition-all ${
+                              !hasRemaining || loadingMonthUsage
+                                ? 'border-slate-200 bg-slate-50 opacity-50 cursor-not-allowed'
+                                : formData.paymentType === 'SUBSCRIPTION'
+                                ? 'border-violet-600 bg-violet-50'
+                                : 'border-slate-200 hover:border-violet-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-bold text-slate-900 text-sm">Usar Sessão do Plano VIP</div>
+                                <div className="text-xs text-slate-600 mt-0.5">
+                                  {loadingMonthUsage ? (
+                                    <span>Calculando...</span>
+                                  ) : hasRemaining ? (
+                                    <>Sessões restantes em {appointmentMonth}: <strong className="text-violet-700">{remainingForMonth}/{maxPerMonth}</strong></>
+                                  ) : (
+                                    <span className="text-rose-600 font-bold">Sem sessões disponíveis neste mês</span>
+                                  )}
+                                </div>
+                              </div>
+                              {formData.paymentType === 'SUBSCRIPTION' && (
+                                <RiCheckboxCircleFill className="w-5 h-5 text-violet-600" />
+                              )}
+                            </div>
+                          </button>
+                        )
+                      })()}
+                      
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, paymentType: 'PENDING' })}
+                        className={`w-full p-3.5 rounded-2xl border-2 text-left transition-all ${
+                          formData.paymentType === 'PENDING'
+                            ? 'border-amber-500 bg-amber-50'
+                            : 'border-slate-200 hover:border-amber-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-bold text-slate-900 text-sm">Pagar na Clínica (Pendente)</div>
+                            <div className="text-xs text-slate-600 mt-0.5">
+                              Cliente pagará na clínica (R$ {servicoSelecionado?.price.toFixed(2)})
+                            </div>
                           </div>
+                          {formData.paymentType === 'PENDING' && (
+                            <RiCheckboxCircleFill className="w-5 h-5 text-amber-600" />
+                          )}
                         </div>
-                        {formData.paymentType === 'SUBSCRIPTION' && (
-                          <CheckCircle className="w-5 h-5 text-purple-600" />
-                        )}
-                      </div>
-                    </button>
-                    )
-                  })()}
-                  
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, paymentType: 'PENDING' })}
-                    className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
-                      formData.paymentType === 'PENDING'
-                        ? 'border-yellow-500 bg-yellow-50'
-                        : 'border-gray-200 hover:border-yellow-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold text-gray-900">Pagamento Pendente</div>
-                        <div className="text-sm text-gray-600">
-                          Cliente pagará na clínica (R$ {servicoSelecionado?.price.toFixed(2)})
-            </div>
-                      </div>
-                      {formData.paymentType === 'PENDING' && (
-                        <CheckCircle className="w-5 h-5 text-yellow-600" />
-                      )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, paymentType: 'PAID' })}
+                        className={`w-full p-3.5 rounded-2xl border-2 text-left transition-all ${
+                          formData.paymentType === 'PAID'
+                            ? 'border-emerald-500 bg-emerald-50'
+                            : 'border-slate-200 hover:border-emerald-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-bold text-slate-900 text-sm">Já Pago / Dinheiro / PIX</div>
+                            <div className="text-xs text-slate-600 mt-0.5">
+                              Pagamento já realizado na clínica
+                            </div>
+                          </div>
+                          {formData.paymentType === 'PAID' && (
+                            <RiCheckboxCircleFill className="w-5 h-5 text-emerald-600" />
+                          )}
+                        </div>
+                      </button>
                     </div>
-                  </button>
-          </div>
-        </div>
-            )}
+                  </div>
+                )}
+
+                <div className="flex gap-2.5 pt-4 border-t border-slate-100">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 text-xs font-bold"
+                    onClick={() => setStep('data')}
+                  >
+                    Voltar
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    className="flex-1 text-xs font-bold shadow-xs"
+                    isLoading={loading}
+                    disabled={!formData.paymentType && servicoSelecionado?.category !== 'COMBO'}
+                  >
+                    Confirmar Agendamento
+                  </Button>
+                </div>
               </div>
             )}
-
           </div>
         )}
       </form>

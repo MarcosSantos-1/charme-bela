@@ -36,6 +36,11 @@ export default function LandingPage() {
   useEffect(() => {
     async function loadBanners() {
       try {
+        const clientBanners = await api.getBanners({ location: 'CLIENT', activeOnly: true })
+        if (Array.isArray(clientBanners) && clientBanners.length > 0) {
+          setLandingBanners(clientBanners)
+          return
+        }
         const banners = await api.getBanners({ location: 'LANDING', activeOnly: true })
         setLandingBanners(Array.isArray(banners) ? banners : [])
       } catch {
@@ -665,62 +670,64 @@ export default function LandingPage() {
       </section>
 
       {/* Testimonials Section */}
-      <section className="py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+      <section className="py-16 sm:py-20 bg-white">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-gray-900 mb-2 tracking-tight">
               O Que Nossas Clientes Dizem
             </h2>
-            <p className="text-xl text-gray-600">
+            <p className="text-sm sm:text-base font-medium text-gray-600">
               Transformações reais de quem confia no Charme & Bela
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
             {[
               {
                 name: 'Maria Silva',
                 role: 'Assinante Plus Care',
                 avatar: 'M',
-                text: 'Há 6 meses faço parte do Charme & Bela Club e minha pele nunca esteve tão bonita! A economia é real e os tratamentos são impecáveis. Super recomendo!',
+                text: 'Há 6 meses faço parte do Charme & Bela Club e minha pele nunca esteve tão bonita! A economia é real e os tratamentos são impecáveis.',
                 rating: 5
               },
               {
                 name: 'Ana Oliveira',
                 role: 'Assinante Premium',
                 avatar: 'A',
-                text: 'O melhor investimento que fiz em mim mesma! Faço microagulhamento e skinbooster todo mês. O plano premium vale cada centavo, economizo muito.',
+                text: 'O melhor investimento em mim mesma! Faço microagulhamento e skinbooster. O plano premium vale cada centavo, economizo muito.',
                 rating: 5
               },
               {
                 name: 'Julia Santos',
                 role: 'Assinante Essencial',
                 avatar: 'J',
-                text: 'Comecei com o plano Essencial e já vi resultados incríveis. A drenagem e limpeza de pele são maravilhosas. Equipe super atenciosa e profissional!',
+                text: 'Comecei com o plano Essencial e já vi resultados incríveis. A drenagem e limpeza de pele são maravilhosas. Equipe super atenciosa!',
                 rating: 5
               }
             ].map((testimonial, index) => (
               <div
                 key={index}
-                className="bg-gray-50 rounded-2xl p-6 hover:shadow-lg transition-shadow"
+                className="bg-slate-50/80 rounded-2xl p-4 sm:p-5 border border-slate-200/80 hover:shadow-md transition-all flex flex-col justify-between"
               >
-                <div className="flex items-center mb-4">
-                  {[...Array(testimonial.rating)].map((_, i) => (
-                    <Star key={i} className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                  ))}
+                <div>
+                  <div className="flex items-center gap-1 mb-2.5">
+                    {[...Array(testimonial.rating)].map((_, i) => (
+                      <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    ))}
+                  </div>
+                  
+                  <p className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed mb-4">
+                    "{testimonial.text}"
+                  </p>
                 </div>
                 
-                <p className="text-gray-700 mb-6 leading-relaxed">
-                  "{testimonial.text}"
-                </p>
-                
-                <div className="flex items-center">
-                  <div className="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center text-pink-600 font-bold text-lg mr-3">
+                <div className="flex items-center pt-3 border-t border-slate-200/60">
+                  <div className="w-8 h-8 bg-rose-100 text-rose-700 rounded-full flex items-center justify-center font-extrabold text-xs mr-2.5 shrink-0">
                     {testimonial.avatar}
                   </div>
-                  <div>
-                    <div className="font-semibold text-gray-900">{testimonial.name}</div>
-                    <div className="text-sm text-gray-500">{testimonial.role}</div>
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-900 text-xs truncate">{testimonial.name}</div>
+                    <div className="text-[11px] font-medium text-slate-500 truncate">{testimonial.role}</div>
                   </div>
                 </div>
               </div>

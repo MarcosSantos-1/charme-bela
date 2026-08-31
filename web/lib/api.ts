@@ -529,6 +529,8 @@ export async function deactivateService(id: string): Promise<Service> {
   return apiRequest(`/services/${id}`, { method: 'DELETE' })
 }
 
+export const deleteService = deactivateService
+
 // ============================================
 // PLANS
 // ============================================

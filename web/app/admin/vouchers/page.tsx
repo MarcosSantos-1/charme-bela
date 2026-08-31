@@ -2,8 +2,20 @@
 
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Gift, Check, X, Calendar, Sparkles, Filter, Search } from 'lucide-react'
+import {
+  RiArrowLeftLine,
+  RiGiftFill,
+  RiCheckboxCircleFill,
+  RiCloseLine,
+  RiCalendar2Fill,
+  RiSparklingFill,
+  RiFilter3Fill,
+  RiSearchLine,
+  RiDeleteBin5Fill,
+  RiLoader4Line,
+} from 'react-icons/ri'
 import { useRouter } from 'next/navigation'
+import { DarVoucherModal } from '@/components/admin/DarVoucherModal'
 import * as api from '@/lib/api'
 import { formatTimeAgo } from '@/lib/timeUtils'
 
@@ -40,6 +52,7 @@ export default function VouchersPage() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'active' | 'used' | 'expired'>('all')
   const [searchTerm, setSearchTerm] = useState('')
+  const [showVoucherModal, setShowVoucherModal] = useState(false)
 
   useEffect(() => {
     loadVouchers()
@@ -99,10 +112,10 @@ export default function VouchersPage() {
 
   const getVoucherTypeColor = (type: string) => {
     switch (type) {
-      case 'FREE_TREATMENT': return 'bg-green-100 text-green-700 border-green-200'
-      case 'DISCOUNT': return 'bg-blue-100 text-blue-700 border-blue-200'
-      case 'FREE_MONTH': return 'bg-purple-100 text-purple-700 border-purple-200'
-      default: return 'bg-gray-100 text-gray-700 border-gray-200'
+      case 'FREE_TREATMENT': return 'bg-emerald-100 text-emerald-800 border-emerald-200'
+      case 'DISCOUNT': return 'bg-sky-100 text-sky-800 border-sky-200'
+      case 'FREE_MONTH': return 'bg-violet-100 text-violet-800 border-violet-200'
+      default: return 'bg-slate-100 text-slate-800 border-slate-200'
     }
   }
 
@@ -121,7 +134,7 @@ export default function VouchersPage() {
     
     if (isEffectivelyUsed(voucher)) {
       return (
-        <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full border border-gray-200">
+        <span className="px-2.5 py-0.5 bg-slate-100 text-slate-600 text-xs font-bold rounded-full border border-slate-200">
           ✓ Usado
         </span>
       )
@@ -129,14 +142,14 @@ export default function VouchersPage() {
     
     if (isExpired) {
       return (
-        <span className="px-3 py-1 bg-red-100 text-red-600 text-xs font-medium rounded-full border border-red-200">
+        <span className="px-2.5 py-0.5 bg-rose-100 text-rose-700 text-xs font-bold rounded-full border border-rose-200">
           ✗ Expirado
         </span>
       )
     }
     
     return (
-      <span className="px-3 py-1 bg-green-100 text-green-600 text-xs font-medium rounded-full border border-green-200">
+      <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full border border-emerald-200">
         ● Ativo
       </span>
     )
@@ -155,74 +168,71 @@ export default function VouchersPage() {
 
   return (
     <ProtectedRoute requiredRole="MANAGER">
-      <div className="min-h-screen bg-gray-50">
-        <div className="p-4 md:p-8 max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
             <button
               onClick={() => router.back()}
-              className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
+              className="inline-flex items-center text-xs font-bold text-slate-500 hover:text-slate-800 mb-2 transition-colors"
             >
-              <ArrowLeft className="w-5 h-5 mr-2" />
+              <RiArrowLeftLine className="w-4 h-4 mr-1" />
               Voltar
             </button>
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">Histórico de Vouchers</h1>
-                <p className="text-gray-600">Gerencie todos os vouchers e presentes concedidos</p>
-              </div>
-              <button
-                onClick={() => router.push('/admin/clientes')}
-                className="px-6 py-3 bg-pink-600 text-white rounded-xl font-medium hover:bg-pink-700 transition-colors"
-              >
-                + Dar Voucher
-              </button>
-            </div>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Histórico de Vouchers</h1>
+            <p className="text-xs sm:text-sm font-semibold text-slate-500 mt-0.5">Gerencie todos os vouchers, créditos e presentes concedidos</p>
           </div>
+          <button
+            onClick={() => setShowVoucherModal(true)}
+            className="px-4 py-2.5 bg-rose-600 text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-rose-700 transition-colors shadow-xs self-start sm:self-auto touch-manipulation cursor-pointer"
+          >
+            + Conceder Voucher
+          </button>
+        </div>
 
-          {/* Filtros e Busca */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
-            <div className="grid md:grid-cols-2 gap-4">
-              {/* Filtros */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <Filter className="w-5 h-5 text-gray-400" />
-                <span className="text-sm font-medium text-gray-700 mr-2">Status:</span>
-                <button
-                  onClick={() => setFilter('all')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    filter === 'all' 
-                      ? 'bg-pink-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  Todos
-                </button>
+        {/* Filtros e Busca */}
+        <div className="bg-white rounded-2xl border-2 border-slate-200 p-3 sm:p-4 shadow-xs">
+          <div className="grid md:grid-cols-2 gap-3">
+            {/* Filtros */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <RiFilter3Fill className="w-4 h-4 text-slate-400" />
+              <span className="text-xs font-bold text-slate-700 mr-1">Status:</span>
+              <button
+                onClick={() => setFilter('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  filter === 'all' 
+                    ? 'bg-rose-600 text-white' 
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Todos
+              </button>
                 <button
                   onClick={() => setFilter('active')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                     filter === 'active' 
-                      ? 'bg-green-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-emerald-600 text-white' 
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
                 >
                   Ativos
                 </button>
                 <button
                   onClick={() => setFilter('used')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                     filter === 'used' 
-                      ? 'bg-gray-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-slate-700 text-white' 
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
                 >
                   Usados
                 </button>
                 <button
                   onClick={() => setFilter('expired')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                     filter === 'expired' 
-                      ? 'bg-red-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-rose-600 text-white' 
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
                 >
                   Expirados
@@ -231,106 +241,106 @@ export default function VouchersPage() {
 
               {/* Busca */}
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <RiSearchLine className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Buscar por cliente, email ou descrição..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent text-gray-900 placeholder:text-gray-500 font-medium"
+                  className="w-full pl-9 pr-4 py-2 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-base sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white touch-manipulation"
                 />
               </div>
             </div>
           </div>
 
           {/* Estatísticas - Grid 2x2 mobile, 4 colunas desktop */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border-2 border-blue-200 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <Gift className="w-5 h-5 text-blue-600" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
+            <div className="bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl p-4 text-white shadow-xs">
+              <div className="flex items-center justify-between mb-1.5">
+                <RiGiftFill className="w-5 h-5 text-white/80" />
               </div>
-              <div className="text-2xl sm:text-3xl font-bold text-blue-700 mb-1">{vouchers.length}</div>
-              <div className="text-xs sm:text-sm font-medium text-blue-600">Total</div>
+              <div className="text-2xl sm:text-3xl font-extrabold mb-0.5">{vouchers.length}</div>
+              <div className="text-[10px] sm:text-xs font-bold text-white/80 uppercase tracking-wide">Total</div>
             </div>
             
-            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl border-2 border-green-200 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <Check className="w-5 h-5 text-green-600" />
+            <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-4 text-white shadow-xs">
+              <div className="flex items-center justify-between mb-1.5">
+                <RiCheckboxCircleFill className="w-5 h-5 text-white/80" />
               </div>
-              <div className="text-2xl sm:text-3xl font-bold text-green-700 mb-1">
+              <div className="text-2xl sm:text-3xl font-extrabold mb-0.5">
                 {vouchers.filter(v => !isEffectivelyUsed(v) && (!v.expiresAt || new Date(v.expiresAt) > new Date())).length}
               </div>
-              <div className="text-xs sm:text-sm font-medium text-green-600">Ativos</div>
+              <div className="text-[10px] sm:text-xs font-bold text-white/80 uppercase tracking-wide">Ativos</div>
             </div>
             
-            <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border-2 border-gray-200 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <Sparkles className="w-5 h-5 text-gray-600" />
+            <div className="bg-gradient-to-br from-slate-600 to-slate-800 rounded-2xl p-4 text-white shadow-xs">
+              <div className="flex items-center justify-between mb-1.5">
+                <RiSparklingFill className="w-5 h-5 text-white/80" />
               </div>
-              <div className="text-2xl sm:text-3xl font-bold text-gray-700 mb-1">
+              <div className="text-2xl sm:text-3xl font-extrabold mb-0.5">
                 {vouchers.filter(v => isEffectivelyUsed(v)).length}
               </div>
-              <div className="text-xs sm:text-sm font-medium text-gray-600">Usados</div>
+              <div className="text-[10px] sm:text-xs font-bold text-white/80 uppercase tracking-wide">Usados</div>
             </div>
             
-            <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl border-2 border-red-200 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <X className="w-5 h-5 text-red-600" />
+            <div className="bg-gradient-to-br from-rose-500 to-pink-600 rounded-2xl p-4 text-white shadow-xs">
+              <div className="flex items-center justify-between mb-1.5">
+                <RiCloseLine className="w-5 h-5 text-white/80" />
               </div>
-              <div className="text-2xl sm:text-3xl font-bold text-red-700 mb-1">
+              <div className="text-2xl sm:text-3xl font-extrabold mb-0.5">
                 {vouchers.filter(v => !isEffectivelyUsed(v) && v.expiresAt && new Date(v.expiresAt) < new Date()).length}
               </div>
-              <div className="text-xs sm:text-sm font-medium text-red-600">Expirados</div>
+              <div className="text-[10px] sm:text-xs font-bold text-white/80 uppercase tracking-wide">Expirados</div>
             </div>
           </div>
 
           {/* Lista de Vouchers */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+          <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-xs overflow-hidden">
             {loading ? (
               <div className="p-12 text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600 mx-auto mb-3"></div>
-                <p className="text-gray-500">Carregando vouchers...</p>
+                <RiLoader4Line className="w-8 h-8 animate-spin text-rose-600 mx-auto mb-2" />
+                <p className="text-slate-500 text-xs font-bold">Carregando vouchers...</p>
               </div>
             ) : filteredVouchers.length > 0 ? (
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-slate-100">
                 {filteredVouchers.map((voucher) => {
                   const isExpired = voucher.expiresAt && new Date(voucher.expiresAt) < new Date()
                   
                   return (
                     <div
                       key={voucher.id}
-                      className="p-4 sm:p-6 hover:bg-gray-50 transition-colors"
+                      className="p-4 sm:p-5 hover:bg-slate-50/80 transition-colors"
                     >
                       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                         <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-                            <Gift className="w-6 h-6 text-white" />
+                          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-rose-500 to-violet-600 flex items-center justify-center shrink-0 text-white shadow-xs">
+                            <RiGiftFill className="w-5 h-5" />
                           </div>
                           
                           <div className="flex-1 min-w-0">
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-                              <h3 className="font-semibold text-gray-900 text-base sm:text-lg truncate">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 mb-1">
+                              <h3 className="font-extrabold text-slate-900 text-sm sm:text-base truncate">
                                 {voucher.userName}
                               </h3>
-                              <div className="flex items-center gap-2 flex-wrap">
-                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getVoucherTypeColor(voucher.type)}`}>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getVoucherTypeColor(voucher.type)}`}>
                                 {getVoucherTypeName(voucher.type)}
                               </span>
                               {getStatusBadge(voucher)}
                               </div>
                             </div>
                             
-                            <p className="text-sm sm:text-base text-gray-600 mb-2">{voucher.description}</p>
+                            <p className="text-xs sm:text-sm font-semibold text-slate-600 mb-2">{voucher.description}</p>
                             
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-500">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs font-semibold text-slate-500">
                               <span className="truncate">{voucher.userEmail}</span>
                               {voucher.discountPercent && (
-                                <span className="text-blue-600 font-medium text-xs sm:text-sm">
+                                <span className="text-sky-700 font-bold">
                                   {voucher.discountPercent}% desconto
                                 </span>
                               )}
                               {voucher.discountAmount && (
-                                <span className="text-blue-600 font-medium text-xs sm:text-sm">
+                                <span className="text-sky-700 font-bold">
                                   {voucher.remainingAmount != null && voucher.remainingAmount !== voucher.discountAmount
                                     ? `Saldo R$ ${voucher.remainingAmount.toFixed(2).replace('.', ',')} de R$ ${voucher.discountAmount.toFixed(2).replace('.', ',')}`
                                     : `R$ ${voucher.discountAmount.toFixed(2).replace('.', ',')} desconto`}
@@ -338,22 +348,22 @@ export default function VouchersPage() {
                               )}
                             </div>
                             
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-xs text-gray-500 mt-2">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-[11px] font-semibold text-slate-400 mt-2">
                               <span>Criado: {formatTimeAgo(voucher.createdAt)}</span>
                               {voucher.expiresAt && (
-                                <span className={isExpired ? 'text-red-600 font-medium' : ''}>
+                                <span className={isExpired ? 'text-rose-600 font-bold' : ''}>
                                   {isExpired ? '✗ Expirou' : '⏰ Expira'}: {new Date(voucher.expiresAt).toLocaleDateString('pt-BR')}
                                 </span>
                               )}
                               {voucher.usedAt && (
-                                <span className="text-green-600">
+                                <span className="text-emerald-600 font-bold">
                                   ✓ Usado: {new Date(voucher.usedAt).toLocaleDateString('pt-BR')}
                                 </span>
                               )}
                             </div>
                             
                             {voucher.grantedReason && (
-                              <p className="text-xs text-gray-500 mt-2 italic">
+                              <p className="text-[11px] text-slate-400 font-medium mt-1.5 italic">
                                 Motivo: {voucher.grantedReason}
                               </p>
                             )}
@@ -361,14 +371,14 @@ export default function VouchersPage() {
                         </div>
                         
                         {/* Ações */}
-                        <div className="flex sm:flex-col items-center gap-2 sm:ml-4">
+                        <div className="flex sm:flex-col items-center gap-2 sm:ml-4 self-end sm:self-start">
                           {!isEffectivelyUsed(voucher) && !isExpired && (
                             <button
                               onClick={() => handleDeleteVoucher(voucher.id)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
                               title="Remover voucher"
                             >
-                              <X className="w-5 h-5" />
+                              <RiDeleteBin5Fill className="w-4 h-4" />
                             </button>
                           )}
                         </div>
@@ -379,12 +389,12 @@ export default function VouchersPage() {
               </div>
             ) : (
               <div className="p-12 text-center">
-                <Gift className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">
+                <RiGiftFill className="w-14 h-14 text-slate-200 mx-auto mb-3" />
+                <p className="text-slate-500 text-sm font-bold">
                   {searchTerm 
                     ? 'Nenhum voucher encontrado com essa busca' 
                     : filter === 'all'
-                      ? 'Nenhum voucher criado ainda'
+                      ? 'Nenhum voucher concedido ainda'
                       : `Nenhum voucher ${
                           filter === 'active' ? 'ativo' :
                           filter === 'used' ? 'usado' :
@@ -396,8 +406,14 @@ export default function VouchersPage() {
             )}
           </div>
         </div>
-      </div>
-    </ProtectedRoute>
-  )
-}
+
+        {/* Modal de Conceder Voucher */}
+        <DarVoucherModal
+          isOpen={showVoucherModal}
+          onClose={() => setShowVoucherModal(false)}
+          onVoucherCreated={loadVouchers}
+        />
+      </ProtectedRoute>
+    )
+  }
 

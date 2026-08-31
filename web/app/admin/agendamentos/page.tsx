@@ -1,7 +1,16 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { Calendar, Plus, ChevronLeft, ChevronRight, Grid3x3, List, Loader2, AlertTriangle } from 'lucide-react'
+import {
+  RiCalendar2Fill,
+  RiAddLine,
+  RiArrowLeftSLine,
+  RiArrowRightSLine,
+  RiGridFill,
+  RiListUnordered,
+  RiLoader4Line,
+  RiAlertFill,
+} from 'react-icons/ri'
 import { Button } from '@/components/Button'
 import { format, addDays, startOfWeek, addWeeks, subWeeks, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -25,6 +34,8 @@ interface Appointment {
   machineKind?: 'LASER' | 'CRYO' | null
   cancelPolicy?: api.Appointment['cancelPolicy']
   packageSummary?: string
+  packageSessionIndex?: number | null
+  packageSessionCount?: number | null
 }
 
 // Função helper para converter UTC string para Date local (sem conversão de timezone)
@@ -124,13 +135,18 @@ function DayAppointmentCard({
           </span>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h4 className="font-bold text-gray-900 text-base truncate">
               {apt.clientName}
             </h4>
             {visual.badge && (
               <span className={`text-xs px-1.5 py-0.5 rounded font-bold shrink-0 ${visual.badgeBg}`}>
                 {visual.badge}
+              </span>
+            )}
+            {apt.packageSessionIndex && (
+              <span className="text-xs px-2 py-0.5 rounded-md font-extrabold bg-orange-100 text-orange-800 border border-orange-200 shrink-0">
+                {apt.packageSessionIndex}/{apt.packageSessionCount || 5}ª Sessão
               </span>
             )}
           </div>
@@ -292,6 +308,8 @@ export default function AgendamentosPage() {
           origin: apt.origin,
           machineKind: apt.service?.machineKind,
           cancelPolicy: apt.cancelPolicy,
+          packageSessionIndex: apt.packageSessionIndex,
+          packageSessionCount: apt.packagePurchase?.sessionCount,
           packageSummary: Array.isArray(apt.packagePurchase?.itemsSnapshot)
             ? apt.packagePurchase.itemsSnapshot.map((item: any) => item.name).join(' + ')
             : apt.service?.packageItems
@@ -428,33 +446,33 @@ export default function AgendamentosPage() {
   return (
     <div className="space-y-6">
       {manualRefunds.length > 0 && (
-        <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4 space-y-3">
-          <div className="flex items-center gap-2 text-amber-900 font-semibold">
-            <AlertTriangle className="w-5 h-5" />
+        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+            <RiAlertFill className="w-5 h-5 text-amber-600" />
             Reembolso manual necessário ({manualRefunds.length})
           </div>
-          <p className="text-sm text-amber-800">
+          <p className="text-xs text-amber-800">
             O estorno automático no Asaas falhou. Cancele o horário já está feito — devolva o valor no painel Asaas ou tente de novo.
           </p>
           <div className="space-y-2">
             {manualRefunds.map((item) => (
-              <div key={item.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-white/70 rounded-lg px-3 py-2 text-sm">
+              <div key={item.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-white/80 rounded-xl px-3.5 py-2.5 text-xs font-semibold">
                 <div>
-                  <span className="font-medium text-gray-900">{item.user?.name || 'Cliente'}</span>
+                  <span className="font-bold text-slate-900">{item.user?.name || 'Cliente'}</span>
                   {' · '}
-                  {item.service?.name}
+                  <span className="text-slate-600">{item.service?.name}</span>
                   {item.paymentAmount != null && (
-                    <> · R$ {item.paymentAmount.toFixed(2).replace('.', ',')}</>
+                    <span className="text-slate-900 font-bold"> · R$ {item.paymentAmount.toFixed(2).replace('.', ',')}</span>
                   )}
                   {item.refundError ? (
-                    <div className="text-xs text-amber-700 mt-0.5">{item.refundError}</div>
+                    <div className="text-[11px] text-amber-700 mt-0.5">{item.refundError}</div>
                   ) : null}
                 </div>
                 <button
                   type="button"
                   disabled={retryingId === item.id}
                   onClick={() => retryRefund(item.id)}
-                  className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-60"
+                  className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 disabled:opacity-60 transition-colors"
                 >
                   {retryingId === item.id ? 'Tentando...' : 'Tentar estorno de novo'}
                 </button>
@@ -467,19 +485,19 @@ export default function AgendamentosPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
           {/* View toggle */}
-          <div className="flex bg-gray-100 rounded-lg p-0.5 shrink-0">
+          <div className="flex bg-slate-100 rounded-xl p-0.5 shrink-0 border border-slate-200">
             <button
               onClick={() => {
                 setViewMode('week')
                 setCurrentWeek(selectedDate)
               }}
-              className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all inline-flex items-center ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-all inline-flex items-center gap-1.5 ${
                 viewMode === 'week'
-                  ? 'bg-white text-pink-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
+                  ? 'bg-white text-rose-600 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <List className="inline w-4 h-4 mr-1" />
+              <RiListUnordered className="w-4 h-4" />
               Semana
             </button>
             <button
@@ -487,19 +505,19 @@ export default function AgendamentosPage() {
                 setViewMode('month')
                 setCurrentMonth(selectedDate)
               }}
-              className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all inline-flex items-center ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-all inline-flex items-center gap-1.5 ${
                 viewMode === 'month'
-                  ? 'bg-white text-pink-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
+                  ? 'bg-white text-rose-600 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Grid3x3 className="inline w-4 h-4 mr-1" />
+              <RiGridFill className="w-4 h-4" />
               Mês
             </button>
           </div>
 
           {/* Navigation */}
-          <div className="flex items-center bg-white rounded-lg border border-gray-200 min-w-0">
+          <div className="flex items-center bg-white rounded-xl border border-slate-200 min-w-0 shadow-xs">
             <button
               onClick={() => {
                 if (viewMode === 'week') {
@@ -508,18 +526,18 @@ export default function AgendamentosPage() {
                   setCurrentMonth(subMonths(currentMonth, 1))
                 }
               }}
-              className="p-1.5 sm:p-2 hover:bg-gray-50 shrink-0"
+              className="p-1.5 sm:p-2 hover:bg-slate-50 shrink-0 text-slate-600"
               aria-label="Anterior"
             >
-              <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+              <RiArrowLeftSLine className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            <span className="px-1 sm:px-4 py-1.5 text-xs sm:text-sm font-medium text-gray-900 whitespace-nowrap tabular-nums">
+            <span className="px-1.5 sm:px-4 py-1.5 text-xs sm:text-sm font-bold text-slate-900 whitespace-nowrap tabular-nums">
               {viewMode === 'week' 
                 ? `${format(weekStart, 'dd/MM')} → ${format(addDays(weekStart, 6), 'dd/MM')}`
                 : (
                   <>
                     <span className="md:hidden">{format(currentMonth, 'MM/yyyy')}</span>
-                    <span className="hidden md:inline">{format(currentMonth, "MMMM 'de' yyyy", { locale: ptBR })}</span>
+                    <span className="hidden md:inline capitalize">{format(currentMonth, "MMMM 'de' yyyy", { locale: ptBR })}</span>
                   </>
                 )
               }
@@ -532,10 +550,10 @@ export default function AgendamentosPage() {
                   setCurrentMonth(addMonths(currentMonth, 1))
                 }
               }}
-              className="p-1.5 sm:p-2 hover:bg-gray-50 shrink-0"
+              className="p-1.5 sm:p-2 hover:bg-slate-50 shrink-0 text-slate-600"
               aria-label="Próximo"
             >
-              <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+              <RiArrowRightSLine className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
@@ -544,7 +562,7 @@ export default function AgendamentosPage() {
           <Button
             variant="outline"
             size="sm"
-            className="px-2 sm:px-3"
+            className="px-2.5 sm:px-3 text-xs font-bold"
             onClick={() => {
               const today = new Date()
               setCurrentWeek(today)
@@ -557,10 +575,10 @@ export default function AgendamentosPage() {
           <Button 
             variant="primary" 
             size="sm"
-            className="px-2 sm:px-3"
+            className="px-2.5 sm:px-3"
             onClick={() => setIsNovoAgendamentoOpen(true)}
           >
-            <Plus className="w-4 h-4 sm:mr-2" />
+            <RiAddLine className="w-4 h-4 sm:mr-1" />
             <span className="hidden sm:inline">Novo Agendamento</span>
             <span className="sm:hidden">Novo</span>
           </Button>
@@ -569,28 +587,28 @@ export default function AgendamentosPage() {
 
       {/* Loading State */}
       {loading && (
-        <div className="flex items-center justify-center py-12 bg-white rounded-xl border border-gray-200">
+        <div className="flex items-center justify-center py-12 bg-white rounded-2xl border border-slate-200">
           <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin text-pink-600 mx-auto mb-2" />
-            <p className="text-gray-600 text-sm">Carregando agendamentos...</p>
+            <RiLoader4Line className="w-8 h-8 animate-spin text-rose-600 mx-auto mb-2" />
+            <p className="text-slate-600 text-xs font-semibold">Carregando agendamentos...</p>
           </div>
         </div>
       )}
 
       {/* Feriados do Mês */}
       {!loading && feriadosDoMes.length > 0 && (
-        <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-xl p-4">
-          <h3 className="font-bold text-gray-900 mb-2 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-red-600" />
+        <div className="bg-gradient-to-r from-rose-50 to-orange-50 border-2 border-rose-200 rounded-2xl p-4">
+          <h3 className="font-bold text-slate-900 mb-2 flex items-center gap-2 text-sm">
+            <RiCalendar2Fill className="w-4 h-4 text-rose-600" />
             Feriados {viewMode === 'month' && `- ${format(currentMonth, "MMMM", { locale: ptBR })}`}
           </h3>
           <div className="flex flex-wrap gap-2">
             {feriadosDoMes.map((feriado, idx) => (
               <div
                 key={idx}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                className={`px-3 py-1 rounded-xl text-xs font-bold shadow-xs ${
                   feriado.tipo === 'nacional'
-                    ? 'bg-red-600 text-white'
+                    ? 'bg-rose-600 text-white'
                     : 'bg-orange-600 text-white'
                 }`}
               >
@@ -785,10 +803,10 @@ export default function AgendamentosPage() {
 
             <div className="space-y-3 pb-2">
               {selectedDayAppointments.length === 0 ? (
-                <div className="flex flex-col items-center justify-center text-gray-400 py-10">
-                  <Calendar className="w-16 h-16 mb-3 opacity-20" />
-                  <p className="text-sm font-medium">Nenhum agendamento</p>
-                  <p className="text-xs mt-1 opacity-60">Deslize para outro dia</p>
+                <div className="flex flex-col items-center justify-center text-slate-400 py-10">
+                  <RiCalendar2Fill className="w-14 h-14 mb-2 text-slate-300" />
+                  <p className="text-sm font-bold text-slate-600">Nenhum agendamento</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Deslize para outro dia</p>
                 </div>
               ) : (
                 selectedDayAppointments.map((apt) => (
@@ -958,9 +976,9 @@ export default function AgendamentosPage() {
                 </p>
               )}
               {selectedDayAppointments.length === 0 ? (
-                <div className="flex flex-col items-center justify-center text-gray-400 py-8">
-                  <Calendar className="w-12 h-12 mb-2 opacity-20" />
-                  <p className="text-sm font-medium">Nenhum agendamento</p>
+                <div className="flex flex-col items-center justify-center text-slate-400 py-8">
+                  <RiCalendar2Fill className="w-12 h-12 mb-2 text-slate-300" />
+                  <p className="text-sm font-bold text-slate-600">Nenhum agendamento</p>
                 </div>
               ) : (
                 <div className="space-y-3">

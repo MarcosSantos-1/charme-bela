@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
-import { Scissors, DollarSign, Clock, Sparkles, Check, Gift } from 'lucide-react'
+import { RiScissorsCutFill, RiMoneyDollarCircleFill, RiTimeFill, RiSparklingFill, RiCheckFill, RiGiftFill } from 'react-icons/ri'
 import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
 
@@ -252,8 +252,8 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <Scissors className="w-4 h-4 inline mr-1" />
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <RiScissorsCutFill className="w-3.5 h-3.5 inline mr-1 text-rose-600" />
             Nome do {isPackage ? 'Pacote' : 'Serviço'} *
           </label>
           <input
@@ -261,13 +261,13 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
             value={formData.nome}
             onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
             placeholder="Ex: Limpeza de Pele Profunda"
-            className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-gray-900 placeholder:text-gray-400"
+            className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-base sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white touch-manipulation"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
             Categoria *
           </label>
           <div className="grid grid-cols-2 gap-2">
@@ -281,16 +281,16 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
                   isSpecial: cat.value === 'COMBO' ? false : formData.isSpecial,
                   machineKind: cat.value === 'COMBO' ? '' : formData.machineKind,
                 })}
-                className={`p-3 rounded-xl border-2 text-left transition-all ${
+                className={`p-3 rounded-xl border-2 text-left transition-all touch-manipulation ${
                   formData.categoria === cat.value
-                    ? 'border-pink-500 bg-pink-50'
-                    : 'border-gray-200 hover:border-pink-300'
+                    ? 'border-rose-600 bg-rose-50 shadow-xs'
+                    : 'border-slate-200 hover:border-rose-300 bg-white'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-gray-900">{cat.label}</span>
+                  <span className="font-bold text-xs sm:text-sm text-slate-900">{cat.label}</span>
                   {formData.categoria === cat.value && (
-                    <Check className="w-4 h-4 text-pink-600" />
+                    <RiCheckFill className="w-4 h-4 text-rose-600" />
                   )}
                 </div>
               </button>
@@ -299,46 +299,46 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
         </div>
 
         {isPackage ? (
-          <div className="rounded-xl border-2 border-orange-200 bg-orange-50/60 p-4 space-y-4">
+          <div className="rounded-2xl border-2 border-amber-300 bg-amber-50/60 p-4 space-y-4">
             <div className="flex items-center gap-2">
-              <Gift className="w-4 h-4 text-orange-600" />
-              <span className="font-semibold text-gray-900">Composição do pacote</span>
+              <RiGiftFill className="w-4 h-4 text-amber-600" />
+              <span className="font-bold text-slate-900 text-sm">Composição do pacote</span>
             </div>
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-slate-600">
               Cada sessão inclui todos os procedimentos abaixo, no mesmo agendamento. A duração é a soma.
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Sessões *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">Sessões *</label>
                 <input
                   type="number"
                   min={1}
                   max={20}
                   value={formData.sessoes}
                   onChange={(e) => setFormData({ ...formData, sessoes: e.target.value })}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-900"
+                  className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl text-base sm:text-sm font-bold text-slate-900 bg-white touch-manipulation"
                 />
               </div>
               <div className="flex items-end pb-1">
-                <label className="flex items-center gap-2 text-sm text-gray-700">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer touch-manipulation">
                   <input
                     type="checkbox"
                     checked={formData.installmentsAllowed}
                     onChange={(e) => setFormData({ ...formData, installmentsAllowed: e.target.checked })}
-                    className="w-4 h-4 text-orange-600 rounded"
+                    className="w-4 h-4 text-amber-600 rounded"
                   />
-                  Permitir parcelamento no cartão
+                  Permitir parcelamento
                 </label>
               </div>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-60 overflow-y-auto">
               {procedimentos.map((proc) => {
                 const selected = formData.packageItemIds.includes(proc.id)
                 return (
                   <label
                     key={proc.id}
-                    className={`flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer ${
-                      selected ? 'border-orange-500 bg-white' : 'border-gray-200 bg-white/70'
+                    className={`flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer transition-all touch-manipulation ${
+                      selected ? 'border-amber-500 bg-white shadow-xs' : 'border-slate-200 bg-white/70'
                     }`}
                   >
                     <input
@@ -352,19 +352,19 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
                             : [...formData.packageItemIds, proc.id],
                         })
                       }}
-                      className="w-4 h-4 text-orange-600 rounded"
+                      className="w-4 h-4 text-amber-600 rounded"
                     />
-                    <div className="flex-1">
-                      <div className="font-medium text-sm text-gray-900">{proc.name}</div>
-                      <div className="text-xs text-gray-500">{proc.duration} min · {proc.category}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-xs sm:text-sm text-slate-900 truncate">{proc.name}</div>
+                      <div className="text-[11px] text-slate-500">{proc.duration} min · {proc.category}</div>
                     </div>
-                    {selected && <Check className="w-4 h-4 text-orange-600" />}
+                    {selected && <RiCheckFill className="w-4 h-4 text-amber-600" />}
                   </label>
                 )
               })}
             </div>
             {formData.packageItemIds.length > 0 && (
-              <div className="text-sm text-orange-800 bg-white rounded-lg p-3">
+              <div className="text-xs font-semibold text-amber-900 bg-white rounded-xl p-3 border border-amber-200">
                 {String(formData.sessoes).padStart(2, '0')} sessões ·{' '}
                 {formData.packageItemIds
                   .map((id) => procedimentos.find((item) => item.id === id))
@@ -381,8 +381,8 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
             )}
           </div>
         ) : (
-        <div className="rounded-xl border-2 border-dashed border-gray-200 p-4 space-y-3">
-          <label className="flex items-center gap-3 cursor-pointer">
+        <div className="rounded-2xl border-2 border-dashed border-slate-300 p-4 space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer touch-manipulation">
             <input
               type="checkbox"
               checked={formData.isSpecial}
@@ -395,9 +395,9 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
                   categoria: e.target.checked ? 'CORPORAL' : formData.categoria,
                 })
               }
-              className="w-4 h-4 text-pink-600 rounded"
+              className="w-4 h-4 text-rose-600 rounded"
             />
-            <span className="text-sm font-medium text-gray-900">
+            <span className="text-xs sm:text-sm font-bold text-slate-900">
               Serviço especial (máquina alugada)
             </span>
           </label>
@@ -412,29 +412,29 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
                     key={opt.value}
                     type="button"
                     onClick={() => setFormData({ ...formData, machineKind: opt.value })}
-                    className={`p-3 rounded-xl border-2 text-left ${
+                    className={`p-3 rounded-xl border-2 text-left touch-manipulation ${
                       formData.machineKind === opt.value
                         ? opt.value === 'LASER'
-                          ? 'border-purple-500 bg-purple-50'
-                          : 'border-sky-500 bg-sky-50'
-                        : 'border-gray-200'
+                          ? 'border-violet-600 bg-violet-50'
+                          : 'border-sky-600 bg-sky-50'
+                        : 'border-slate-200 bg-white'
                     }`}
                   >
-                    <div className="font-medium text-gray-900">{opt.label}</div>
-                    <div className="text-xs text-gray-500">{opt.hint}</div>
+                    <div className="font-bold text-slate-900 text-xs sm:text-sm">{opt.label}</div>
+                    <div className="text-[11px] text-slate-500">{opt.hint}</div>
                   </button>
                 ))}
               </div>
-              <label className="flex items-center gap-3 cursor-pointer">
+              <label className="flex items-center gap-3 cursor-pointer touch-manipulation">
                 <input
                   type="checkbox"
                   checked={formData.allowOnSubscription}
                   onChange={(e) =>
                     setFormData({ ...formData, allowOnSubscription: e.target.checked })
                   }
-                  className="w-4 h-4 text-pink-600 rounded"
+                  className="w-4 h-4 text-rose-600 rounded"
                 />
-                <span className="text-sm text-gray-700">
+                <span className="text-xs font-semibold text-slate-700">
                   Permitir inclusão em planos de assinatura
                 </span>
               </label>
@@ -443,14 +443,14 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
         </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <DollarSign className="w-4 h-4 inline mr-1" />
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <RiMoneyDollarCircleFill className="w-3.5 h-3.5 inline mr-1 text-emerald-600" />
               Preço *
             </label>
             <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-sm">
                 R$
               </span>
               <input
@@ -460,7 +460,7 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
                 placeholder="150.00"
                 min="0"
                 step="0.01"
-                className="w-full pl-12 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-gray-900 placeholder:text-gray-400"
+                className="w-full pl-10 pr-4 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-base sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 bg-white touch-manipulation"
                 required
               />
             </div>
@@ -468,14 +468,14 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
 
           {!isPackage && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Clock className="w-4 h-4 inline mr-1" />
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <RiTimeFill className="w-3.5 h-3.5 inline mr-1 text-purple-600" />
               Duração (min) *
             </label>
             <select
               value={formData.duracao}
               onChange={(e) => setFormData({ ...formData, duracao: e.target.value })}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-gray-900"
+              className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-base sm:text-sm font-bold text-slate-900 bg-white touch-manipulation"
               required
             >
               <option value="30">30 minutos</option>
@@ -491,32 +491,35 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
             Descrição *
           </label>
           <textarea
             value={formData.descricao}
             onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
+            onFocus={(e) => {
+              setTimeout(() => e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300)
+            }}
             placeholder="Descreva o serviço..."
             rows={3}
-            className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 resize-none text-gray-900 placeholder:text-gray-400"
+            className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 resize-none text-base sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white touch-manipulation"
             required
           />
         </div>
 
         {/* Incluir em Planos */}
         {!isPackage && (!formData.isSpecial || formData.allowOnSubscription) && (
-        <div className="border-t border-gray-200 pt-4">
+        <div className="border-t border-slate-200 pt-4">
           <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="w-4 h-4 text-purple-600" />
-            <span className="font-semibold text-gray-900">
+            <RiSparklingFill className="w-4 h-4 text-violet-600" />
+            <span className="font-bold text-slate-900 text-xs sm:text-sm">
               Incluir em Planos de Assinatura
             </span>
           </div>
 
           {planos.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-xs text-gray-600 mb-3">
+              <p className="text-xs text-slate-600 mb-2">
                 Selecione em quais planos este serviço estará disponível:
               </p>
               {planos.map(plano => (
@@ -524,30 +527,30 @@ export function NovoServicoModal({ isOpen, onClose, onSuccess, editingService }:
                   key={plano.id}
                   className={`flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer transition-all ${
                     formData.planosIds.includes(plano.id)
-                      ? 'border-purple-500 bg-purple-50'
-                      : 'border-gray-200 hover:border-purple-300 bg-white'
+                      ? 'border-violet-600 bg-violet-50/50 shadow-xs'
+                      : 'border-slate-200 hover:border-violet-300 bg-white'
                   }`}
                 >
                   <input
                     type="checkbox"
                     checked={formData.planosIds.includes(plano.id)}
                     onChange={() => togglePlano(plano.id)}
-                    className="w-5 h-5 text-purple-600 rounded focus:ring-purple-500"
+                    className="w-4 h-4 text-violet-600 rounded focus:ring-violet-500"
                   />
-                  <div className="flex-1">
-                    <div className="font-semibold text-sm text-gray-900">{plano.name}</div>
-                    <div className="text-xs text-gray-500">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-xs sm:text-sm text-slate-900 truncate">{plano.name}</div>
+                    <div className="text-[11px] text-slate-500">
                       {plano.maxTreatmentsPerMonth} sessões/mês • R$ {plano.price.toFixed(2)}
                     </div>
                   </div>
                   {formData.planosIds.includes(plano.id) && (
-                    <Check className="w-5 h-5 text-purple-600" />
+                    <RiCheckFill className="w-4 h-4 text-violet-600 shrink-0" />
                   )}
                 </label>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-500 italic">Nenhum plano disponível</p>
+            <p className="text-xs text-slate-400 italic">Nenhum plano disponível</p>
           )}
         </div>
         )}

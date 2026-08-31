@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/Button'
 import { Input } from '@/components/Input'
-import { Lock, Sparkles, Shield } from 'lucide-react'
+import { RiLockFill, RiSparklingFill, RiShieldUserFill, RiArrowLeftLine } from 'react-icons/ri'
 import Image from 'next/image'
 
 export default function AdminLoginPage() {
@@ -56,31 +56,31 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-50 via-white to-purple-50 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 via-slate-50 to-pink-50 p-4">
       <div className="w-full max-w-md">
         {/* Logo e Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center mb-4">
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="inline-flex items-center justify-center mb-3">
             <Image
               src="/images/logo.png"
               alt="Charme & Bela"
               width={80}
               height={80}
-              className="object-contain"
+              className="object-contain drop-shadow-sm"
             />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             Área Administrativa
           </h1>
-          <p className="text-gray-600">
-            Acesso restrito ao painel de gestão
+          <p className="text-xs sm:text-sm font-semibold text-slate-500 mt-1">
+            Acesso restrito para gestão da clínica
           </p>
         </div>
 
         {/* Card de Login */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-          <div className="p-8">
-            <form onSubmit={handleLogin} className="space-y-6">
+        <div className="bg-white rounded-3xl shadow-xl border-2 border-slate-200 overflow-hidden">
+          <div className="p-6 sm:p-8">
+            <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
               <div>
                 <Input
                   type="text"
@@ -90,7 +90,7 @@ export default function AdminLoginPage() {
                   onChange={(e) => setUsername(e.target.value)}
                   required
                   autoComplete="username"
-                  className="text-gray-900 placeholder:text-gray-400"
+                  className="text-slate-900 placeholder:text-slate-400 font-semibold"
                 />
               </div>
 
@@ -103,37 +103,38 @@ export default function AdminLoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="current-password"
-                  className="text-gray-900 placeholder:text-gray-500"
+                  className="text-slate-900 placeholder:text-slate-400 font-semibold"
                 />
               </div>
 
               {/* Remember Me */}
-              <label className="flex items-center space-x-3 cursor-pointer">
+              <label className="flex items-center space-x-2.5 cursor-pointer pt-1">
                 <input
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-5 h-5 text-pink-600 rounded border-gray-300 focus:ring-pink-500"
+                  className="w-4 h-4 text-rose-600 rounded-md border-slate-300 focus:ring-rose-500"
                 />
-                <span className="text-gray-900 font-medium">Manter conectado</span>
+                <span className="text-xs font-bold text-slate-700">Manter conectado</span>
               </label>
 
               <Button
                 type="submit"
                 variant="primary"
-                className="w-full"
+                className="w-full text-xs sm:text-sm font-bold shadow-xs py-3 mt-2"
                 isLoading={loading}
               >
-                <Lock className="w-5 h-5 mr-2" />
+                <RiLockFill className="w-4 h-4 mr-2" />
                 Acessar Painel
               </Button>
             </form>
           </div>
 
           {/* Footer do Card */}
-          <div className="bg-gray-50 px-8 py-4 border-t border-gray-200">
-            <p className="text-sm text-gray-600 text-center">
-              🔒 Área restrita e protegida
+          <div className="bg-slate-50 px-6 py-3.5 border-t border-slate-100 flex items-center justify-center gap-1.5">
+            <RiShieldUserFill className="w-4 h-4 text-rose-600" />
+            <p className="text-xs font-bold text-slate-600">
+              Área restrita e protegida
             </p>
           </div>
         </div>
@@ -142,17 +143,18 @@ export default function AdminLoginPage() {
         <div className="mt-6 text-center">
           <a
             href="/"
-            className="text-sm text-gray-600 hover:text-pink-600 transition"
+            className="inline-flex items-center text-xs font-bold text-slate-500 hover:text-rose-600 transition-colors"
           >
-            ← Voltar para o site
+            <RiArrowLeftLine className="w-3.5 h-3.5 mr-1" />
+            Voltar para o site
           </a>
         </div>
 
         {/* Decorative elements */}
-        <div className="mt-8 text-center">
-          <div className="inline-flex items-center space-x-2 text-gray-400">
-            <Sparkles className="w-4 h-4" />
-            <span className="text-xs">Charme & Bela Admin Panel</span>
+        <div className="mt-6 text-center">
+          <div className="inline-flex items-center space-x-1.5 text-slate-400">
+            <RiSparklingFill className="w-3.5 h-3.5 text-rose-400" />
+            <span className="text-[11px] font-bold">Charme & Bela Admin</span>
           </div>
         </div>
       </div>

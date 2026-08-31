@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
-import { X, ChevronLeft, ChevronRight, Save } from 'lucide-react'
+import { RiCloseLine, RiArrowLeftSLine, RiArrowRightSLine, RiSaveFill } from 'react-icons/ri'
 import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
 
@@ -72,21 +72,21 @@ export function EditarAnamneseModal({ isOpen, onClose, onSuccess, anamnese }: Ed
 
   return (
     <div className={`fixed inset-0 bg-black/60 z-[100] ${isOpen ? 'flex' : 'hidden'} items-center justify-center p-4 pb-20 sm:pb-4`}>
-      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] sm:max-h-[95vh] flex flex-col shadow-2xl">
+      <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] sm:max-h-[95vh] flex flex-col shadow-2xl border border-slate-200">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-          <h2 className="text-xl font-bold text-gray-900">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+          <h2 className="text-lg sm:text-xl font-extrabold text-slate-900">
             Editar Anamnese - {anamnese.user?.name || 'Cliente'}
           </h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-1.5 hover:bg-slate-100 rounded-full transition-colors text-slate-500"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <RiCloseLine className="w-5 h-5" />
           </button>
         </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 sm:py-6">
         <div className="space-y-6">
         {/* Progress */}
         <div className="flex items-center justify-between">
@@ -95,10 +95,10 @@ export function EditarAnamneseModal({ isOpen, onClose, onSuccess, anamnese }: Ed
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
                   step === currentStep
-                    ? 'bg-pink-600 text-white'
+                    ? 'bg-rose-600 text-white shadow-xs'
                     : step < currentStep
-                    ? 'bg-green-500 text-white'
-                    : 'bg-gray-200 text-gray-600'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-200 text-slate-600'
                 }`}
               >
                 {step < currentStep ? '✓' : step}
@@ -106,7 +106,7 @@ export function EditarAnamneseModal({ isOpen, onClose, onSuccess, anamnese }: Ed
               {step < 4 && (
                 <div
                   className={`flex-1 h-1 mx-2 ${
-                    step < currentStep ? 'bg-green-500' : 'bg-gray-200'
+                    step < currentStep ? 'bg-emerald-600' : 'bg-slate-200'
                   }`}
                 />
               )}
@@ -115,7 +115,7 @@ export function EditarAnamneseModal({ isOpen, onClose, onSuccess, anamnese }: Ed
         </div>
 
         {/* Steps Content */}
-        <div className="p-4 bg-gray-50 rounded-xl">
+        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
           {currentStep === 1 && (
             <Step1Content data={personalData} setData={setPersonalData} />
           )}
@@ -133,25 +133,25 @@ export function EditarAnamneseModal({ isOpen, onClose, onSuccess, anamnese }: Ed
       </div>
 
         {/* Navigation - Sticky Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 bg-white rounded-b-2xl flex-shrink-0">
+        <div className="px-6 py-4 border-t border-slate-100 bg-white rounded-b-3xl flex-shrink-0">
         <div className="flex items-center justify-between">
           <Button
             variant="outline"
             onClick={prevStep}
             disabled={currentStep === 1}
           >
-            <ChevronLeft className="w-4 h-4 mr-2" />
+            <RiArrowLeftSLine className="w-4 h-4 mr-1" />
             <span className="hidden sm:inline">Anterior</span>
           </Button>
 
-          <div className="text-sm font-medium text-gray-700">
+          <div className="text-xs sm:text-sm font-bold text-slate-700">
             Etapa {currentStep} de 4
           </div>
 
           {currentStep < 4 ? (
             <Button variant="primary" onClick={nextStep}>
               <span className="hidden sm:inline">Próxima</span>
-              <ChevronRight className="w-4 h-4 sm:ml-2" />
+              <RiArrowRightSLine className="w-4 h-4 sm:ml-1" />
             </Button>
           ) : (
             <Button
@@ -159,7 +159,7 @@ export function EditarAnamneseModal({ isOpen, onClose, onSuccess, anamnese }: Ed
               onClick={handleSave}
               disabled={loading}
             >
-              <Save className="w-4 h-4 mr-2" />
+              <RiSaveFill className="w-4 h-4 mr-1.5" />
               {loading ? 'Salvando...' : 'Salvar'}
             </Button>
           )}

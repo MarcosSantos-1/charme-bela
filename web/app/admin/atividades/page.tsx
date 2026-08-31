@@ -2,7 +2,16 @@
 
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Calendar, DollarSign, UserCheck, Sparkles, Activity, Filter } from 'lucide-react'
+import {
+  RiArrowLeftLine,
+  RiCalendar2Fill,
+  RiMoneyDollarCircleFill,
+  RiUser3Fill,
+  RiSparklingFill,
+  RiPulseFill,
+  RiFilter3Fill,
+  RiLoader4Line,
+} from 'react-icons/ri'
 import { useRouter } from 'next/navigation'
 import * as api from '@/lib/api'
 import { formatTimeAgo, formatFullDate } from '@/lib/timeUtils'
@@ -37,15 +46,12 @@ export default function AtividadesPage() {
       
       // Mapear notificações para formato de atividades
       const mappedActivities: RecentActivity[] = notifications.map(notif => {
-        // Usar funções helper para tempo
         const timeAgo = formatTimeAgo(notif.createdAt)
         const formattedDate = formatFullDate(notif.createdAt)
         
-        // Mapear tipo de notificação para tipo de atividade
         let activityType: 'appointment' | 'payment' | 'client' | 'subscription' = 'appointment'
         let icon: 'calendar' | 'dollar' | 'user' | 'star' = 'calendar'
         
-        // Priorizar PAYMENT primeiro (antes de SUBSCRIPTION que também pode conter PAYMENT)
         if (notif.type.includes('PAYMENT')) {
           activityType = 'payment'
           icon = 'dollar'
@@ -70,14 +76,6 @@ export default function AtividadesPage() {
         }
       })
       
-      console.log('📊 Atividades mapeadas:', mappedActivities.length)
-      console.log('📊 Por tipo:', {
-        payments: mappedActivities.filter(a => a.type === 'payment').length,
-        appointments: mappedActivities.filter(a => a.type === 'appointment').length,
-        clients: mappedActivities.filter(a => a.type === 'client').length,
-        subscriptions: mappedActivities.filter(a => a.type === 'subscription').length
-      })
-      
       setActivities(mappedActivities)
     } catch (error) {
       console.error('Erro ao carregar atividades:', error)
@@ -88,21 +86,21 @@ export default function AtividadesPage() {
 
   const getActivityIcon = (icon: string) => {
     switch (icon) {
-      case 'calendar': return <Calendar className="w-5 h-5" />
-      case 'dollar': return <DollarSign className="w-5 h-5" />
-      case 'user': return <UserCheck className="w-5 h-5" />
-      case 'star': return <Sparkles className="w-5 h-5" />
-      default: return <Activity className="w-5 h-5" />
+      case 'calendar': return <RiCalendar2Fill className="w-5 h-5" />
+      case 'dollar': return <RiMoneyDollarCircleFill className="w-5 h-5" />
+      case 'user': return <RiUser3Fill className="w-5 h-5" />
+      case 'star': return <RiSparklingFill className="w-5 h-5" />
+      default: return <RiPulseFill className="w-5 h-5" />
     }
   }
 
   const getActivityColor = (type: string) => {
     switch (type) {
-      case 'appointment': return 'bg-blue-100 text-blue-600'
-      case 'payment': return 'bg-green-100 text-green-600'
-      case 'client': return 'bg-purple-100 text-purple-600'
-      case 'subscription': return 'bg-pink-100 text-pink-600'
-      default: return 'bg-gray-100 text-gray-600'
+      case 'appointment': return 'bg-sky-100 text-sky-700 border border-sky-200'
+      case 'payment': return 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+      case 'client': return 'bg-violet-100 text-violet-700 border border-violet-200'
+      case 'subscription': return 'bg-amber-100 text-amber-800 border border-amber-200'
+      default: return 'bg-slate-100 text-slate-700 border border-slate-200'
     }
   }
 
@@ -112,125 +110,118 @@ export default function AtividadesPage() {
 
   return (
     <ProtectedRoute requiredRole="MANAGER">
-      <div className="min-h-screen bg-gray-50">
-        <div className="p-4 md:p-8 max-w-5xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
+      <div className="space-y-6">
+        {/* Header */}
+        <div>
+          <button
+            onClick={() => router.back()}
+            className="inline-flex items-center text-xs font-bold text-slate-500 hover:text-slate-800 mb-2 transition-colors"
+          >
+            <RiArrowLeftLine className="w-4 h-4 mr-1" />
+            Voltar
+          </button>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Atividades Recentes</h1>
+          <p className="text-xs sm:text-sm font-semibold text-slate-500 mt-0.5">Histórico em tempo real de atendimentos, pagamentos e clientes</p>
+        </div>
+
+        {/* Filtros */}
+        <div className="bg-white rounded-2xl border-2 border-slate-200 p-3 sm:p-4 shadow-xs">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <RiFilter3Fill className="w-4 h-4 text-slate-400" />
+            <span className="text-xs font-bold text-slate-700 mr-1">Filtrar por:</span>
             <button
-              onClick={() => router.back()}
-              className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
+              onClick={() => setFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                filter === 'all' 
+                  ? 'bg-rose-600 text-white' 
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
             >
-              <ArrowLeft className="w-5 h-5 mr-2" />
-              Voltar
+              Todas
             </button>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Atividades Recentes</h1>
-            <p className="text-gray-600">Histórico completo de atividades do sistema</p>
+            <button
+              onClick={() => setFilter('appointment')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                filter === 'appointment' 
+                  ? 'bg-sky-600 text-white' 
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Agendamentos
+            </button>
+            <button
+              onClick={() => setFilter('payment')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                filter === 'payment' 
+                  ? 'bg-emerald-600 text-white' 
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Pagamentos
+            </button>
+            <button
+              onClick={() => setFilter('client')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                filter === 'client' 
+                  ? 'bg-violet-600 text-white' 
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Clientes
+            </button>
+            <button
+              onClick={() => setFilter('subscription')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                filter === 'subscription' 
+                  ? 'bg-amber-600 text-white' 
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Assinaturas
+            </button>
           </div>
+        </div>
 
-          {/* Filtros */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Filter className="w-5 h-5 text-gray-400" />
-              <span className="text-sm font-medium text-gray-700 mr-2">Filtrar por:</span>
-              <button
-                onClick={() => setFilter('all')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === 'all' 
-                    ? 'bg-pink-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Todas
-              </button>
-              <button
-                onClick={() => setFilter('appointment')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === 'appointment' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Agendamentos
-              </button>
-              <button
-                onClick={() => setFilter('payment')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === 'payment' 
-                    ? 'bg-green-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Pagamentos
-              </button>
-              <button
-                onClick={() => setFilter('client')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === 'client' 
-                    ? 'bg-purple-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Clientes
-              </button>
-              <button
-                onClick={() => setFilter('subscription')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === 'subscription' 
-                    ? 'bg-pink-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Assinaturas
-              </button>
+        {/* Lista de Atividades */}
+        <div className="bg-white rounded-2xl border-2 border-slate-200 p-4 sm:p-6 shadow-xs">
+          {loading ? (
+            <div className="text-center py-12">
+              <RiLoader4Line className="w-8 h-8 animate-spin text-rose-600 mx-auto mb-2" />
+              <p className="text-slate-500 text-xs font-bold">Carregando atividades...</p>
             </div>
-          </div>
-
-          {/* Lista de Atividades */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            {loading ? (
-              <div className="text-center py-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600 mx-auto mb-3"></div>
-                <p className="text-gray-500">Carregando atividades...</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredActivities.map((activity) => (
-                  <div
-                    key={activity.id}
-                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors border border-gray-100"
-                  >
-                    <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
-                      <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${getActivityColor(activity.type)}`}>
-                        {getActivityIcon(activity.icon)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-900 text-sm sm:text-base">{activity.description}</div>
-                        <div className="text-xs sm:text-sm text-gray-500 mt-1">{activity.date}</div>
-                      </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredActivities.map((activity) => (
+                <div
+                  key={activity.id}
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3.5 sm:p-4 hover:bg-slate-50 rounded-xl transition-colors border border-slate-100 gap-2"
+                >
+                  <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                    <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${getActivityColor(activity.type)}`}>
+                      {getActivityIcon(activity.icon)}
                     </div>
-                    <div className="text-xs sm:text-sm text-gray-500 mt-2 sm:mt-0 ml-13 sm:ml-0 flex-shrink-0">{activity.time}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-slate-900 text-xs sm:text-sm">{activity.description}</div>
+                      <div className="text-[11px] font-semibold text-slate-400 mt-0.5">{activity.date}</div>
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
+                  <div className="text-[11px] font-bold text-slate-400 sm:ml-0 self-end sm:self-auto shrink-0 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">{activity.time}</div>
+                </div>
+              ))}
+            </div>
+          )}
 
-            {!loading && filteredActivities.length === 0 && (
-              <div className="text-center py-12">
-                <Activity className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">
-                  {filter === 'all' 
-                    ? 'Nenhuma atividade encontrada' 
-                    : `Nenhuma atividade de ${
-                        filter === 'appointment' ? 'agendamentos' :
-                        filter === 'payment' ? 'pagamentos' :
-                        filter === 'client' ? 'clientes' :
-                        'assinaturas'
-                      } encontrada`
-                  }
-                </p>
-              </div>
-            )}
-          </div>
+          {!loading && filteredActivities.length === 0 && (
+            <div className="text-center py-12">
+              <RiPulseFill className="w-12 h-12 text-slate-200 mx-auto mb-2" />
+              <p className="text-slate-500 text-xs font-bold">
+                {filter === 'all' 
+                  ? 'Nenhuma atividade encontrada' 
+                  : `Nenhuma atividade deste filtro encontrada`
+                }
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </ProtectedRoute>

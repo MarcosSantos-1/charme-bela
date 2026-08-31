@@ -3,7 +3,17 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/Button'
 import { Input } from '@/components/Input'
-import { Clock, Calendar, MapPin, Phone, Mail, Instagram, Save, DollarSign } from 'lucide-react'
+import {
+  RiTimeFill,
+  RiCalendar2Fill,
+  RiMapPin2Fill,
+  RiPhoneFill,
+  RiMailFill,
+  RiInstagramFill,
+  RiSaveFill,
+  RiMoneyDollarCircleFill,
+  RiLoader4Line,
+} from 'react-icons/ri'
 import { DefinirHorariosModal } from '@/components/admin/DefinirHorariosModal'
 import * as api from '@/lib/api'
 import toast from 'react-hot-toast'
@@ -42,7 +52,6 @@ export default function ConfiguracoesPage() {
   const [schedules, setSchedules] = useState<ManagerSchedule[]>([])
   const [loading, setLoading] = useState(true)
   
-  // Estados para os campos do formulário
   const [config, setConfig] = useState<SystemConfig>({
     id: '',
     phone: '',
@@ -58,27 +67,21 @@ export default function ConfiguracoesPage() {
     addressState: '',
     minCancellationHours: 4,
     cancellationPolicy: '',
-    priceBronze: 200.00,
-    priceSilver: 300.00,
-    priceGold: 450.00
+    priceBronze: 0,
+    priceSilver: 0,
+    priceGold: 0,
   })
 
   useEffect(() => {
-    loadData()
+    loadConfig()
+    loadSchedules()
   }, [])
   
-  const loadData = async () => {
-    setLoading(true)
+  const loadConfig = async () => {
     try {
-      const [schedulesData, configData] = await Promise.all([
-        api.getManagerSchedule(),
-        api.getConfig()
-      ])
-      
-      setSchedules(schedulesData as ManagerSchedule[])
-      
-      if (configData && typeof configData === 'object') {
-        const data: any = configData
+      setLoading(true)
+      const data = await api.getConfig()
+      if (data) {
         setConfig({
           id: data.id || '',
           phone: data.phone || '',
@@ -92,15 +95,15 @@ export default function ConfiguracoesPage() {
           addressNeighborhood: data.addressNeighborhood || '',
           addressCity: data.addressCity || '',
           addressState: data.addressState || '',
-          minCancellationHours: data.minCancellationHours || 4,
-          cancellationPolicy: data.cancellationPolicy || 'Cancelamentos devem ser feitos com no mínimo 4 horas de antecedência. Cancelamentos fora deste prazo estarão sujeitos a cobrança.',
-          priceBronze: data.priceBronze || 200.00,
-          priceSilver: data.priceSilver || 300.00,
-          priceGold: data.priceGold || 450.00
+          minCancellationHours: data.minCancellationHours ?? 4,
+          cancellationPolicy: data.cancellationPolicy || '',
+          priceBronze: data.priceBronze ?? 0,
+          priceSilver: data.priceSilver ?? 0,
+          priceGold: data.priceGold ?? 0,
         })
       }
     } catch (error) {
-      console.error('Erro ao carregar dados:', error)
+      console.error('Erro ao carregar configurações:', error)
       toast.error('Erro ao carregar configurações')
     } finally {
       setLoading(false)
@@ -117,8 +120,8 @@ export default function ConfiguracoesPage() {
   }
 
   const handleSave = async () => {
-    setSaving(true)
     try {
+      setSaving(true)
       await api.updateConfig({
         phone: config.phone,
         whatsapp: config.whatsapp,
@@ -139,9 +142,10 @@ export default function ConfiguracoesPage() {
       })
       
       toast.success('Configurações salvas com sucesso!')
-    } catch (error) {
-      console.error('Erro ao salvar:', error)
-      toast.error('Erro ao salvar configurações')
+      loadConfig()
+    } catch (error: any) {
+      console.error('Erro ao salvar configurações:', error)
+      toast.error(error.message || 'Erro ao salvar configurações')
     } finally {
       setSaving(false)
     }
@@ -151,58 +155,52 @@ export default function ConfiguracoesPage() {
     setConfig(prev => ({ ...prev, [field]: value }))
   }
   
-  // Máscara de preço - formatação visual
   const formatPrice = (value: number | undefined): string => {
     if (!value) return '0,00'
     return value.toFixed(2).replace('.', ',')
   }
   
-  // Parse de preço - converte string formatada para number
   const parsePrice = (value: string): number => {
     const cleaned = value.replace(/[^\d,]/g, '').replace(',', '.')
     return parseFloat(cleaned) || 0
   }
   
-  // Handler para inputs de preço
   const handlePriceChange = (field: 'priceBronze' | 'priceSilver' | 'priceGold', value: string) => {
-    // Permite apenas números e vírgula
     const cleaned = value.replace(/[^\d,]/g, '')
-    
-    // Limita a 2 casas decimais
     const parts = cleaned.split(',')
     if (parts.length > 2) return
     if (parts[1] && parts[1].length > 2) return
-    
     const numValue = parsePrice(cleaned)
     setConfig(prev => ({ ...prev, [field]: numValue }))
   }
 
   return (
     <div className="space-y-6 max-w-4xl">
-      {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Configurações</h2>
-        <p className="text-gray-600 mt-1">Gerencie as configurações do sistema</p>
+        <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Configurações</h2>
+        <p className="text-xs sm:text-sm font-semibold text-slate-500 mt-0.5">Gerencie os dados da clínica, horários, preços e políticas</p>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600"></div>
+          <RiLoader4Line className="w-8 h-8 animate-spin text-rose-600" />
         </div>
       ) : (
         <>
-          {/* Horários de Funcionamento */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-6">
+          <div className="bg-white rounded-2xl border-2 border-slate-200 p-4 sm:p-6 shadow-xs">
+            <div className="flex items-center justify-between mb-5">
               <div className="flex items-center">
-                <Clock className="w-6 h-6 text-pink-600 mr-3" />
-                <h3 className="text-lg font-semibold text-gray-900">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mr-3 border border-rose-200 shadow-xs">
+                  <RiTimeFill className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-extrabold text-slate-900">
                   Horários de Funcionamento
                 </h3>
               </div>
               <Button 
                 variant="outline" 
                 size="sm"
+                className="text-xs font-bold"
                 onClick={() => setIsDefinirHorariosOpen(true)}
               >
                 Editar Horários
@@ -249,15 +247,17 @@ export default function ConfiguracoesPage() {
           </div>
 
           {/* Informações de Contato */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center mb-6">
-              <Phone className="w-6 h-6 text-pink-600 mr-3" />
-              <h3 className="text-lg font-semibold text-gray-900">
+          <div className="bg-white rounded-2xl border-2 border-slate-200 p-4 sm:p-6 shadow-xs">
+            <div className="flex items-center mb-5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mr-3 border border-rose-200 shadow-xs">
+                <RiPhoneFill className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900">
                 Informações de Contato
               </h3>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
               <Input
                 label="Telefone"
                 type="tel"
@@ -290,15 +290,17 @@ export default function ConfiguracoesPage() {
           </div>
 
           {/* Endereço */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center mb-6">
-              <MapPin className="w-6 h-6 text-pink-600 mr-3" />
-              <h3 className="text-lg font-semibold text-gray-900">
-                Endereço
+          <div className="bg-white rounded-2xl border-2 border-slate-200 p-4 sm:p-6 shadow-xs">
+            <div className="flex items-center mb-5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mr-3 border border-rose-200 shadow-xs">
+                <RiMapPin2Fill className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900">
+                Endereço da Clínica
               </h3>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
               <div className="md:col-span-2">
                 <Input
                   label="CEP"
@@ -357,10 +359,12 @@ export default function ConfiguracoesPage() {
           </div>
 
           {/* Política de Cancelamento */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center mb-6">
-              <Calendar className="w-6 h-6 text-pink-600 mr-3" />
-              <h3 className="text-lg font-semibold text-gray-900">
+          <div className="bg-white rounded-2xl border-2 border-slate-200 p-4 sm:p-6 shadow-xs">
+            <div className="flex items-center mb-5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mr-3 border border-rose-200 shadow-xs">
+                <RiCalendar2Fill className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900">
                 Política de Cancelamento
               </h3>
             </div>
@@ -373,18 +377,18 @@ export default function ConfiguracoesPage() {
                 onChange={(e) => handleChange('minCancellationHours', parseInt(e.target.value) || 4)}
                 placeholder="4"
               />
-              <p className="text-xs text-gray-500 -mt-2">
-                Este número é o prazo mínimo. Com esse tempo ou mais (ex.: 5h se o prazo for 4h), a cliente do avulso escolhe reembolso ou crédito. Com menos (ex.: 3h59), não há dinheiro de volta — só crédito. Plano fora do prazo perde a sessão. Máquinas: prazo próprio (ex.: 24h); abaixo disso o estorno é em dinheiro com multa, sem crédito.
+              <p className="text-xs font-semibold text-slate-500 -mt-2">
+                Este número é o prazo mínimo. Com esse tempo ou mais (ex.: 5h se o prazo for 4h), a cliente do avulso escolhe reembolso ou crédito. Com menos (ex.: 3h59), não há dinheiro de volta — só crédito.
               </p>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Mensagem de Cancelamento
                 </label>
                 <textarea
                   rows={4}
                   value={config.cancellationPolicy}
                   onChange={(e) => handleChange('cancellationPolicy', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  className="w-full px-3.5 py-2.5 border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-xs sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white"
                   placeholder="Descrição da política de cancelamento..."
                 />
               </div>
@@ -392,28 +396,30 @@ export default function ConfiguracoesPage() {
           </div>
 
           {/* Preços dos Planos */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center mb-6">
-              <DollarSign className="w-6 h-6 text-pink-600 mr-3" />
+          <div className="bg-white rounded-2xl border-2 border-slate-200 p-4 sm:p-6 shadow-xs">
+            <div className="flex items-center mb-5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mr-3 border border-rose-200 shadow-xs">
+                <RiMoneyDollarCircleFill className="w-5 h-5" />
+              </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900">
+                <h3 className="text-base font-extrabold text-slate-900">
                   Preços dos Planos
                 </h3>
-                <p className="text-sm text-gray-600 mt-1">
+                <p className="text-xs font-semibold text-slate-500 mt-0.5">
                   Os valores alterados aqui serão refletidos em todo o sistema
                 </p>
               </div>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-6">
+            <div className="grid md:grid-cols-3 gap-4">
               {/* Plano Bronze */}
-              <div className="border-2 border-amber-200 rounded-lg p-4 bg-gradient-to-br from-amber-50 to-white">
+              <div className="border-2 border-amber-200 rounded-2xl p-4 bg-gradient-to-br from-amber-50/70 to-white shadow-xs">
                 <div className="flex items-center mb-3">
-                  <div className="w-3 h-3 bg-amber-600 rounded-full mr-2"></div>
-                  <h4 className="font-semibold text-gray-900">Plano Bronze</h4>
+                  <div className="w-2.5 h-2.5 bg-amber-600 rounded-full mr-2"></div>
+                  <h4 className="font-extrabold text-slate-900 text-sm">Plano Bronze</h4>
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-700 font-medium">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">
                     R$
                   </span>
                   <input
@@ -421,22 +427,22 @@ export default function ConfiguracoesPage() {
                     value={formatPrice(config.priceBronze)}
                     onChange={(e) => handlePriceChange('priceBronze', e.target.value)}
                     placeholder="0,00"
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent text-gray-900 font-medium text-lg"
+                    className="w-full pl-9 pr-3 py-2.5 border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-400 text-slate-900 font-extrabold text-base bg-white"
                   />
                 </div>
-                <p className="text-xs text-gray-600 mt-2">
+                <p className="text-[11px] font-semibold text-slate-500 mt-2">
                   4 tratamentos/mês
                 </p>
               </div>
 
               {/* Plano Prata */}
-              <div className="border-2 border-gray-300 rounded-lg p-4 bg-gradient-to-br from-gray-50 to-white">
+              <div className="border-2 border-slate-300 rounded-2xl p-4 bg-gradient-to-br from-slate-50/80 to-white shadow-xs">
                 <div className="flex items-center mb-3">
-                  <div className="w-3 h-3 bg-gray-400 rounded-full mr-2"></div>
-                  <h4 className="font-semibold text-gray-900">Plano Prata</h4>
+                  <div className="w-2.5 h-2.5 bg-slate-500 rounded-full mr-2"></div>
+                  <h4 className="font-extrabold text-slate-900 text-sm">Plano Prata</h4>
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-700 font-medium">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">
                     R$
                   </span>
                   <input
@@ -444,22 +450,22 @@ export default function ConfiguracoesPage() {
                     value={formatPrice(config.priceSilver)}
                     onChange={(e) => handlePriceChange('priceSilver', e.target.value)}
                     placeholder="0,00"
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-gray-900 font-medium text-lg"
+                    className="w-full pl-9 pr-3 py-2.5 border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-400 text-slate-900 font-extrabold text-base bg-white"
                   />
                 </div>
-                <p className="text-xs text-gray-600 mt-2">
+                <p className="text-[11px] font-semibold text-slate-500 mt-2">
                   4 tratamentos/mês + 2 limpezas
                 </p>
               </div>
 
               {/* Plano Ouro */}
-              <div className="border-2 border-yellow-400 rounded-lg p-4 bg-gradient-to-br from-yellow-50 to-white">
+              <div className="border-2 border-yellow-300 rounded-2xl p-4 bg-gradient-to-br from-yellow-50/70 to-white shadow-xs">
                 <div className="flex items-center mb-3">
-                  <div className="w-3 h-3 bg-yellow-600 rounded-full mr-2"></div>
-                  <h4 className="font-semibold text-gray-900">Plano Ouro</h4>
+                  <div className="w-2.5 h-2.5 bg-yellow-500 rounded-full mr-2"></div>
+                  <h4 className="font-extrabold text-slate-900 text-sm">Plano Ouro</h4>
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-700 font-medium">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">
                     R$
                   </span>
                   <input
@@ -467,31 +473,32 @@ export default function ConfiguracoesPage() {
                     value={formatPrice(config.priceGold)}
                     onChange={(e) => handlePriceChange('priceGold', e.target.value)}
                     placeholder="0,00"
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-gray-900 font-medium text-lg"
+                    className="w-full pl-9 pr-3 py-2.5 border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-400 text-slate-900 font-extrabold text-base bg-white"
                   />
                 </div>
-                <p className="text-xs text-gray-600 mt-2">
+                <p className="text-[11px] font-semibold text-slate-500 mt-2">
                   6 tratamentos/mês + 2 limpezas
                 </p>
               </div>
             </div>
 
-            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm text-blue-800">
-                💡 <strong>Importante:</strong> Os preços alterados aqui serão aplicados automaticamente em todos os textos, modais e páginas do sistema. Isso inclui a página de planos, checkout e área do cliente.
+            <div className="mt-4 p-3.5 bg-sky-50 border border-sky-200 rounded-xl">
+              <p className="text-xs font-semibold text-sky-900">
+                💡 <strong>Importante:</strong> Os preços alterados aqui serão aplicados automaticamente em todos os textos, modais e páginas do sistema.
               </p>
             </div>
           </div>
 
           {/* Save button */}
-          <div className="flex justify-end">
+          <div className="flex justify-end pb-8 sm:pb-0">
             <Button
               variant="primary"
               size="lg"
               onClick={handleSave}
               isLoading={saving}
+              className="w-full sm:w-auto text-sm font-bold shadow-xs"
             >
-              <Save className="w-5 h-5 mr-2" />
+              <RiSaveFill className="w-4 h-4 mr-2" />
               Salvar Configurações
             </Button>
           </div>

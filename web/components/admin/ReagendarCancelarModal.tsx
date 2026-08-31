@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
-import { Calendar, Clock, AlertTriangle, Loader } from 'lucide-react'
+import { RiCalendar2Fill, RiCheckboxCircleFill, RiAlertFill, RiLoader4Line } from 'react-icons/ri'
 import toast from 'react-hot-toast'
 import ReactDatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -242,37 +242,37 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
           <button
             type="button"
             onClick={() => setAcao('reagendar')}
-            className={`py-2.5 px-3 rounded-lg border-2 font-medium transition-all text-xs ${
+            className={`py-2.5 px-3 rounded-xl border-2 font-bold transition-all text-xs flex items-center justify-center gap-1.5 ${
               acao === 'reagendar'
-                ? 'bg-pink-600 text-white border-pink-600'
-                : 'bg-white text-gray-700 border-gray-300 hover:border-pink-300'
+                ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300'
             }`}
           >
-            <Calendar className="w-3.5 h-3.5 inline mr-1" />
+            <RiCalendar2Fill className="w-3.5 h-3.5" />
             Reagendar
           </button>
           <button
             type="button"
             onClick={() => setAcao('concluir')}
-            className={`py-2.5 px-3 rounded-lg border-2 font-medium transition-all text-xs ${
+            className={`py-2.5 px-3 rounded-xl border-2 font-bold transition-all text-xs flex items-center justify-center gap-1.5 ${
               acao === 'concluir'
-                ? 'bg-green-600 text-white border-green-600'
-                : 'bg-white text-gray-700 border-gray-300 hover:border-green-300'
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300'
             }`}
           >
-            <Clock className="w-3.5 h-3.5 inline mr-1" />
+            <RiCheckboxCircleFill className="w-3.5 h-3.5" />
             Concluir
           </button>
           <button
             type="button"
             onClick={() => setAcao('cancelar')}
-            className={`py-2.5 px-3 rounded-lg border-2 font-medium transition-all text-xs ${
+            className={`py-2.5 px-3 rounded-xl border-2 font-bold transition-all text-xs flex items-center justify-center gap-1.5 ${
               acao === 'cancelar'
-                ? 'bg-red-600 text-white border-red-600'
-                : 'bg-white text-gray-700 border-gray-300 hover:border-red-300'
+                ? 'bg-rose-700 text-white border-rose-700 shadow-xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300'
             }`}
           >
-            <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
+            <RiAlertFill className="w-3.5 h-3.5" />
             Cancelar
           </button>
         </div>
@@ -372,9 +372,9 @@ export function ReagendarCancelarModal({ isOpen, onClose, onSuccess, agendamento
                 </label>
 
                 {loadingSlots ? (
-                  <div className="text-center py-8 bg-gray-50 rounded-xl">
-                    <Loader className="w-8 h-8 animate-spin text-pink-600 mx-auto" />
-                    <p className="text-sm text-gray-600 mt-2">Buscando horários...</p>
+                  <div className="text-center py-8 bg-slate-50 rounded-2xl">
+                    <RiLoader4Line className="w-8 h-8 animate-spin text-rose-600 mx-auto" />
+                    <p className="text-xs font-semibold text-slate-600 mt-2">Buscando horários...</p>
                   </div>
                 ) : getAllSlots().length > 0 ? (
                   <>

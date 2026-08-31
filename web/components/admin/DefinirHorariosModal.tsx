@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
-import { Loader2 } from 'lucide-react'
+import { RiCalendarScheduleFill, RiCheckFill, RiCloseLine, RiTimeFill } from 'react-icons/ri'
 import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
 
@@ -63,8 +63,6 @@ export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalPr
           if (schedule && schedule.isAvailable) {
             const slots = schedule.availableSlots as Array<{ start: string; end: string }>
             
-            // Se há 1 período, é das início ao fim (sem almoço configurado)
-            // Se há 2 períodos, o primeiro é manhã e o segundo tarde (com intervalo de almoço)
             if (slots.length === 1) {
               return {
                 dia: dia.nome,
@@ -105,7 +103,6 @@ export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalPr
     }
   }, [])
 
-  // Carregar horários ao abrir o modal
   useEffect(() => {
     if (isOpen) {
       loadHorarios()
@@ -133,12 +130,10 @@ export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalPr
   const handleSubmit = async () => {
     setSaving(true)
     try {
-      // Salvar cada dia da semana
       for (const horario of horarios) {
         const availableSlots: Array<{ start: string; end: string }> = []
         
         if (horario.ativo) {
-          // Se tem horário de almoço configurado, cria 2 períodos
           if (horario.almoco.inicio && horario.almoco.fim && 
               horario.almoco.inicio !== horario.almoco.fim) {
             availableSlots.push(
@@ -146,7 +141,6 @@ export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalPr
               { start: horario.almoco.fim, end: horario.fim }
             )
           } else {
-            // Sem intervalo de almoço, cria 1 período contínuo
             availableSlots.push({ start: horario.inicio, end: horario.fim })
           }
         }
@@ -158,7 +152,7 @@ export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalPr
         })
       }
       
-      toast.success('Horários de funcionamento atualizados com sucesso! 🎉')
+      toast.success('Agenda semanal atualizada com sucesso! ✨')
       onClose()
     } catch (error) {
       console.error('Erro ao salvar horários:', error)
@@ -169,94 +163,128 @@ export function DefinirHorariosModal({ isOpen, onClose }: DefinirHorariosModalPr
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Definir Horários de Funcionamento" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="Agenda Semanal & Disponibilidade" size="lg">
+      <div className="mb-4">
+        <p className="text-xs sm:text-sm text-slate-600">
+          Ative ou desative os dias em que estará atendendo na clínica e personalize os horários de início, término e intervalo de almoço.
+        </p>
+      </div>
+
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin text-pink-600 mx-auto mb-2" />
-            <p className="text-gray-600 text-sm">Carregando horários...</p>
+            <div className="w-8 h-8 rounded-full border-3 border-rose-600 border-t-transparent animate-spin mx-auto mb-2"></div>
+            <p className="text-slate-600 text-xs font-semibold">Carregando horários...</p>
           </div>
         </div>
       ) : (
-      <div className="space-y-4">
-        {horarios.map((horario, index) => (
-          <div 
-            key={horario.dia}
-            className={`p-4 rounded-xl border-2 ${
-              horario.ativo ? 'border-pink-200 bg-pink-50' : 'border-gray-200 bg-gray-50'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={horario.ativo}
-                  onChange={() => toggleDia(index)}
-                  className="w-5 h-5 text-pink-600 rounded focus:ring-pink-500"
-                />
-                <span className="font-semibold text-gray-900">{horario.dia}</span>
-              </label>
-            </div>
+        <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+          {horarios.map((horario, index) => (
+            <div 
+              key={horario.dia}
+              className={`p-3.5 sm:p-4 rounded-2xl border-2 transition-all ${
+                horario.ativo 
+                  ? 'border-indigo-200 bg-indigo-50/40 shadow-xs' 
+                  : 'border-slate-200 bg-slate-50 opacity-75'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleDia(index)}
+                    className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
+                      horario.ativo ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-200 text-transparent'
+                    }`}
+                  >
+                    <RiCheckFill className="w-4 h-4" />
+                  </button>
+                  <span className="font-bold text-slate-900 text-sm sm:text-base">{horario.dia}</span>
+                </div>
 
-            {horario.ativo && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Abertura</label>
-                  <input
-                    type="time"
-                    value={horario.inicio}
-                    onChange={(e) => updateHorario(index, 'inicio', e.target.value)}
-                    className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm text-gray-900 font-semibold focus:ring-2 focus:ring-pink-500 focus:border-pink-400 bg-white"
-                    style={{ colorScheme: 'light' }}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Fechamento</label>
-                  <input
-                    type="time"
-                    value={horario.fim}
-                    onChange={(e) => updateHorario(index, 'fim', e.target.value)}
-                    className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm text-gray-900 font-semibold focus:ring-2 focus:ring-pink-500 focus:border-pink-400 bg-white"
-                    style={{ colorScheme: 'light' }}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Almoço (início)</label>
-                  <input
-                    type="time"
-                    value={horario.almoco.inicio}
-                    onChange={(e) => updateHorario(index, 'almocoInicio', e.target.value)}
-                    className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm text-gray-900 font-semibold focus:ring-2 focus:ring-pink-500 focus:border-pink-400 bg-white"
-                    style={{ colorScheme: 'light' }}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Almoço (fim)</label>
-                  <input
-                    type="time"
-                    value={horario.almoco.fim}
-                    onChange={(e) => updateHorario(index, 'almocoFim', e.target.value)}
-                    className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm text-gray-900 font-semibold focus:ring-2 focus:ring-pink-500 focus:border-pink-400 bg-white"
-                    style={{ colorScheme: 'light' }}
-                  />
-                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleDia(index)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-extrabold cursor-pointer transition-colors ${
+                    horario.ativo 
+                      ? 'bg-emerald-600 text-white shadow-xs' 
+                      : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {horario.ativo ? 'Atendendo' : 'Folga'}
+                </button>
               </div>
-            )}
-          </div>
-        ))}
 
-        <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
-          <Button variant="outline" onClick={onClose} className="flex-1" disabled={saving}>
-            Cancelar
-          </Button>
-          <Button variant="primary" onClick={handleSubmit} className="flex-1" isLoading={saving}>
-            {saving ? 'Salvando...' : 'Salvar Horários'}
-          </Button>
+              {horario.ativo && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-indigo-100">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Abertura</label>
+                    <input
+                      type="time"
+                      value={horario.inicio}
+                      onChange={(e) => updateHorario(index, 'inicio', e.target.value)}
+                      className="w-full px-2.5 py-2 border-2 border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 bg-white"
+                      style={{ colorScheme: 'light' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Fechamento</label>
+                    <input
+                      type="time"
+                      value={horario.fim}
+                      onChange={(e) => updateHorario(index, 'fim', e.target.value)}
+                      className="w-full px-2.5 py-2 border-2 border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 bg-white"
+                      style={{ colorScheme: 'light' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Almoço (início)</label>
+                    <input
+                      type="time"
+                      value={horario.almoco.inicio}
+                      onChange={(e) => updateHorario(index, 'almocoInicio', e.target.value)}
+                      className="w-full px-2.5 py-2 border-2 border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 bg-white"
+                      style={{ colorScheme: 'light' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Almoço (fim)</label>
+                    <input
+                      type="time"
+                      value={horario.almoco.fim}
+                      onChange={(e) => updateHorario(index, 'almocoFim', e.target.value)}
+                      className="w-full px-2.5 py-2 border-2 border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 bg-white"
+                      style={{ colorScheme: 'light' }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          <div className="flex flex-col-reverse sm:flex-row gap-2.5 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-3 px-4 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 active:scale-95 transition-all"
+              disabled={saving}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 text-white font-bold text-xs shadow-md shadow-rose-600/25 hover:from-rose-700 hover:to-pink-700 active:scale-95 transition-all disabled:opacity-50"
+              disabled={saving}
+            >
+              {saving ? 'Salvando...' : 'Salvar Agenda Semanal'}
+            </button>
+          </div>
         </div>
-      </div>
       )}
     </Modal>
   )
 }
+
 
 

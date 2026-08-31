@@ -1,12 +1,25 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Calendar, Loader2, Upload, AlertTriangle } from 'lucide-react'
+import {
+  RiCalendar2Fill,
+  RiLoader4Line,
+  RiUploadCloud2Fill,
+  RiAlertFill,
+  RiSettings4Fill,
+  RiArrowDownSLine,
+  RiCheckboxCircleFill,
+  RiTimeFill,
+  RiCloseLine,
+} from 'react-icons/ri'
 import { Button } from '@/components/Button'
+import { Modal } from '@/components/Modal'
+import DatePicker from '@/components/DatePicker'
 import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
 import { fileToHomeBannerDataUrl } from '@/lib/homeBanner'
 import { useAuth } from '@/contexts/AuthContext'
+import { format } from 'date-fns'
 
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -33,11 +46,15 @@ export function MachineRentalsSection() {
   const [settings, setSettings] = useState<api.MachineRentalSettings[]>([])
   const [occurrences, setOccurrences] = useState<api.MachineRentalOccurrence[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [expandedMonths, setExpandedMonths] = useState<string[]>([])
+  
   const [preview, setPreview] = useState<{
     occId: string
     newDate: string
     affected: Awaited<ReturnType<typeof api.previewMachineDateChange>>['affected']
   } | null>(null)
+
   const [releaseDraft, setReleaseDraft] = useState<{
     occId: string
     title: string
@@ -73,16 +90,38 @@ export function MachineRentalsSection() {
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [occurrences])
 
+  // Set default expanded months (expand upcoming/active months, collapse closed/done months)
+  useEffect(() => {
+    if (byMonth.length > 0 && expandedMonths.length === 0) {
+      const now = new Date()
+      const currentYearMonth = `${now.getFullYear()}-${now.getMonth() + 1}`
+      const autoExpanded = byMonth
+        .filter(([key, list]) => {
+          const allDone = list.every(o => o.status === 'DONE' || o.status === 'CANCELED')
+          return !allDone || key >= currentYearMonth
+        })
+        .map(([key]) => key)
+      setExpandedMonths(autoExpanded.length > 0 ? autoExpanded : [byMonth[byMonth.length - 1][0]])
+    }
+  }, [byMonth, expandedMonths.length])
+
+  const toggleMonth = (key: string) => {
+    setExpandedMonths(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    )
+  }
+
   const saveFee = async (kind: api.MachineKind, fee: number, hours: number) => {
     try {
       await api.updateMachineRentalSettings(kind, {
         lateCancelFeePercent: fee,
         lateCancelHours: hours,
       })
-      toast.success(`Política de ${kindLabel(kind)} atualizada`)
+      toast.success(`Política de ${kindLabel(kind)} atualizada com sucesso`)
       await load()
+      setShowSettingsModal(false)
     } catch (e: any) {
-      toast.error(e.message || 'Erro ao salvar')
+      toast.error(e.message || 'Erro ao salvar configurações')
     }
   }
 
@@ -98,7 +137,7 @@ export function MachineRentalsSection() {
           compensation: 'credit',
           adminUserId: user?.id,
         })
-        toast.success('Data atualizada')
+        toast.success('Data da máquina atualizada!')
         await load()
       } else {
         setPreview({ occId: occ.id, newDate, affected: data.affected })
@@ -158,7 +197,7 @@ export function MachineRentalsSection() {
         title: releaseDraft.title,
         imageUrl: releaseDraft.imageUrl || undefined,
       })
-      toast.success(`${kindLabel(occ?.kind || 'LASER')} liberado para agendamento`)
+      toast.success(`${kindLabel(occ?.kind || 'LASER')} liberado para agendamento!`)
       setReleaseDraft(null)
       await load()
     } catch (e: any) {
@@ -183,191 +222,302 @@ export function MachineRentalsSection() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-gray-500 py-8">
-        <Loader2 className="w-5 h-5 animate-spin" />
-        Carregando máquinas alugadas…
+      <div className="flex items-center gap-2 text-slate-500 py-8">
+        <RiLoader4Line className="w-5 h-5 animate-spin text-rose-600" />
+        <span className="text-xs font-bold">Carregando máquinas alugadas…</span>
       </div>
     )
   }
 
   return (
-    <section className="space-y-6 mb-10">
-      <div>
-        <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-pink-600" />
-          Máquinas alugadas
-        </h2>
-        <p className="text-sm text-gray-600 mt-1">
-          Datas reservadas no calendário desde o dia 1. O agendamento só abre quando você lança o banner.
-        </p>
+    <section className="space-y-4">
+      {/* Header com botão de configurações */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 sm:p-5 rounded-2xl border-2 border-slate-200 shadow-xs">
+        <div>
+          <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 flex items-center gap-2">
+            <RiCalendar2Fill className="w-5 h-5 text-rose-600" />
+            Máquinas Alugadas (Laser & Crio)
+          </h2>
+          <p className="text-xs font-semibold text-slate-500 mt-0.5">
+            Datas reservadas no calendário. O agendamento abre aos clientes após lançar o banner.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowSettingsModal(true)}
+          className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-extrabold transition-all active:scale-95 touch-manipulation cursor-pointer border border-slate-300 self-start sm:self-auto"
+          title="Configurar multas e janelas de cancelamento"
+        >
+          <RiSettings4Fill className="w-4 h-4 text-slate-600" />
+          <span>Políticas de Multa / Janela</span>
+        </button>
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-4">
-        {settings.map((s) => (
-          <div key={s.kind} className="rounded-xl border border-gray-200 p-4 bg-white space-y-3">
-            <div className="font-semibold text-gray-900">
-              {kindLabel(s.kind)}
-              <span className="ml-2 text-xs font-normal text-gray-500">
-                {s.exclusiveDay ? 'dia exclusivo' : 'dia compartilhado'} · default{' '}
-                {s.defaultRule === 'LAST_THURSDAY' ? 'última quinta' : '2º sábado'}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-3 items-end">
-              <label className="text-xs text-gray-600">
-                Multa tardia (%)
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  defaultValue={s.lateCancelFeePercent}
-                  id={`fee-${s.kind}`}
-                  className="mt-1 block w-24 px-2 py-1.5 border rounded-lg text-sm"
-                />
-              </label>
-              <label className="text-xs text-gray-600">
-                Janela (horas)
-                <input
-                  type="number"
-                  min={1}
-                  defaultValue={s.lateCancelHours}
-                  id={`hours-${s.kind}`}
-                  className="mt-1 block w-24 px-2 py-1.5 border rounded-lg text-sm"
-                />
-              </label>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const fee = Number((document.getElementById(`fee-${s.kind}`) as HTMLInputElement)?.value)
-                  const hours = Number((document.getElementById(`hours-${s.kind}`) as HTMLInputElement)?.value)
-                  void saveFee(s.kind, fee, hours)
-                }}
+      {/* Meses em Accordion */}
+      <div className="space-y-3">
+        {byMonth.map(([key, list]) => {
+          const [y, m] = key.split('-').map(Number)
+          const isExpanded = expandedMonths.includes(key)
+          const allDone = list.every(o => o.status === 'DONE' || o.status === 'CANCELED')
+          const monthTitle = `${MONTH_NAMES[m - 1]} de ${y}`
+
+          return (
+            <div
+              key={key}
+              className={`bg-white rounded-2xl border-2 transition-all shadow-xs overflow-hidden ${
+                allDone ? 'border-slate-200 opacity-90' : 'border-slate-200'
+              }`}
+            >
+              {/* Month Header / Toggle */}
+              <button
+                type="button"
+                onClick={() => toggleMonth(key)}
+                className={`w-full px-4 sm:px-5 py-3.5 flex items-center justify-between transition-colors text-left ${
+                  allDone
+                    ? 'bg-slate-50 hover:bg-slate-100'
+                    : 'bg-gradient-to-r from-rose-50/70 via-pink-50/30 to-white hover:from-rose-50'
+                }`}
               >
-                Salvar
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
-      <p className="text-xs text-gray-500">
-        Prazo da máquina (ex.: 24h): com esse tempo ou mais, a cliente escolhe reembolso integral ou crédito. Com menos (ex.: 20h), o estorno é em dinheiro com a multa — único caso sem crédito. Isso aparece no app ao cancelar o tratamento especial.
-      </p>
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-3 h-3 rounded-full ${allDone ? 'bg-slate-400' : 'bg-emerald-500 animate-pulse'}`} />
+                  <span className="font-extrabold text-slate-900 text-sm sm:text-base">
+                    {monthTitle}
+                  </span>
+                  {allDone && (
+                    <span className="px-2 py-0.5 bg-slate-200 text-slate-700 text-[10px] font-bold rounded-md">
+                      Encerrado
+                    </span>
+                  )}
+                </div>
 
-      {byMonth.map(([key, list]) => {
-        const [y, m] = key.split('-').map(Number)
-        return (
-          <div key={key} className="rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 border-b font-semibold text-gray-800">
-              {MONTH_NAMES[m - 1]} {y}
-            </div>
-            <div className="divide-y">
-              {list.map((occ) => {
-                const color =
-                  occ.kind === 'LASER' ? 'bg-purple-500' : 'bg-sky-500'
-                const canEdit = occ.status === 'HELD' || occ.status === 'RELEASED'
-                return (
-                  <div key={occ.id} className="p-4 flex flex-col lg:flex-row lg:items-center gap-4">
-                    <div className="flex items-center gap-3 min-w-[180px]">
-                      <span className={`w-3 h-3 rounded-full ${color}`} />
-                      <div>
-                        <div className="font-medium text-gray-900">{kindLabel(occ.kind)}</div>
-                        <div className="text-xs text-gray-500">{statusLabel(occ.status)}</div>
-                      </div>
-                    </div>
-                    <div className="flex-1">
-                      <label className="text-xs text-gray-500 block mb-1">Data reservada</label>
-                      <input
-                        type="date"
-                        value={occ.dateYmd}
-                        disabled={!canEdit || busyId === occ.id}
-                        min={`${occ.year}-${String(occ.month).padStart(2, '0')}-01`}
-                        max={`${occ.year}-${String(occ.month).padStart(2, '0')}-${String(new Date(occ.year, occ.month, 0).getDate()).padStart(2, '0')}`}
-                        onChange={(e) => void requestDateChange(occ, e.target.value)}
-                        className="px-3 py-2 border rounded-lg text-sm disabled:opacity-50"
-                      />
-                      <p className="text-[11px] text-gray-400 mt-1">
-                        Use o seletor; ao mudar, avisamos clientes afetados.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {occ.status === 'HELD' && (
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          disabled={busyId === occ.id}
-                          onClick={() =>
-                            setReleaseDraft({
-                              occId: occ.id,
-                              title:
-                                occ.kind === 'LASER'
-                                  ? 'Depilação a Laser — agende agora'
-                                  : 'Criolipólise — agende agora',
-                              imageUrl: occ.banner?.imageUrl || null,
-                            })
-                          }
-                        >
-                          Disponibilizar + banner
-                        </Button>
-                      )}
-                      {occ.status === 'RELEASED' && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={busyId === occ.id}
-                            onClick={() => void doUnrelease(occ)}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-400">
+                    {list.length} máquina(s)
+                  </span>
+                  <RiArrowDownSLine
+                    className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${
+                      isExpanded ? 'rotate-180' : ''
+                    }`}
+                  />
+                </div>
+              </button>
+
+              {/* Month Occurrences */}
+              {isExpanded && (
+                <div className="p-3 sm:p-4 divide-y divide-slate-100 bg-white">
+                  {list.map((occ) => {
+                    const isLaser = occ.kind === 'LASER'
+                    const canEdit = occ.status === 'HELD' || occ.status === 'RELEASED'
+                    const occurrenceDate = (() => {
+                      const [yr, mo, da] = occ.dateYmd.split('-').map(Number)
+                      return new Date(yr, mo - 1, da)
+                    })()
+
+                    return (
+                      <div
+                        key={occ.id}
+                        className="py-3.5 first:pt-1 last:pb-1 flex flex-col md:flex-row md:items-center justify-between gap-3.5"
+                      >
+                        {/* Info Machine */}
+                        <div className="flex items-center gap-3 min-w-[200px]">
+                          <div
+                            className={`w-10 h-10 rounded-2xl flex items-center justify-center font-extrabold text-xs shadow-xs text-white shrink-0 ${
+                              isLaser ? 'bg-purple-600' : 'bg-sky-600'
+                            }`}
                           >
-                            Pausar liberação
-                          </Button>
-                        </>
-                      )}
-                      {canEdit && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busyId === occ.id}
-                          onClick={() => void cancelMonth(occ)}
-                        >
-                          Cancelar mês
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })}
+                            {isLaser ? 'LASER' : 'CRIO'}
+                          </div>
+                          <div>
+                            <div className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
+                              <span>{kindLabel(occ.kind)}</span>
+                              <span
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                                  occ.status === 'RELEASED'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : occ.status === 'HELD'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {statusLabel(occ.status)}
+                              </span>
+                            </div>
+                            <div className="text-xs font-semibold text-slate-500 mt-0.5">
+                              {occ.dateYmd ? format(occurrenceDate, 'dd/MM/yyyy') : 'Data não definida'}
+                            </div>
+                          </div>
+                        </div>
 
-      <div className="flex flex-wrap gap-4 text-xs text-gray-600">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-purple-500" /> Laser
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-sky-500" /> Crio
-        </span>
-        <span className="text-gray-400">Fechado = horário da clínica (ex.: domingo)</span>
+                        {/* Datepicker do Sistema */}
+                        <div className="w-full md:w-64">
+                          <label className="text-[11px] font-bold text-slate-500 block mb-1">
+                            Alterar data reservada:
+                          </label>
+                          {canEdit ? (
+                            <DatePicker
+                              value={occurrenceDate}
+                              onChange={(d) => {
+                                if (d) {
+                                  const ymd = format(d, 'yyyy-MM-dd')
+                                  void requestDateChange(occ, ymd)
+                                }
+                              }}
+                              minDate={new Date(occ.year, occ.month - 1, 1)}
+                              maxDate={new Date(occ.year, occ.month, 0)}
+                              placeholder="Selecione a data"
+                            />
+                          ) : (
+                            <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-500">
+                              {format(occurrenceDate, 'dd/MM/yyyy')} (Fechado)
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
+                          {occ.status === 'HELD' && (
+                            <button
+                              type="button"
+                              disabled={busyId === occ.id}
+                              onClick={() =>
+                                setReleaseDraft({
+                                  occId: occ.id,
+                                  title:
+                                    occ.kind === 'LASER'
+                                      ? 'Depilação a Laser — agende agora'
+                                      : 'Criolipólise — agende agora',
+                                  imageUrl: occ.banner?.imageUrl || null,
+                                })
+                              }
+                              className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs active:scale-95 transition-all touch-manipulation cursor-pointer disabled:opacity-50"
+                            >
+                              Disponibilizar + banner
+                            </button>
+                          )}
+
+                          {occ.status === 'RELEASED' && (
+                            <button
+                              type="button"
+                              disabled={busyId === occ.id}
+                              onClick={() => void doUnrelease(occ)}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold active:scale-95 transition-all touch-manipulation cursor-pointer"
+                            >
+                              Pausar liberação
+                            </button>
+                          )}
+
+                          {canEdit && (
+                            <button
+                              type="button"
+                              disabled={busyId === occ.id}
+                              onClick={() => void cancelMonth(occ)}
+                              className="px-3 py-2 text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-bold transition-colors touch-manipulation cursor-pointer"
+                            >
+                              Cancelar mês
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
+      {/* Modal de Políticas de Máquinas (Multa & Janela) */}
+      <Modal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        title="Políticas de Máquinas (Multas & Janela)"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <p className="text-xs sm:text-sm text-slate-600">
+            Defina o prazo de cancelamento e porcentagem de multa retida para tratamentos especiais de máquinas alugadas.
+          </p>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            {settings.map((s) => (
+              <div key={s.kind} className="rounded-2xl border-2 border-slate-200 p-4 bg-slate-50/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-slate-900 text-base">
+                    {kindLabel(s.kind)}
+                  </span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-600">
+                    {s.exclusiveDay ? 'Dia Exclusivo' : 'Dia Compartilhado'}
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Multa Tardia (%)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      defaultValue={s.lateCancelFeePercent}
+                      id={`fee-${s.kind}`}
+                      className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl text-base sm:text-sm font-bold text-slate-900 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Janela Mínima (horas de antecedência)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      defaultValue={s.lateCancelHours}
+                      id={`hours-${s.kind}`}
+                      className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl text-base sm:text-sm font-bold text-slate-900 bg-white"
+                    />
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="w-full text-xs font-bold"
+                    onClick={() => {
+                      const fee = Number((document.getElementById(`fee-${s.kind}`) as HTMLInputElement)?.value)
+                      const hours = Number((document.getElementById(`hours-${s.kind}`) as HTMLInputElement)?.value)
+                      void saveFee(s.kind, fee, hours)
+                    }}
+                  >
+                    Salvar {kindLabel(s.kind)}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Preview Date Change */}
       {preview && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl">
+        <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border-2 border-slate-200">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="w-6 h-6 text-amber-500 flex-shrink-0" />
+              <RiAlertFill className="w-6 h-6 text-amber-500 flex-shrink-0" />
               <div>
-                <h3 className="font-bold text-gray-900">Clientes afetados</h3>
-                <p className="text-sm text-gray-600">
+                <h3 className="font-extrabold text-slate-900">Clientes afetados</h3>
+                <p className="text-xs sm:text-sm text-slate-600">
                   Ao mudar para {preview.newDate}, {preview.affected.length} agendamento(s) serão
                   cancelados e receberão crédito para remarcar.
                 </p>
               </div>
             </div>
-            <ul className="max-h-48 overflow-y-auto text-sm space-y-2 border rounded-lg p-3">
+            <ul className="max-h-48 overflow-y-auto text-sm space-y-2 border border-slate-200 rounded-xl p-3">
               {preview.affected.map((a) => (
-                <li key={a.appointmentId} className="border-b border-gray-100 pb-2 last:border-0">
-                  <strong>{a.clientName}</strong> — {a.serviceName}
-                  <div className="text-xs text-gray-500">{a.reason}</div>
+                <li key={a.appointmentId} className="border-b border-slate-100 pb-2 last:border-0">
+                  <strong className="text-slate-900">{a.clientName}</strong> — <span className="text-slate-600">{a.serviceName}</span>
+                  <div className="text-xs text-slate-400">{a.reason}</div>
                 </li>
               ))}
             </ul>
@@ -383,21 +533,30 @@ export function MachineRentalsSection() {
         </div>
       )}
 
+      {/* Modal Release Draft */}
       {releaseDraft && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
-            <h3 className="font-bold text-gray-900">Lançar banner e liberar</h3>
+        <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border-2 border-slate-200">
+            <div className="flex items-center justify-between">
+              <h3 className="font-extrabold text-slate-900">Lançar banner e liberar</h3>
+              <button
+                onClick={() => setReleaseDraft(null)}
+                className="p-1 hover:bg-slate-100 rounded-full text-slate-500"
+              >
+                <RiCloseLine className="w-5 h-5" />
+              </button>
+            </div>
             <input
               type="text"
               value={releaseDraft.title}
               onChange={(e) => setReleaseDraft({ ...releaseDraft, title: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
+              className="w-full px-3.5 py-2.5 border-2 border-slate-200 rounded-xl font-semibold text-sm text-slate-900 bg-white"
               placeholder="Título do banner"
             />
-            <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-6 cursor-pointer hover:border-pink-400">
-              <Upload className="w-6 h-6 text-gray-400 mb-2" />
-              <span className="text-sm text-gray-600">
-                {releaseDraft.imageUrl ? 'Imagem selecionada (trocar)' : 'Imagem 2:1 do banner'}
+            <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-2xl p-6 cursor-pointer hover:border-rose-400 bg-slate-50 transition-colors">
+              <RiUploadCloud2Fill className="w-8 h-8 text-rose-500 mb-2" />
+              <span className="text-xs font-bold text-slate-700 text-center">
+                {releaseDraft.imageUrl ? 'Imagem selecionada (clique para trocar)' : 'Selecionar Imagem 2:1 do banner'}
               </span>
               <input
                 type="file"
@@ -417,7 +576,7 @@ export function MachineRentalsSection() {
             </label>
             {releaseDraft.imageUrl && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={releaseDraft.imageUrl} alt="Preview" className="w-full rounded-lg aspect-[2/1] object-cover" />
+              <img src={releaseDraft.imageUrl} alt="Preview" className="w-full rounded-xl aspect-[2/1] object-cover border" />
             )}
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setReleaseDraft(null)}>

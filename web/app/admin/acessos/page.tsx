@@ -1,7 +1,16 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Shield, Trash2, Edit, Lock } from 'lucide-react'
+import {
+  RiAddLine,
+  RiShieldUserFill,
+  RiDeleteBin5Fill,
+  RiEdit2Fill,
+  RiLockFill,
+  RiCloseLine,
+  RiTeamFill,
+  RiUser3Fill,
+} from 'react-icons/ri'
 import { Button } from '@/components/Button'
 import { Input } from '@/components/Input'
 
@@ -34,121 +43,123 @@ export default function AcessosPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Gestão de Acessos</h2>
-          <p className="text-gray-600 mt-1">Gerencie os usuários com acesso ao painel administrativo</p>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Gestão de Acessos</h2>
+          <p className="text-xs sm:text-sm font-semibold text-slate-500 mt-0.5">Gerencie os usuários e permissões do painel administrativo</p>
         </div>
 
-        <Button variant="primary" onClick={() => setShowNewUserModal(true)}>
-          <Plus className="w-5 h-5 mr-2" />
+        <Button 
+          variant="primary" 
+          onClick={() => setShowNewUserModal(true)}
+          className="shadow-xs"
+        >
+          <RiAddLine className="w-4 h-4 mr-1.5" />
           Novo Usuário Admin
         </Button>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        <div className="bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl p-4 sm:p-5 text-white shadow-xs">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-gray-600 mb-1">Total de Admins</div>
-              <div className="text-3xl font-bold text-gray-900">{adminUsers.length}</div>
+              <div className="text-[10px] sm:text-xs font-bold text-white/80 uppercase tracking-wide mb-1">Total de Admins</div>
+              <div className="text-2xl sm:text-3xl font-extrabold">{adminUsers.length}</div>
             </div>
-            <Shield className="w-12 h-12 text-pink-600 opacity-20" />
+            <RiShieldUserFill className="w-10 h-10 text-white/20" />
           </div>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="bg-gradient-to-br from-rose-500 to-pink-600 rounded-2xl p-4 sm:p-5 text-white shadow-xs">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-gray-600 mb-1">Gestores</div>
-              <div className="text-3xl font-bold text-pink-600">
+              <div className="text-[10px] sm:text-xs font-bold text-white/80 uppercase tracking-wide mb-1">Gestores</div>
+              <div className="text-2xl sm:text-3xl font-extrabold">
                 {adminUsers.filter(u => u.role === 'MANAGER').length}
               </div>
             </div>
-            <Shield className="w-12 h-12 text-pink-600 opacity-20" />
+            <RiShieldUserFill className="w-10 h-10 text-white/20" />
           </div>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="bg-gradient-to-br from-sky-500 to-cyan-600 rounded-2xl p-4 sm:p-5 text-white shadow-xs">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-gray-600 mb-1">Equipe</div>
-              <div className="text-3xl font-bold text-blue-600">
+              <div className="text-[10px] sm:text-xs font-bold text-white/80 uppercase tracking-wide mb-1">Equipe</div>
+              <div className="text-2xl sm:text-3xl font-extrabold">
                 {adminUsers.filter(u => u.role === 'STAFF').length}
               </div>
             </div>
-            <Shield className="w-12 h-12 text-blue-600 opacity-20" />
+            <RiTeamFill className="w-10 h-10 text-white/20" />
           </div>
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-xs overflow-hidden">
         <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="px-6 py-3.5 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Usuário
               </th>
-              <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="px-6 py-3.5 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Username
               </th>
-              <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="px-6 py-3.5 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Perfil
               </th>
-              <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="px-6 py-3.5 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Último Acesso
               </th>
-              <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase">
+              <th className="px-6 py-3.5 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Ações
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody className="divide-y divide-slate-100">
             {adminUsers.map((user) => (
-              <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+              <tr key={user.id} className="hover:bg-slate-50/80 transition-colors">
                 <td className="px-6 py-4">
                   <div className="flex items-center">
-                    <div className="w-10 h-10 bg-pink-100 rounded-full flex items-center justify-center mr-3">
-                      <span className="text-pink-600 font-semibold">
-                        {user.name.charAt(0)}
-                      </span>
+                    <div className="w-9 h-9 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center mr-3 font-extrabold text-sm border border-rose-200 shadow-xs">
+                      {user.name.charAt(0)}
                     </div>
                     <div>
-                      <div className="font-medium text-gray-900">{user.name}</div>
-                      <div className="text-sm text-gray-500">{user.email}</div>
+                      <div className="font-bold text-slate-900 text-sm">{user.name}</div>
+                      <div className="text-xs text-slate-500 font-semibold">{user.email}</div>
                     </div>
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded text-pink  -800 font-mono">
+                  <code className="text-xs bg-slate-100 px-2.5 py-1 rounded-lg text-rose-700 font-mono font-bold border border-slate-200">
                     {user.username}
                   </code>
                 </td>
                 <td className="px-6 py-4">
                   <span
-                    className={`inline-flex px-3 py-1 text-xs font-medium rounded-full ${
+                    className={`inline-flex px-2.5 py-0.5 text-xs font-bold rounded-full border ${
                       user.role === 'MANAGER'
-                        ? 'bg-pink-100 text-pink-700'
-                        : 'bg-blue-100 text-blue-700'
+                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                        : 'bg-sky-50 text-sky-700 border-sky-200'
                     }`}
                   >
                     {user.role === 'MANAGER' ? 'Gestor' : 'Equipe'}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-sm text-gray-600">
+                <td className="px-6 py-4 text-xs font-semibold text-slate-500">
                   {user.lastAccess}
                 </td>
                 <td className="px-6 py-4">
-                  <div className="flex justify-end space-x-2">
-                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Editar">
-                      <Edit className="w-4 h-4 text-gray-600" />
+                  <div className="flex justify-end space-x-1.5">
+                    <button className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-slate-800" title="Editar">
+                      <RiEdit2Fill className="w-4 h-4" />
                     </button>
-                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Redefinir senha">
-                      <Lock className="w-4 h-4 text-gray-600" />
+                    <button className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-slate-800" title="Redefinir senha">
+                      <RiLockFill className="w-4 h-4" />
                     </button>
                     {user.username !== 'sonia.santana' && (
-                      <button className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Excluir">
-                        <Trash2 className="w-4 h-4 text-red-600" />
+                      <button className="p-1.5 hover:bg-rose-50 rounded-lg transition-colors text-rose-600" title="Excluir">
+                        <RiDeleteBin5Fill className="w-4 h-4" />
                       </button>
                     )}
                   </div>
@@ -161,11 +172,19 @@ export default function AcessosPage() {
 
       {/* New User Modal */}
       {showNewUserModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">
-              Criar Novo Usuário Admin
-            </h3>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 pb-24 sm:pb-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-extrabold text-slate-900">
+                Criar Novo Usuário Admin
+              </h3>
+              <button
+                onClick={() => setShowNewUserModal(false)}
+                className="p-1 hover:bg-slate-100 rounded-full text-slate-400"
+              >
+                <RiCloseLine className="w-5 h-5" />
+              </button>
+            </div>
 
             <form className="space-y-4">
               <Input
@@ -194,20 +213,20 @@ export default function AcessosPage() {
               />
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Perfil de Acesso
                 </label>
-                <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500">
+                <select className="w-full px-3.5 py-2.5 border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs sm:text-sm font-semibold text-slate-800 bg-white">
                   <option value="MANAGER">Gestor (acesso total)</option>
                   <option value="STAFF">Equipe (acesso limitado)</option>
                 </select>
               </div>
 
-              <div className="flex space-x-3 pt-4">
+              <div className="flex gap-2.5 pt-3">
                 <Button
                   type="button"
                   variant="outline"
-                  className="flex-1"
+                  className="flex-1 text-xs font-bold"
                   onClick={() => setShowNewUserModal(false)}
                 >
                   Cancelar
@@ -215,7 +234,7 @@ export default function AcessosPage() {
                 <Button
                   type="submit"
                   variant="primary"
-                  className="flex-1"
+                  className="flex-1 text-xs font-bold shadow-xs"
                 >
                   Criar Usuário
                 </Button>

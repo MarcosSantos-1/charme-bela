@@ -2,12 +2,35 @@
 
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useEffect, useState } from 'react'
-import { Calendar, Users, DollarSign, TrendingUp, Clock, Sparkles, Bell, CheckCircle, AlertCircle, Plus, UserPlus, X as XIcon, Check, Ban, Edit, Gift, Activity, CreditCard, UserCheck, Cake, Banknote } from 'lucide-react'
+import {
+  RiCalendarEventFill,
+  RiCalendar2Fill,
+  RiUserAddFill,
+  RiTeamFill,
+  RiMoneyDollarCircleFill,
+  RiLineChartFill,
+  RiTimeFill,
+  RiSparklingFill,
+  RiNotification3Fill,
+  RiCheckboxCircleFill,
+  RiAlertFill,
+  RiCloseLine,
+  RiCheckFill,
+  RiEdit2Fill,
+  RiGiftFill,
+  RiPulseFill,
+  RiBankCardFill,
+  RiCake2Fill,
+  RiHandCoinFill,
+  RiArrowRightLine,
+  RiCalendarScheduleFill,
+} from 'react-icons/ri'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useRouter } from 'next/navigation'
 import * as api from '@/lib/api'
 import toast from 'react-hot-toast'
+import { useConfirm } from '@/hooks/useConfirm'
 import { NovoAgendamentoModal } from '@/components/admin/NovoAgendamentoModal'
 import { AdicionarClienteModal } from '@/components/admin/AdicionarClienteModal'
 import { DarVoucherModal } from '@/components/admin/DarVoucherModal'
@@ -34,6 +57,8 @@ interface TodayAppointment {
   startTime?: string
   machineKind?: 'LASER' | 'CRYO' | null
   cancelPolicy?: api.Appointment['cancelPolicy']
+  packageSessionIndex?: number | null
+  packageSessionCount?: number | null
 }
 
 interface RecentActivity {
@@ -41,7 +66,7 @@ interface RecentActivity {
   type: 'appointment' | 'payment' | 'client' | 'subscription'
   description: string
   time: string
-  icon: 'calendar' | 'dollar' | 'user' | 'star'
+  icon: string
 }
 
 interface Birthday {
@@ -73,6 +98,7 @@ export default function AdminDashboard() {
   const [selectedAppointment, setSelectedAppointment] = useState<TodayAppointment | null>(null)
 
   const todayDate = format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR })
+  const currentMonthName = format(new Date(), 'MMMM', { locale: ptBR })
 
   // Dados do backend
   const [todayAppointments, setTodayAppointments] = useState<TodayAppointment[]>([])
@@ -84,13 +110,31 @@ export default function AdminDashboard() {
     loadDashboardData()
   }, [])
 
+  const isSunday = new Date().getDay() === 0
+
   const loadDashboardData = async () => {
     setLoading(true)
     try {
+      const now = new Date()
+      const isSundayToday = now.getDay() === 0
+      
+      let appointmentsPromise: Promise<any[]>
+      if (isSundayToday) {
+        // Domingo é dia de folga da clínica: carregar os agendamentos de amanhã (Segunda-feira)
+        const tomorrowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0)
+        const tomorrowEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 23, 59, 59)
+        appointmentsPromise = api.getAppointments({
+          startDate: tomorrowStart.toISOString(),
+          endDate: tomorrowEnd.toISOString()
+        })
+      } else {
+        appointmentsPromise = api.getTodayAppointments()
+      }
+
       // Buscar dados em paralelo
       const [statsData, appointmentsData, birthdaysData] = await Promise.all([
         api.getDashboardStats(),
-        api.getTodayAppointments(),
+        appointmentsPromise,
         api.getUpcomingBirthdays()
       ])
 
@@ -109,8 +153,8 @@ export default function AdminDashboard() {
         return {
           id: apt.id,
           time,
-          clientName: apt.user.name,
-          service: apt.service.name,
+          clientName: apt.user?.name || 'Cliente',
+          service: apt.service?.name || 'Serviço',
           status: apt.status === 'PENDING' ? 'pending' as const :
                   apt.status === 'CONFIRMED' ? 'confirmed' as const :
                   apt.status === 'COMPLETED' ? 'completed' as const : 'pending' as const,
@@ -120,6 +164,8 @@ export default function AdminDashboard() {
           startTime: apt.startTime,
           machineKind: apt.service?.machineKind,
           cancelPolicy: apt.cancelPolicy,
+          packageSessionIndex: apt.packageSessionIndex,
+          packageSessionCount: apt.packagePurchase?.sessionCount,
         }
       }))
       setUpcomingBirthdays(birthdaysData.map(b => {
@@ -139,17 +185,13 @@ export default function AdminDashboard() {
           limit: 10
         })
         
-        // Importar função helper
         const { formatTimeAgo } = await import('@/lib/timeUtils')
         
-        // Mapear notificações para formato de atividades
         const activities = adminNotifications.map(notif => {
           const timeAgo = formatTimeAgo(notif.createdAt)
           
-          // Mapear tipo de notificação para tipo de atividade
           let activityType: 'appointment' | 'payment' | 'client' | 'subscription' = 'appointment'
-          // Priorizar PAYMENT primeiro
-          if (notif.type.includes('PAYMENT')) activityType = 'subscription' // Pagamentos aparecem como subscription no dashboard resumido
+          if (notif.type.includes('PAYMENT')) activityType = 'subscription'
           else if (notif.type.includes('SUBSCRIPTION') || notif.type.includes('PLAN')) activityType = 'subscription'
           else if (notif.type.includes('CLIENT') || notif.type.includes('REGISTERED')) activityType = 'client'
           
@@ -174,15 +216,15 @@ export default function AdminDashboard() {
     }
   }
 
+  const { confirm, ConfirmDialogComponent } = useConfirm()
+
   const handleComplete = async (appointment: TodayAppointment) => {
     if (loadingAction) return
     
     setLoadingAction(true)
     try {
       await api.completeAppointment(appointment.id, false)
-      toast.success(`Consulta de ${appointment.clientName} finalizada! ✅`)
-      
-      // Recarregar dados
+      toast.success(`Atendimento de ${appointment.clientName} finalizado!`)
       loadDashboardData()
     } catch (error) {
       console.error('Erro ao finalizar agendamento:', error)
@@ -192,15 +234,25 @@ export default function AdminDashboard() {
     }
   }
 
+  const requestComplete = async (appointment: TodayAppointment) => {
+    const confirmed = await confirm({
+      title: 'Concluir Atendimento?',
+      message: `Deseja marcar o atendimento de ${appointment.clientName} (${appointment.service}) como concluído?`,
+      confirmText: 'Sim, Concluir',
+      cancelText: 'Voltar',
+      type: 'info'
+    })
+    if (!confirmed) return
+    handleComplete(appointment)
+  }
+
   const handleCompletePaid = async (appointment: TodayAppointment) => {
     if (loadingAction) return
     
     setLoadingAction(true)
     try {
       await api.completeAppointment(appointment.id, true)
-      toast.success(`Pagamento recebido e agendamento concluído! ✅`)
-      
-      // Recarregar dados
+      toast.success(`Pagamento registrado e agendamento concluído!`)
       loadDashboardData()
     } catch (error) {
       console.error('Erro ao concluir agendamento:', error)
@@ -210,413 +262,494 @@ export default function AdminDashboard() {
     }
   }
 
+  const requestCompletePaid = async (appointment: TodayAppointment) => {
+    const formattedAmount = appointment.paymentAmount
+      ? `R$ ${appointment.paymentAmount.toFixed(2).replace('.', ',')}`
+      : 'o valor pendente'
+    const confirmed = await confirm({
+      title: 'Receber e Concluir?',
+      message: `Confirmar recebimento de ${formattedAmount} e concluir a consulta de ${appointment.clientName}?`,
+      confirmText: 'Receber & Concluir',
+      cancelText: 'Voltar',
+      type: 'info'
+    })
+    if (!confirmed) return
+    handleCompletePaid(appointment)
+  }
+
   const handleOpenReagendarCancelar = (appointment: TodayAppointment) => {
     setSelectedAppointment(appointment)
     setShowReagendarCancelarModal(true)
   }
 
-  const handleReagendarCancelarSuccess = () => {
-    // Recarregar dados após reagendar ou cancelar
-    loadDashboardData()
-    setShowReagendarCancelarModal(false)
-    setSelectedAppointment(null)
-  }
-
   const getActivityIcon = (icon: string) => {
     switch (icon) {
-      case 'calendar': return <Calendar className="w-4 h-4" />
-      case 'dollar': return <DollarSign className="w-4 h-4" />
-      case 'user': return <UserCheck className="w-4 h-4" />
-      case 'star': return <Sparkles className="w-4 h-4" />
-      default: return <Activity className="w-4 h-4" />
+      case 'calendar': return <RiCalendar2Fill className="w-4 h-4" />
+      case 'dollar': return <RiMoneyDollarCircleFill className="w-4 h-4" />
+      case 'user': return <RiTeamFill className="w-4 h-4" />
+      case 'star': return <RiSparklingFill className="w-4 h-4" />
+      default: return <RiPulseFill className="w-4 h-4" />
     }
   }
 
   const getActivityColor = (type: string) => {
     switch (type) {
-      case 'appointment': return 'bg-blue-100 text-blue-600'
-      case 'payment': return 'bg-green-100 text-green-600'
-      case 'client': return 'bg-purple-100 text-purple-600'
-      case 'subscription': return 'bg-pink-100 text-pink-600'
-      default: return 'bg-gray-100 text-gray-600'
+      case 'appointment': return 'bg-blue-600 text-white'
+      case 'payment': return 'bg-emerald-600 text-white'
+      case 'client': return 'bg-purple-600 text-white'
+      case 'subscription': return 'bg-rose-600 text-white'
+      default: return 'bg-slate-700 text-white'
     }
   }
 
   return (
     <ProtectedRoute requiredRole="MANAGER">
-      <div className="min-h-screen bg-gray-50">
+      <div className="w-full">
+        {ConfirmDialogComponent}
+
         {loading ? (
-          <div className="flex items-center justify-center min-h-screen">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Carregando dashboard...</p>
-            </div>
+          <div className="flex flex-col items-center justify-center min-h-[60vh]">
+            <div className="w-12 h-12 rounded-full border-3 border-rose-600 border-t-transparent animate-spin mb-4"></div>
+            <p className="text-sm font-semibold text-slate-600">Carregando painel da clínica...</p>
           </div>
         ) : (
-        <div className="p-4 md:p-8 max-w-7xl mx-auto">
-          {/* Header com Ações Rápidas */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 md:mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Bem-vinda!</h1>
-              <p className="text-gray-600 capitalize">{todayDate}</p>
-            </div>
-            
-            {/* Botões de Ação Rápida */}
-            <div className="flex flex-wrap gap-3 mt-4 md:mt-0">
-              <button
-                onClick={() => setShowNovoAgendamentoModal(true)}
-                className="flex items-center px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors shadow-sm"
-              >
-                <Plus className="w-5 h-5 mr-2" />
-                Novo Agendamento
-              </button>
-              <button
-                onClick={() => setShowAdicionarClienteModal(true)}
-                className="flex items-center px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-              >
-                <UserPlus className="w-5 h-5 mr-2" />
-                Adicionar Cliente
-              </button>
-            </div>
-          </div>
-
-          {/* Grid de Conteúdo */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Coluna Principal (2/3) */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Agendamentos de Hoje */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900">Agendamentos de Hoje</h2>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {stats.completedToday}/{stats.todayAppointments} concluídos
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => router.push('/admin/agendamentos')}
-                    className="text-pink-600 text-sm font-medium hover:text-pink-700"
-                  >
-                    Ver todos →
-                  </button>
+          <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
+            {/* Top Greeting & Mobile-First Quick Actions */}
+            <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-slate-200/80 shadow-sm">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+                    Olá! Tenha um ótimo dia
+                  </h1>
+                  <p className="text-xs sm:text-sm font-medium text-slate-500 capitalize mt-0.5">
+                    {todayDate}
+                  </p>
                 </div>
 
-                <div className="space-y-3 -mx-3 sm:mx-0">
-                  {todayAppointments.map((appointment) => {
-                    // Determinar tipo de agendamento
-                    const isAdminPending = appointment.origin === 'ADMIN_CREATED' && appointment.paymentStatus === 'PENDING' // Admin criou, pagar na clínica
-                    const isClientSingle = appointment.origin === 'SINGLE' // Cliente avulso (vai pagar no checkout)
-                    const isSubscription = appointment.origin === 'SUBSCRIPTION' // Do plano
-                    const isPackage = appointment.origin === 'PACKAGE'
-                    
-                    // Definir cores baseado no tipo
-                    let bgGradient = 'bg-gradient-to-r from-white to-gray-50'
-                    let borderColor = 'border-gray-200'
-                    let timeBg = 'bg-pink-50'
-                    let timeColor = 'text-pink-600'
-                    
-                    if (isAdminPending) {
-                      bgGradient = 'bg-gradient-to-r from-yellow-50 to-orange-50'
-                      borderColor = 'border-yellow-400'
-                      timeBg = 'bg-yellow-100'
-                      timeColor = 'text-yellow-700'
-                    } else if (isSubscription) {
-                      bgGradient = 'bg-gradient-to-r from-purple-50 to-purple-100'
-                      borderColor = 'border-purple-300'
-                      timeBg = 'bg-purple-100'
-                      timeColor = 'text-purple-700'
-                    } else if (isPackage) {
-                      bgGradient = 'bg-gradient-to-r from-orange-50 to-amber-50'
-                      borderColor = 'border-orange-300'
-                      timeBg = 'bg-orange-100'
-                      timeColor = 'text-orange-700'
-                    } else if (isClientSingle) {
-                      bgGradient = 'bg-gradient-to-r from-blue-50 to-blue-100'
-                      borderColor = 'border-blue-300'
-                      timeBg = 'bg-blue-100'
-                      timeColor = 'text-blue-700'
-                    }
-                    
-                    return (
-                    <div
-                      key={appointment.id}
-                        className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 sm:rounded-xl rounded-none border-2 hover:shadow-md transition-all min-h-[100px] sm:min-h-[90px] ${bgGradient} ${borderColor}`}
-                    >
-                      <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
-                          <div className={`text-center min-w-[56px] rounded-lg p-2 flex-shrink-0 ${timeBg}`}>
-                            <div className={`text-base sm:text-lg font-bold ${timeColor}`}>{appointment.time}</div>
-                        </div>
-                          <div className="hidden sm:block h-12 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent flex-shrink-0"></div>
-                        <div className="flex-1 min-w-0">
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
-                              <div className="font-semibold text-gray-900 text-sm sm:text-base truncate">{appointment.clientName}</div>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                              {isAdminPending && (
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-yellow-200 text-yellow-800 whitespace-nowrap">
-                                  💰 Pagar
-                                </span>
-                              )}
-                              {isSubscription && (
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-purple-200 text-purple-800 whitespace-nowrap">
-                                  ✨ Plano
-                                </span>
-                              )}
-                              {isPackage && (
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-orange-200 text-orange-800 whitespace-nowrap">
-                                  🎁 Pacote
-                                </span>
-                              )}
-                              {isClientSingle && (
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-blue-200 text-blue-800 whitespace-nowrap">
-                                  💳 Avulso
-                                </span>
-                              )}
-                              </div>
-                            </div>
-                            <div className="text-xs sm:text-sm text-gray-600 flex items-center mt-1 truncate">
-                              <Sparkles className="w-3 h-3 mr-1 text-pink-500 flex-shrink-0" />
-                              <span className="truncate">{appointment.service}</span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Status e Ações */}
-                      <div className="flex items-center gap-2 mt-3 sm:mt-0 sm:ml-3 flex-shrink-0">
-                        {appointment.status === 'completed' ? (
-                          <span className="flex items-center px-2.5 sm:px-3 py-1.5 sm:py-2 bg-green-100 text-green-700 rounded-lg text-xs font-semibold shadow-sm">
-                            <CheckCircle className="w-4 h-4 mr-1.5" />
-                            Concluído
-                          </span>
-                        ) : (
-                          <>
-                            {/* Badge de Status - apenas desktop */}
-                            <span className={`hidden sm:flex items-center px-3 py-2 rounded-lg text-xs font-semibold shadow-sm ${
-                              appointment.status === 'pending' 
-                                ? 'bg-yellow-100 text-yellow-700' 
-                                : 'bg-blue-100 text-blue-700'
-                            }`}>
-                              <AlertCircle className="w-4 h-4 mr-1.5" />
-                              {appointment.status === 'pending' ? 'Pendente' : 'Confirmado'}
-                            </span>
-                            
-                            {/* Botões de Ação */}
-                            <div className="flex gap-2">
-                              {isAdminPending ? (
-                                <button
-                                  onClick={() => handleCompletePaid(appointment)}
-                                  disabled={loadingAction}
-                                  className="px-3 py-2.5 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                                  title="Marcar como Pago e Concluído"
-                                >
-                                  {loadingAction ? (
-                                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent" />
-                                  ) : (
-                                    <Banknote className="w-5 h-5" />
-                                  )}
-                                  <span className="text-xs font-semibold">Pago</span>
-                                </button>
-                              ) : (
-                              <button
-                                onClick={() => handleComplete(appointment)}
-                                disabled={loadingAction}
-                                  className="px-3 py-2.5 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 hover:scale-105 active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                                  title="Finalizar consulta"
-                              >
-                                {loadingAction ? (
-                                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent" />
-                                ) : (
-                                  <Check className="w-5 h-5" />
-                                )}
-                                <span className="text-xs font-semibold hidden sm:inline">Concluir</span>
-                              </button>
-                            )}
-                            <button
-                                onClick={() => handleOpenReagendarCancelar(appointment)}
-                                disabled={loadingAction}
-                                className="p-2.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 hover:scale-105 active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="Reagendar ou Cancelar"
-                            >
-                              <Edit className="w-5 h-5" />
-                            </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Atividades Recentes */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-bold text-gray-900">Atividades Recentes</h2>
+                {/* Top Action Buttons: Mobile First Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full md:w-auto">
+                  {/* Botão Principal: Novo Agendamento */}
                   <button
-                    onClick={() => router.push('/admin/atividades')}
-                    className="text-pink-600 text-sm font-medium hover:text-pink-700"
+                    onClick={() => setShowNovoAgendamentoModal(true)}
+                    className="flex items-center justify-center gap-2.5 px-4 py-3 sm:py-2.5 bg-gradient-to-r from-rose-600 via-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-bold text-sm rounded-xl sm:rounded-2xl shadow-md shadow-rose-600/25 active:scale-[0.98] transition-all touch-manipulation cursor-pointer"
                   >
-                    Ver todas →
+                    <RiCalendarEventFill className="w-5 h-5 flex-shrink-0 text-white" />
+                    <span>Novo Agendamento</span>
                   </button>
-                </div>
 
-                <div className="space-y-3">
-                  {recentActivities.map((activity) => (
-                    <div
-                      key={activity.id}
-                      onClick={() => router.push('/admin/atividades')}
-                      className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${getActivityColor(activity.type)}`}>
-                          {getActivityIcon(activity.icon)}
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{activity.description}</div>
-                          <div className="text-xs text-gray-500">{activity.time}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Sidebar (1/3) */}
-            <div className="space-y-6">
-              {/* Ações Rápidas */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h3 className="font-semibold text-gray-900 mb-4">Ações Rápidas</h3>
-                <div className="space-y-3">
-                  <button
-                    onClick={() => router.push('/admin/servicos')}
-                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors text-left"
-                  >
-                    <div className="flex items-center">
-                      <Sparkles className="w-5 h-5 text-pink-600 mr-3" />
-                      <span className="text-gray-700 font-medium">Gerenciar Serviços</span>
-                    </div>
-                    <span className="text-gray-400">→</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => setShowVoucherModal(true)}
-                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors text-left"
-                  >
-                    <div className="flex items-center">
-                      <Gift className="w-5 h-5 text-purple-600 mr-3" />
-                      <span className="text-gray-700 font-medium">Criar Voucher</span>
-                    </div>
-                    <span className="text-gray-400">→</span>
-                  </button>
-                  
+                  {/* Botão em Destaque: Agenda Semanal (Gerenciar Horários da Mãe) */}
                   <button
                     onClick={() => setShowHorariosModal(true)}
-                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors text-left"
+                    className="flex items-center justify-center gap-2.5 px-4 py-3 sm:py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm rounded-xl sm:rounded-2xl shadow-sm active:scale-[0.98] transition-all touch-manipulation cursor-pointer group"
+                    title="Definir disponibilidade e horários da semana"
                   >
-                    <div className="flex items-center">
-                      <Clock className="w-5 h-5 text-gray-600 mr-3" />
-                      <span className="text-gray-700 font-medium">Gerenciar Horários</span>
-                    </div>
-                    <span className="text-gray-400">→</span>
+                    <RiCalendarScheduleFill className="w-5 h-5 flex-shrink-0 text-amber-400 group-hover:scale-110 transition-transform" />
+                    <span>Agenda Semanal</span>
                   </button>
-                </div>
-              </div>
 
-              {/* Aniversariantes do Mês */}
-              <div className="bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl border border-pink-200 p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-semibold text-gray-900 flex items-center">
-                    <Cake className="w-5 h-5 text-pink-600 mr-2" />
-                    Aniversariantes
-                  </h3>
+                  {/* Botão: Adicionar Cliente */}
                   <button
-                    onClick={() => setShowBirthdaysModal(true)}
-                    className="text-pink-600 text-sm font-medium hover:text-pink-700"
+                    onClick={() => setShowAdicionarClienteModal(true)}
+                    className="flex items-center justify-center gap-2.5 px-4 py-3 sm:py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm rounded-xl sm:rounded-2xl border border-slate-300/80 active:scale-[0.98] transition-all touch-manipulation cursor-pointer"
                   >
-                    Ver todos
+                    <RiUserAddFill className="w-5 h-5 flex-shrink-0 text-slate-700" />
+                    <span>Adicionar Cliente</span>
                   </button>
-                </div>
-                <div className="space-y-3">
-                  {upcomingBirthdays.slice(0, 3).map((birthday) => (
-                    <div
-                      key={birthday.id}
-                      className="flex items-center justify-between p-3 bg-white rounded-lg"
-                    >
-                      <div>
-                        <div className="font-medium text-gray-900 text-sm">{birthday.name}</div>
-                        <div className="text-xs text-gray-500">{birthday.age} anos</div>
-                      </div>
-                      <div className="text-pink-600 font-bold text-sm">{birthday.date}</div>
-                    </div>
-                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Stats Cards - Abaixo dos Agendamentos */}
-            <div className="lg:col-span-3 grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Total Clientes */}
-              <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-                    <Users className="w-6 h-6" />
+            {/* Grid Principal de Conteúdo */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+              {/* Coluna Principal (2/3 no desktop) */}
+              <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+                {/* Agendamentos de Hoje / Amanhã se Domingo */}
+                <div className="bg-white rounded-2xl sm:rounded-3xl shadow-sm border border-slate-200/80 p-3.5 sm:p-6">
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2.5 h-2.5 rounded-full ${isSunday ? 'bg-indigo-500' : 'bg-emerald-500'} animate-pulse`}></div>
+                        <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
+                          {isSunday ? 'Agendamentos de Segunda (Amanhã)' : 'Agendamentos de Hoje'}
+                        </h2>
+                      </div>
+                      <p className="text-xs font-semibold text-slate-500 mt-0.5">
+                        {isSunday ? (
+                          <span>Hoje é domingo (folga da clínica) • <strong className="text-indigo-700">{todayAppointments.length}</strong> agendamento(s) amanhã</span>
+                        ) : (
+                          <span><strong className="text-emerald-700">{stats.completedToday}</strong> de <strong className="text-slate-800">{stats.todayAppointments}</strong> consultas concluídas</span>
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => router.push('/admin/agendamentos')}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition-colors"
+                    >
+                      <span>Ver agenda</span>
+                      <RiArrowRightLine className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <TrendingUp className="w-5 h-5 text-white/60" />
+
+                  {todayAppointments.length === 0 ? (
+                    <div className="text-center py-10 px-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                      <RiCalendar2Fill className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                      <p className="text-sm font-bold text-slate-700">
+                        {isSunday ? 'Nenhum agendamento para segunda-feira' : 'Nenhum agendamento para hoje'}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">Clique em "Novo Agendamento" para adicionar uma cliente.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {todayAppointments.map((appointment) => {
+                        const isAdminPending = appointment.origin === 'ADMIN_CREATED' && appointment.paymentStatus === 'PENDING'
+                        const isClientSingle = appointment.origin === 'SINGLE'
+                        const isSubscription = appointment.origin === 'SUBSCRIPTION'
+                        const isPackage = appointment.origin === 'PACKAGE'
+                        const packageSessionLabel = appointment.packageSessionIndex
+                          ? `(${appointment.packageSessionIndex}/${appointment.packageSessionCount || 5}ª Sessão)`
+                          : ''
+                        
+                        // Cores fortes e vibrantes
+                        let cardBg = 'bg-white hover:bg-slate-50/80'
+                        let cardBorder = 'border-slate-200'
+                        let timeBg = 'bg-slate-900 text-white'
+                        
+                        if (isAdminPending) {
+                          cardBg = 'bg-gradient-to-r from-amber-500/10 via-amber-50/40 to-white'
+                          cardBorder = 'border-amber-300 ring-1 ring-amber-400/20'
+                          timeBg = 'bg-amber-600 text-white'
+                        } else if (isSubscription) {
+                          cardBg = 'bg-gradient-to-r from-violet-500/10 via-purple-50/40 to-white'
+                          cardBorder = 'border-violet-300'
+                          timeBg = 'bg-violet-700 text-white'
+                        } else if (isPackage) {
+                          cardBg = 'bg-gradient-to-r from-orange-500/10 via-orange-50/40 to-white'
+                          cardBorder = 'border-orange-300'
+                          timeBg = 'bg-orange-600 text-white'
+                        } else if (isClientSingle) {
+                          cardBg = 'bg-gradient-to-r from-blue-500/10 via-blue-50/40 to-white'
+                          cardBorder = 'border-blue-300'
+                          timeBg = 'bg-blue-600 text-white'
+                        }
+                        
+                        return (
+                          <div
+                            key={appointment.id}
+                            className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 sm:p-4 rounded-2xl border-2 transition-all shadow-xs ${cardBg} ${cardBorder}`}
+                          >
+                            {/* Left: Time & Client Info */}
+                            <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                              {/* Bold Time Badge */}
+                              <div className={`px-2.5 py-1.5 sm:py-2 rounded-xl text-center flex-shrink-0 shadow-xs ${timeBg}`}>
+                                <div className="text-sm sm:text-base font-extrabold tracking-tight">{appointment.time}</div>
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="font-bold text-slate-900 text-sm sm:text-base truncate">
+                                    {appointment.clientName}
+                                  </span>
+
+                                  {/* Strong Contrast Origin Badges */}
+                                  {isAdminPending && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-amber-500 text-white shadow-xs">
+                                      <RiHandCoinFill className="w-3 h-3" />
+                                      Pagar na Clínica
+                                    </span>
+                                  )}
+                                  {isSubscription && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-violet-600 text-white shadow-xs">
+                                      <RiSparklingFill className="w-3 h-3" />
+                                      Plano VIP
+                                    </span>
+                                  )}
+                                  {isPackage && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-orange-600 text-white shadow-xs">
+                                      <RiGiftFill className="w-3 h-3" />
+                                      Pacote {packageSessionLabel}
+                                    </span>
+                                  )}
+                                  {isClientSingle && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-blue-600 text-white shadow-xs">
+                                      <RiBankCardFill className="w-3 h-3" />
+                                      Avulso
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="text-xs font-semibold text-slate-600 flex items-center gap-1.5 mt-1 truncate">
+                                  <RiSparklingFill className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+                                  <span className="truncate">{appointment.service}</span>
+                                  {isPackage && packageSessionLabel && (
+                                    <span className="text-[11px] font-bold text-orange-700 bg-orange-100/80 px-1.5 py-0.2 rounded shrink-0">
+                                      {packageSessionLabel}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Right: Actions */}
+                            <div className="flex items-center justify-end gap-2.5 mt-3 sm:mt-0 sm:ml-4 flex-shrink-0 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-slate-200/60">
+                              {appointment.status === 'completed' ? (
+                                <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-extrabold">
+                                  <RiCheckboxCircleFill className="w-4 h-4 text-emerald-600" />
+                                  Concluído
+                                </span>
+                              ) : (
+                                <>
+                                  {/* Botão de Conclusão / Pagamento */}
+                                  {isAdminPending ? (
+                                    <button
+                                      onClick={() => requestCompletePaid(appointment)}
+                                      disabled={loadingAction}
+                                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm active:scale-95 transition-all disabled:opacity-50 touch-manipulation cursor-pointer"
+                                      title="Receber Pagamento e Concluir Consulta"
+                                    >
+                                      {loadingAction ? (
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                      ) : (
+                                        <RiHandCoinFill className="w-4 h-4" />
+                                      )}
+                                      <span>Receber & Concluir</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => requestComplete(appointment)}
+                                      disabled={loadingAction}
+                                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm active:scale-95 transition-all disabled:opacity-50 touch-manipulation cursor-pointer"
+                                      title="Finalizar consulta"
+                                    >
+                                      {loadingAction ? (
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                      ) : (
+                                        <RiCheckFill className="w-4 h-4" />
+                                      )}
+                                      <span>Concluir</span>
+                                    </button>
+                                  )}
+
+                                  {/* Botão Editar em Destaque com espaçamento */}
+                                  <button
+                                    onClick={() => handleOpenReagendarCancelar(appointment)}
+                                    disabled={loadingAction}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border-2 border-slate-300/80 hover:border-slate-400 rounded-xl text-xs font-extrabold shadow-xs active:scale-95 transition-all disabled:opacity-50 touch-manipulation cursor-pointer"
+                                    title="Editar, Reagendar ou Cancelar"
+                                  >
+                                    <RiEdit2Fill className="w-3.5 h-3.5 text-slate-600" />
+                                    <span>Editar</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
-                <div className="text-3xl font-bold mb-1">{stats.totalClients}</div>
-                <div className="text-blue-100 text-sm font-medium">Total de Clientes</div>
+
+                {/* Atividades Recentes */}
+                <div className="bg-white rounded-2xl sm:rounded-3xl shadow-sm border border-slate-200/80 p-4 sm:p-6">
+                  <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+                    <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
+                      Atividades Recentes
+                    </h2>
+                    <button
+                      onClick={() => router.push('/admin/atividades')}
+                      className="text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition-colors"
+                    >
+                      Ver todas →
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {recentActivities.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-4 text-center">Nenhuma atividade recente registrada.</p>
+                    ) : (
+                      recentActivities.slice(0, 5).map((activity) => (
+                        <div
+                          key={activity.id}
+                          onClick={() => router.push('/admin/atividades')}
+                          className="flex items-center justify-between p-2.5 sm:p-3 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center space-x-3 min-w-0">
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 shadow-xs ${getActivityColor(activity.type)}`}>
+                              {getActivityIcon(activity.icon)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs sm:text-sm font-bold text-slate-900 truncate">{activity.description}</div>
+                              <div className="text-[11px] font-medium text-slate-500">{activity.time}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
 
-              {/* Agendamentos Hoje */}
-              <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-                    <Calendar className="w-6 h-6" />
+              {/* Coluna Lateral (1/3 no desktop) */}
+              <div className="space-y-4 sm:space-y-6">
+                {/* Gestão Rápida / Ações da Clínica */}
+                <div className="bg-white rounded-2xl sm:rounded-3xl shadow-sm border border-slate-200/80 p-4 sm:p-6">
+                  <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider mb-3">
+                    Acesso Rápido
+                  </h3>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setShowHorariosModal(true)}
+                      className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-indigo-50/60 rounded-xl border border-slate-200/80 transition-all text-left group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                          <RiCalendarScheduleFill className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-slate-900 block group-hover:text-indigo-700">Agenda Semanal</span>
+                          <span className="text-[11px] text-slate-500 font-medium">Ajustar horários & folgas</span>
+                        </div>
+                      </div>
+                      <RiArrowRightLine className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+                    </button>
+
+                    <button
+                      onClick={() => router.push('/admin/servicos')}
+                      className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-rose-50/60 rounded-xl border border-slate-200/80 transition-all text-left group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-rose-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                          <RiSparklingFill className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-slate-900 block group-hover:text-rose-700">Gerenciar Serviços</span>
+                          <span className="text-[11px] text-slate-500 font-medium">Preços, duração e aparelhos</span>
+                        </div>
+                      </div>
+                      <RiArrowRightLine className="w-4 h-4 text-slate-400 group-hover:text-rose-600 group-hover:translate-x-0.5 transition-all" />
+                    </button>
+                    
+                    <button
+                      onClick={() => setShowVoucherModal(true)}
+                      className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-purple-50/60 rounded-xl border border-slate-200/80 transition-all text-left group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                          <RiGiftFill className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-slate-900 block group-hover:text-purple-700">Criar Voucher / Presente</span>
+                          <span className="text-[11px] text-slate-500 font-medium">Presentear clientes</span>
+                        </div>
+                      </div>
+                      <RiArrowRightLine className="w-4 h-4 text-slate-400 group-hover:text-purple-600 group-hover:translate-x-0.5 transition-all" />
+                    </button>
                   </div>
-                  <Clock className="w-5 h-5 text-white/60" />
                 </div>
-                <div className="text-3xl font-bold mb-1">{stats.todayAppointments}</div>
-                <div className="text-green-100 text-sm font-medium">Agendamentos Hoje</div>
+
+                {/* Aniversariantes */}
+                <div className="bg-gradient-to-br from-rose-900 via-pink-900 to-slate-900 rounded-2xl sm:rounded-3xl p-4 sm:p-5 text-white shadow-md">
+                  <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                        <RiCake2Fill className="w-4 h-4 text-pink-300" />
+                      </div>
+                      <h3 className="font-extrabold text-sm sm:text-base text-white tracking-tight">
+                        Aniversariantes
+                      </h3>
+                    </div>
+                    <button
+                      onClick={() => setShowBirthdaysModal(true)}
+                      className="text-xs font-bold text-pink-200 hover:text-white bg-white/10 px-2.5 py-1 rounded-lg transition-colors"
+                    >
+                      Ver todos
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {upcomingBirthdays.length === 0 ? (
+                      <p className="text-xs text-pink-200/80 py-2">Nenhuma aniversariante neste período.</p>
+                    ) : (
+                      upcomingBirthdays.slice(0, 3).map((birthday) => (
+                        <div
+                          key={birthday.id}
+                          className="flex items-center justify-between p-2.5 bg-white/10 backdrop-blur-sm rounded-xl border border-white/10"
+                        >
+                          <div>
+                            <div className="font-bold text-white text-xs sm:text-sm">{birthday.name}</div>
+                            <div className="text-[11px] text-pink-200">{birthday.age ? `${birthday.age} anos` : 'Cliente'}</div>
+                          </div>
+                          <div className="text-amber-300 font-extrabold text-xs px-2 py-0.5 rounded-md bg-white/10">{birthday.date}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
 
-              {/* Receita do Mês */}
-              <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-                    <DollarSign className="w-6 h-6" />
+              {/* Stats Cards - Cores Fortes & Vibrantes (Mobile & Desktop) */}
+              <div className="lg:col-span-3 grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 pt-2">
+                {/* Total Clientes */}
+                <div className="bg-gradient-to-br from-indigo-700 via-indigo-800 to-slate-900 rounded-2xl shadow-md p-4 sm:p-5 text-white">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/15 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                      <RiTeamFill className="w-5 h-5 text-white" />
+                    </div>
+                    <RiLineChartFill className="w-4 h-4 text-indigo-300" />
                   </div>
-                  <Sparkles className="w-5 h-5 text-white/60" />
+                  <div className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-0.5">{stats.totalClients}</div>
+                  <div className="text-indigo-200 text-xs font-semibold">Total de Clientes</div>
                 </div>
-                <div className="text-3xl font-bold mb-1">
-                  R$ {(stats.monthRevenue / 1000).toFixed(1)}k
-                </div>
-                <div className="text-purple-100 text-sm font-medium">Receita do Mês</div>
-              </div>
 
-              {/* Assinaturas Ativas */}
-              <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl shadow-lg p-6 text-white">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-                    <TrendingUp className="w-6 h-6" />
+                {/* Agendamentos Hoje */}
+                <div className="bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 rounded-2xl shadow-md p-4 sm:p-5 text-white">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/15 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                      <RiCalendar2Fill className="w-5 h-5 text-white" />
+                    </div>
+                    <RiTimeFill className="w-4 h-4 text-emerald-300" />
                   </div>
-                  <Bell className="w-5 h-5 text-white/60" />
+                  <div className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-0.5">{stats.todayAppointments}</div>
+                  <div className="text-emerald-200 text-xs font-semibold">Agendamentos Hoje</div>
                 </div>
-                <div className="text-3xl font-bold mb-1">{stats.activeSubscriptions}</div>
-                <div className="text-pink-100 text-sm font-medium">Assinaturas Ativas</div>
+
+                {/* Receita do Mês */}
+                <div className="bg-gradient-to-br from-rose-600 via-pink-700 to-purple-900 rounded-2xl shadow-md p-4 sm:p-5 text-white">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/15 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                      <RiMoneyDollarCircleFill className="w-5 h-5 text-white" />
+                    </div>
+                    <RiSparklingFill className="w-4 h-4 text-rose-300" />
+                  </div>
+                  <div className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-0.5">
+                    R$ {(stats.monthRevenue / 1000).toFixed(1)}k
+                  </div>
+                  <div className="text-rose-200 text-xs font-semibold">Receita do Mês</div>
+                </div>
+
+                {/* Assinaturas Ativas */}
+                <div className="bg-gradient-to-br from-violet-600 via-purple-700 to-indigo-900 rounded-2xl shadow-md p-4 sm:p-5 text-white">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/15 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                      <RiNotification3Fill className="w-5 h-5 text-white" />
+                    </div>
+                    <RiSparklingFill className="w-4 h-4 text-violet-300" />
+                  </div>
+                  <div className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-0.5">{stats.activeSubscriptions}</div>
+                  <div className="text-violet-200 text-xs font-semibold">Assinaturas Ativas</div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
         )}
       </div>
 
-      {/* Modais */}
+      {/* Modais Administrativos */}
       <NovoAgendamentoModal 
         isOpen={showNovoAgendamentoModal}
         onClose={() => {
           setShowNovoAgendamentoModal(false)
-          loadDashboardData() // Recarregar dados após criar agendamento
+          loadDashboardData()
         }}
       />
       
@@ -624,7 +757,7 @@ export default function AdminDashboard() {
         isOpen={showAdicionarClienteModal}
         onClose={() => {
           setShowAdicionarClienteModal(false)
-          loadDashboardData() // Recarregar dados após adicionar cliente
+          loadDashboardData()
         }}
       />
       
@@ -645,7 +778,7 @@ export default function AdminDashboard() {
           setSelectedAppointment(null)
         }}
         onSuccess={() => {
-          loadDashboardData() // Recarregar dados
+          loadDashboardData()
           setShowReagendarCancelarModal(false)
           setSelectedAppointment(null)
         }}
@@ -666,33 +799,37 @@ export default function AdminDashboard() {
 
       {/* Modal de Aniversariantes */}
       {showBirthdaysModal && (
-        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 pb-24 sm:pb-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-900 flex items-center">
-                <Cake className="w-6 h-6 text-pink-600 mr-2" />
-                Aniversariantes de Outubro
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[100] flex items-center justify-center p-3 pb-24 sm:pb-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[80vh] overflow-y-auto shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+              <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                <RiCake2Fill className="w-5 h-5 text-rose-600" />
+                <span>Aniversariantes ({currentMonthName})</span>
               </h3>
               <button
                 onClick={() => setShowBirthdaysModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-full"
+                className="p-1.5 hover:bg-slate-100 rounded-full text-slate-600 transition-colors"
               >
-                <XIcon className="w-5 h-5" />
+                <RiCloseLine className="w-5 h-5" />
               </button>
             </div>
-            <div className="space-y-3">
-              {upcomingBirthdays.map((birthday) => (
-                <div
-                  key={birthday.id}
-                  className="flex items-center justify-between p-4 bg-gradient-to-br from-pink-50 to-purple-50 rounded-lg border border-pink-200"
-                >
-                  <div>
-                    <div className="font-medium text-gray-900">{birthday.name}</div>
-                    <div className="text-sm text-gray-600">{birthday.age} anos</div>
+            <div className="space-y-2.5">
+              {upcomingBirthdays.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-6">Nenhum aniversariante cadastrado.</p>
+              ) : (
+                upcomingBirthdays.map((birthday) => (
+                  <div
+                    key={birthday.id}
+                    className="flex items-center justify-between p-3.5 bg-gradient-to-r from-rose-50 via-pink-50 to-purple-50 rounded-2xl border border-pink-200"
+                  >
+                    <div>
+                      <div className="font-bold text-slate-900 text-sm">{birthday.name}</div>
+                      <div className="text-xs font-semibold text-slate-600">{birthday.age ? `${birthday.age} anos` : 'Cliente'}</div>
+                    </div>
+                    <div className="text-rose-700 font-extrabold text-sm px-2.5 py-1 bg-white rounded-lg shadow-xs">{birthday.date}</div>
                   </div>
-                  <div className="text-pink-600 font-bold">{birthday.date}</div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -700,3 +837,4 @@ export default function AdminDashboard() {
     </ProtectedRoute>
   )
 }
+

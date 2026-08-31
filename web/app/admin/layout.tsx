@@ -7,49 +7,53 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard,
-  Calendar,
-  Users,
-  Sparkles,
-  Settings,
-  LogOut,
-  X,
-  ClipboardList,
-  HomeIcon,
-  CreditCard,
-  Gift,
-  ChevronDown,
-  ChevronRight,
-  MoreHorizontal
-} from 'lucide-react'
+  RiHome5Fill,
+  RiCalendar2Fill,
+  RiSparklingFill,
+  RiSettings4Fill,
+  RiTeamFill,
+  RiVipCrownFill,
+  RiGiftFill,
+  RiFileList3Fill,
+  RiMegaphoneFill,
+  RiLayoutMasonryFill,
+  RiShieldUserFill,
+  RiLogoutBoxRFill,
+  RiArrowRightSLine,
+  RiArrowDownSLine,
+  RiApps2Fill,
+  RiCloseLine,
+  RiExternalLinkLine,
+  RiHandHeartFill,
+} from 'react-icons/ri'
 import { useState, useRef, useEffect } from 'react'
 
 const navigation = [
-  { name: 'Home', href: '/admin', icon: HomeIcon },
-  { name: 'Agendamentos', href: '/admin/agendamentos', icon: Calendar },
-  { name: 'Serviços', href: '/admin/servicos', icon: Sparkles },
-  { name: 'Configurações', href: '/admin/configuracoes', icon: Settings },
+  { name: 'Home', href: '/admin', icon: RiHome5Fill },
+  { name: 'Agendamentos', href: '/admin/agendamentos', icon: RiCalendar2Fill },
+  { name: 'Serviços', href: '/admin/servicos', icon: RiHandHeartFill },
+  { name: 'Configurações', href: '/admin/configuracoes', icon: RiSettings4Fill },
 ]
 
 const clientesDropdown = [
-  { name: 'Clientes', href: '/admin/clientes', icon: Users },
-  { name: 'Planos', href: '/admin/planos', icon: CreditCard },
-  { name: 'Vouchers', href: '/admin/vouchers', icon: Gift },
-  { name: 'Anamneses', href: '/admin/anamneses', icon: ClipboardList },
+  { name: 'Clientes', href: '/admin/clientes', icon: RiTeamFill },
+  { name: 'Planos', href: '/admin/planos', icon: RiVipCrownFill },
+  { name: 'Vouchers', href: '/admin/vouchers', icon: RiGiftFill },
+  { name: 'Anamneses', href: '/admin/anamneses', icon: RiFileList3Fill },
 ]
 
 const marketingNavigation = [
-  { name: 'Promoções', href: '/admin/promocoes', icon: Sparkles },
-  { name: 'Landing Page', href: '/admin/landing', icon: LayoutDashboard },
+  { name: 'Promoções', href: '/admin/promocoes', icon: RiMegaphoneFill },
+  { name: 'Landing Page', href: '/admin/landing', icon: RiLayoutMasonryFill },
 ]
 
 // Bottom nav items for mobile
 const mobileBottomNav = [
-  { name: 'Home', href: '/admin', icon: HomeIcon },
-  { name: 'Agenda', href: '/admin/agendamentos', icon: Calendar },
-  { name: 'Clientes', href: '/admin/clientes', icon: Users },
-  { name: 'Serviços', href: '/admin/servicos', icon: Sparkles },
-  { name: 'Mais', href: '#', icon: MoreHorizontal },
+  { name: 'Home', href: '/admin', icon: RiHome5Fill },
+  { name: 'Agenda', href: '/admin/agendamentos', icon: RiCalendar2Fill },
+  { name: 'Clientes', href: '/admin/clientes', icon: RiTeamFill },
+  { name: 'Serviços', href: '/admin/servicos', icon: RiHandHeartFill },
+  { name: 'Mais', href: '#', icon: RiApps2Fill },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -83,76 +87,83 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <ProtectedRoute requiredRole="MANAGER">
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-[#faf5f7] font-sans">
         {/* Desktop Sidebar */}
-        <div className="hidden lg:block fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200">
+        <aside className="hidden lg:flex flex-col fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200/80 shadow-[1px_0_10px_rgba(0,0,0,0.02)]">
           {/* Logo */}
-          <div className="flex items-center h-16 px-6 border-b border-gray-200">
+          <div className="flex items-center h-16 px-6 border-b border-slate-100 bg-white">
             <div className="flex items-center space-x-3">
-              <Image
-                src="/images/logo.png"
-                alt="Charme & Bela"
-                width={40}
-                height={40}
-                className="object-contain"
-              />
-              <span className="text-xl font-bold text-gray-900">Charme & Bela</span>
+              <div className="relative w-9 h-9 rounded-xl overflow-hidden shadow-sm ring-1 ring-black/5 flex-shrink-0">
+                <Image
+                  src="/images/logo.png"
+                  alt="Charme & Bela"
+                  width={36}
+                  height={36}
+                  className="object-cover"
+                />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-base font-extrabold tracking-tight text-slate-900">Charme & Bela</span>
+                <span className="text-[10px] font-semibold text-rose-600 uppercase tracking-wider">Painel Admin</span>
+              </div>
             </div>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto mt-4">
+          <nav className="flex-1 px-3.5 py-4 space-y-1.5 overflow-y-auto">
             {navigation.map((item) => {
               const isActive = pathname === item.href
               return (
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                  className={`group flex items-center px-3.5 py-2.5 text-sm font-semibold rounded-xl transition-all ${
                     isActive
-                      ? 'bg-pink-50 text-pink-600'
-                      : 'text-gray-700 hover:bg-gray-50'
+                      ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/25'
+                      : 'text-slate-700 hover:bg-slate-100/80 hover:text-slate-900'
                   }`}
                 >
-                  <item.icon className="w-5 h-5 mr-3" />
+                  <item.icon className={`w-5 h-5 mr-3 transition-transform group-hover:scale-110 ${
+                    isActive ? 'text-white' : 'text-slate-500 group-hover:text-slate-800'
+                  }`} />
                   {item.name}
                 </Link>
               )
             })}
 
             {/* Clientes dropdown section */}
-            <div className="space-y-1">
+            <div className="pt-2">
               <button
                 onClick={() => setClientesDropdownOpen(!clientesDropdownOpen)}
-                className={`w-full flex items-center justify-between px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 text-sm font-semibold rounded-xl transition-all ${
                   isClientesActive
-                    ? 'bg-pink-50 text-pink-600'
-                    : 'text-gray-700 hover:bg-gray-50'
+                    ? 'bg-rose-50 text-rose-700 font-bold'
+                    : 'text-slate-700 hover:bg-slate-100/80 hover:text-slate-900'
                 }`}
               >
                 <div className="flex items-center">
-                  <Users className="w-5 h-5 mr-3" />
-                  Clientes
+                  <RiTeamFill className={`w-5 h-5 mr-3 ${isClientesActive ? 'text-rose-600' : 'text-slate-500'}`} />
+                  <span>Clientes & Planos</span>
                 </div>
-                <ChevronRight className={`w-4 h-4 transition-transform ${clientesDropdownOpen ? 'rotate-90' : ''}`} />
+                <RiArrowRightSLine className={`w-4 h-4 transition-transform duration-200 ${clientesDropdownOpen ? 'rotate-90 text-rose-600' : 'text-slate-400'}`} />
               </button>
               
               {/* Dropdown items */}
               {clientesDropdownOpen && (
-                <div className="ml-4 pl-4 border-l-2 border-gray-200 space-y-1">
+                <div className="mt-1 ml-4 pl-3 border-l-2 border-slate-200 space-y-1">
                   {clientesDropdown.map((item) => {
                     const isActive = pathname === item.href
                     return (
                       <Link
                         key={item.name}
                         href={item.href}
-                        className={`flex items-center px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+                        className={`flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all ${
                           isActive
-                            ? 'bg-pink-50 text-pink-600'
-                            : 'text-gray-600 hover:bg-gray-50'
+                            ? 'bg-rose-600 text-white font-semibold shadow-sm'
+                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                         }`}
                       >
-                        <item.icon className="w-4 h-4 mr-3" />
+                        <item.icon className={`w-4 h-4 mr-2.5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                         {item.name}
                       </Link>
                     )
@@ -162,9 +173,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
 
             {/* Marketing section */}
-            <div className="px-4 py-2 mt-4">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                Marketing
+            <div className="pt-4 px-3.5 pb-1">
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Marketing & Site
               </div>
             </div>
             {marketingNavigation.map((item) => {
@@ -173,129 +184,144 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                  className={`group flex items-center px-3.5 py-2.5 text-sm font-semibold rounded-xl transition-all ${
                     isActive
-                      ? 'bg-pink-50 text-pink-600'
-                      : 'text-gray-700 hover:bg-gray-50'
+                      ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/25'
+                      : 'text-slate-700 hover:bg-slate-100/80 hover:text-slate-900'
                   }`}
                 >
-                  <item.icon className="w-5 h-5 mr-3" />
+                  <item.icon className={`w-5 h-5 mr-3 transition-transform group-hover:scale-110 ${
+                    isActive ? 'text-white' : 'text-slate-500 group-hover:text-slate-800'
+                  }`} />
                   {item.name}
                 </Link>
               )
             })}
           </nav>
-        </div>
+        </aside>
 
-        {/* Main content */}
-        <div className="lg:pl-64">
+        {/* Main content wrapper */}
+        <div className="lg:pl-64 flex flex-col min-h-screen">
           {/* Top bar */}
-          <div className="sticky top-0 z-30 flex h-16 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
-            <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-              <div className="flex flex-1 items-center justify-between">
-                <h1 className="text-lg sm:text-2xl font-semibold text-gray-900">
-                  {navigation.find(item => item.href === pathname)?.name || 
-                   marketingNavigation.find(item => item.href === pathname)?.name ||
-                   clientesDropdown.find(item => item.href === pathname)?.name ||
-                   (pathname === '/admin/acessos' ? 'Gestão de Acessos' : 'Admin')}
-                </h1>
-                
-                <div className="flex items-center gap-2 sm:gap-4">
-                  <NotificationsPanel userId={null} />
-                  
-                  <Link
-                    href="/"
-                    className="hidden sm:block text-sm text-gray-600 hover:text-pink-600 transition-colors"
-                  >
-                    Ver site
-                  </Link>
-
-                  {/* User menu dropdown */}
-                  <div className="relative" ref={userMenuRef}>
-                    <button
-                      onClick={() => setUserMenuOpen(!userMenuOpen)}
-                      className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="w-8 h-8 sm:w-9 sm:h-9 bg-pink-100 rounded-full flex items-center justify-center">
-                        <span className="text-pink-600 font-semibold text-sm">
-                          {user?.name.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                      <div className="hidden lg:block text-left">
-                        <p className="text-sm font-medium text-gray-900">
-                          {user?.name}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Administrador
-                        </p>
-                      </div>
-                      <ChevronDown className={`hidden lg:block w-4 h-4 text-gray-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {/* Dropdown menu */}
-                    {userMenuOpen && (
-                      <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
-                        {/* User info on mobile */}
-                        <div className="lg:hidden px-4 py-3 border-b border-gray-100">
-                          <p className="text-sm font-medium text-gray-900">
-                            {user?.name}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            Administrador
-                          </p>
-                        </div>
-
-                        {/* Ver site on mobile */}
-                        <Link
-                          href="/"
-                          className="sm:hidden flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                          onClick={() => setUserMenuOpen(false)}
-                        >
-                          <HomeIcon className="w-4 h-4 mr-3 text-gray-400" />
-                          Ver site
-                        </Link>
-
-                        {/* Gestão de Acessos */}
-                        {user?.role === 'MANAGER' && (
-                          <Link
-                            href="/admin/acessos"
-                            className="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                            onClick={() => setUserMenuOpen(false)}
-                          >
-                            <Users className="w-4 h-4 mr-3 text-gray-400" />
-                            Gestão de Acessos
-                          </Link>
-                        )}
-
-                        {/* Sair */}
-                        <button
-                          onClick={async () => {
-                            setUserMenuOpen(false)
-                            await signOut()
-                            window.location.href = '/'
-                          }}
-                          className="w-full flex items-center px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                        >
-                          <LogOut className="w-4 h-4 mr-3" />
-                          Sair
-                        </button>
-                      </div>
-                    )}
-                  </div>
+          <header className="sticky top-0 z-30 flex h-14 sm:h-16 items-center justify-between border-b border-slate-200/80 bg-white/95 backdrop-blur-md px-3 sm:px-6 lg:px-8 shadow-xs">
+            <div className="flex items-center gap-2 sm:gap-4">
+              {/* Mobile logo on top left */}
+              <div className="lg:hidden flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg overflow-hidden shadow-xs ring-1 ring-black/5 flex-shrink-0">
+                  <Image
+                    src="/images/logo.png"
+                    alt="Charme & Bela"
+                    width={32}
+                    height={32}
+                    className="object-cover"
+                  />
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* Page content */}
-          <main className="py-8 px-4 sm:px-6 lg:px-8 pb-24 lg:pb-8">
+              <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
+                {navigation.find(item => item.href === pathname)?.name || 
+                 marketingNavigation.find(item => item.href === pathname)?.name ||
+                 clientesDropdown.find(item => item.href === pathname)?.name ||
+                 (pathname === '/admin/acessos' ? 'Gestão de Acessos' : 'Admin')}
+              </h1>
+            </div>
+            
+            <div className="flex items-center gap-2 sm:gap-3">
+              <NotificationsPanel userId={null} />
+              
+              <Link
+                href="/"
+                target="_blank"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-colors"
+                title="Abrir site público"
+              >
+                <span>Ver site</span>
+                <RiExternalLinkLine className="w-3.5 h-3.5" />
+              </Link>
+
+              {/* User menu dropdown */}
+              <div className="relative" ref={userMenuRef}>
+                <button
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
+                  className="flex items-center gap-2 p-1 sm:px-2 sm:py-1.5 rounded-xl hover:bg-slate-100 transition-colors"
+                >
+                  <div className="w-8 h-8 sm:w-8 sm:h-8 bg-gradient-to-tr from-rose-600 to-pink-500 rounded-full flex items-center justify-center shadow-xs text-white">
+                    <span className="font-bold text-xs">
+                      {user?.name?.charAt(0).toUpperCase() || 'A'}
+                    </span>
+                  </div>
+                  <div className="hidden md:block text-left">
+                    <p className="text-xs font-bold text-slate-900 leading-tight">
+                      {user?.name || 'Administradora'}
+                    </p>
+                    <p className="text-[10px] font-medium text-slate-500">
+                      Gestão Clínica
+                    </p>
+                  </div>
+                  <RiArrowDownSLine className={`hidden md:block w-4 h-4 text-slate-400 transition-transform ${userMenuOpen ? 'rotate-180 text-slate-700' : ''}`} />
+                </button>
+
+                {/* Dropdown menu */}
+                {userMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200/80 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+                    <div className="px-4 py-2.5 border-b border-slate-100">
+                      <p className="text-xs font-bold text-slate-900 truncate">
+                        {user?.name || 'Administradora'}
+                      </p>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {user?.email || 'admin@charmebela.com'}
+                      </p>
+                    </div>
+
+                    <Link
+                      href="/"
+                      target="_blank"
+                      className="sm:hidden flex items-center px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      onClick={() => setUserMenuOpen(false)}
+                    >
+                      <RiExternalLinkLine className="w-4 h-4 mr-2.5 text-slate-500" />
+                      Ver site público
+                    </Link>
+
+                    {user?.role === 'MANAGER' && (
+                      <Link
+                        href="/admin/acessos"
+                        className="flex items-center px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        <RiShieldUserFill className="w-4 h-4 mr-2.5 text-slate-500" />
+                        Gestão de Acessos
+                      </Link>
+                    )}
+
+                    <div className="border-t border-slate-100 my-1"></div>
+
+                    <button
+                      onClick={async () => {
+                        setUserMenuOpen(false)
+                        await signOut()
+                        window.location.href = '/'
+                      }}
+                      className="w-full flex items-center px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
+                    >
+                      <RiLogoutBoxRFill className="w-4 h-4 mr-2.5" />
+                      Sair do Sistema
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </header>
+
+          {/* Page content - Reduced padding for mobile */}
+          <main className="flex-1 py-3 sm:py-6 px-2.5 sm:px-6 lg:px-8 pb-24 lg:pb-8">
             {children}
           </main>
         </div>
 
-        {/* Mobile Bottom Navigation */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-lg">
-          <nav className="flex justify-around items-center h-16 px-2">
+        {/* Mobile Bottom Navigation Bar */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-lg border-t border-slate-200 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+          <div className="grid grid-cols-5 h-16 px-1">
             {mobileBottomNav.map((item) => {
               const isActive = item.href === '#' ? false : pathname === item.href
               const isMore = item.name === 'Mais'
@@ -305,10 +331,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   <button
                     key={item.name}
                     onClick={() => setMobileMoreMenuOpen(true)}
-                    className="flex flex-col items-center justify-center flex-1 py-2 text-xs font-medium transition-colors hover:bg-gray-50 rounded-lg"
+                    className="flex flex-col items-center justify-center py-1 text-[11px] font-semibold transition-all active:scale-95 touch-manipulation"
                   >
-                    <item.icon className={`w-6 h-6 mb-1 ${isActive ? 'text-pink-600' : 'text-gray-500'}`} />
-                    <span className={isActive ? 'text-pink-600' : 'text-gray-600'}>{item.name}</span>
+                    <div className={`p-1 rounded-xl transition-colors ${mobileMoreMenuOpen ? 'bg-rose-100 text-rose-600' : 'text-slate-500'}`}>
+                      <item.icon className="w-5 h-5" />
+                    </div>
+                    <span className={`mt-0.5 text-[10px] font-bold ${mobileMoreMenuOpen ? 'text-rose-600' : 'text-slate-600'}`}>{item.name}</span>
                   </button>
                 )
               }
@@ -317,87 +345,119 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <Link
                   key={item.name}
                   href={item.href}
-                  className="flex flex-col items-center justify-center flex-1 py-2 text-xs font-medium transition-colors hover:bg-gray-50 rounded-lg"
+                  className="flex flex-col items-center justify-center py-1 text-[11px] font-semibold transition-all active:scale-95 touch-manipulation"
                 >
-                  <item.icon className={`w-6 h-6 mb-1 ${isActive ? 'text-pink-600' : 'text-gray-500'}`} />
-                  <span className={isActive ? 'text-pink-600' : 'text-gray-600'}>{item.name}</span>
+                  <div className={`p-1 rounded-xl transition-all ${
+                    isActive 
+                      ? 'bg-rose-600 text-white shadow-xs' 
+                      : 'text-slate-500'
+                  }`}>
+                    <item.icon className="w-5 h-5" />
+                  </div>
+                  <span className={`mt-0.5 text-[10px] font-bold ${isActive ? 'text-rose-600' : 'text-slate-600'}`}>{item.name}</span>
                 </Link>
               )
             })}
-          </nav>
-        </div>
+          </div>
+        </nav>
 
-        {/* Mobile "Mais" Menu Modal */}
+        {/* Mobile "Mais" Menu Bottom Sheet */}
         {mobileMoreMenuOpen && (
           <>
             <div
-              className="fixed inset-0 bg-black/50 z-[90] lg:hidden"
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[90] lg:hidden animate-in fade-in duration-150"
+              onClick={() => setMobileMoreMenuOpen(false)}
             />
-            <div className="fixed bottom-0 left-0 right-0 z-[95] bg-white rounded-t-2xl shadow-2xl lg:hidden max-h-[80vh] overflow-hidden flex flex-col">
-              {/* Header */}
-              <div className="shrink-0 bg-white border-b border-gray-200 px-4 py-3 rounded-t-2xl">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-lg font-semibold text-gray-900">Menu</h3>
+            <div className="fixed bottom-0 left-0 right-0 z-[95] bg-white rounded-t-3xl shadow-2xl lg:hidden max-h-[82vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-200">
+              {/* Sheet Header */}
+              <div className="shrink-0 bg-white border-b border-slate-100 px-5 py-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-2 h-2 rounded-full bg-rose-600"></div>
+                    <h3 className="text-base font-bold text-slate-900">Mais Opções</h3>
+                  </div>
                   <button
                     onClick={() => setMobileMoreMenuOpen(false)}
                     aria-label="Fechar"
-                    className="shrink-0 flex items-center justify-center w-11 h-11 rounded-full bg-gray-100 border-2 border-gray-300 text-gray-700 hover:bg-pink-50 hover:border-pink-400 hover:text-pink-600 transition-colors"
+                    className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
                   >
-                    <X className="w-6 h-6" strokeWidth={2.5} />
+                    <RiCloseLine className="w-5 h-5" />
                   </button>
                 </div>
               </div>
 
-              {/* Menu items */}
-              <div className="px-4 py-4 space-y-2 overflow-y-auto min-h-0">
-                {/* Configurações */}
-                <Link
-                  href="/admin/configuracoes"
-                  className="flex items-center px-4 py-3 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
-                  onClick={() => setMobileMoreMenuOpen(false)}
-                >
-                  <Settings className="w-5 h-5 mr-3 text-gray-400" />
-                  Configurações
-                </Link>
-
-                {/* Clientes Dropdown */}
-                <div className="border-t border-gray-100 pt-2">
-                  <div className="px-4 py-2">
-                    <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                      Gestão de Clientes
-                    </div>
+              {/* Sheet Content */}
+              <div className="p-4 space-y-4 overflow-y-auto pb-8">
+                {/* Gestão de Clientes */}
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">
+                    Clientes & Benefícios
                   </div>
-                  {clientesDropdown.map((item) => (
-                    <Link
-                      key={item.name}
-                      href={item.href}
-                      className="flex items-center px-4 py-3 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
-                      onClick={() => setMobileMoreMenuOpen(false)}
-                    >
-                      <item.icon className="w-5 h-5 mr-3 text-gray-400" />
-                      {item.name}
-                    </Link>
-                  ))}
+                  <div className="grid grid-cols-2 gap-2">
+                    {clientesDropdown.map((item) => {
+                      const isActive = pathname === item.href
+                      return (
+                        <Link
+                          key={item.name}
+                          href={item.href}
+                          onClick={() => setMobileMoreMenuOpen(false)}
+                          className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition-all ${
+                            isActive
+                              ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                              : 'bg-slate-50/80 border-slate-200/80 text-slate-800 hover:bg-slate-100'
+                          }`}
+                        >
+                          <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-rose-600'}`} />
+                          <span className="text-xs font-bold leading-tight">{item.name}</span>
+                        </Link>
+                      )
+                    })}
+                  </div>
                 </div>
 
-                {/* Marketing */}
-                <div className="border-t border-gray-100 pt-2">
-                  <div className="px-4 py-2">
-                    <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                      Marketing
-                    </div>
+                {/* Marketing & Landing */}
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">
+                    Marketing & Divulgação
                   </div>
-                  {marketingNavigation.map((item) => (
-                    <Link
-                      key={item.name}
-                      href={item.href}
-                      className="flex items-center px-4 py-3 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
-                      onClick={() => setMobileMoreMenuOpen(false)}
-                    >
-                      <item.icon className="w-5 h-5 mr-3 text-gray-400" />
-                      {item.name}
-                    </Link>
-                  ))}
+                  <div className="grid grid-cols-2 gap-2">
+                    {marketingNavigation.map((item) => {
+                      const isActive = pathname === item.href
+                      return (
+                        <Link
+                          key={item.name}
+                          href={item.href}
+                          onClick={() => setMobileMoreMenuOpen(false)}
+                          className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition-all ${
+                            isActive
+                              ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                              : 'bg-slate-50/80 border-slate-200/80 text-slate-800 hover:bg-slate-100'
+                          }`}
+                        >
+                          <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-rose-600'}`} />
+                          <span className="text-xs font-bold leading-tight">{item.name}</span>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Configurações */}
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">
+                    Geral
+                  </div>
+                  <Link
+                    href="/admin/configuracoes"
+                    onClick={() => setMobileMoreMenuOpen(false)}
+                    className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-slate-800 hover:bg-slate-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <RiSettings4Fill className="w-5 h-5 text-slate-600" />
+                      <span className="text-sm font-bold">Configurações da Clínica</span>
+                    </div>
+                    <RiArrowRightSLine className="w-5 h-5 text-slate-400" />
+                  </Link>
                 </div>
               </div>
             </div>

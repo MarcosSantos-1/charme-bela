@@ -2,7 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/Button'
-import { Search, Star, Calendar, X } from 'lucide-react'
+import {
+  RiSearchLine,
+  RiVipCrownFill,
+  RiCalendar2Fill,
+  RiCloseLine,
+  RiLoader4Line,
+  RiSparklingFill,
+  RiDeleteBin5Fill,
+} from 'react-icons/ri'
 import * as api from '@/lib/api'
 import toast from 'react-hot-toast'
 
@@ -106,26 +114,29 @@ export default function PlanosAdminPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Gestão de Planos</h2>
-        <p className="text-gray-600 mt-1">Ative e gerencie assinaturas dos clientes</p>
+        <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Gestão de Assinaturas & Planos</h2>
+        <p className="text-xs sm:text-sm font-semibold text-slate-500 mt-0.5">Ative, monitore e gerencie planos VIP das clientes</p>
       </div>
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <RiSearchLine className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
         <input
           type="text"
-          placeholder="Buscar cliente..."
+          placeholder="Buscar cliente por nome ou email..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900"
+          className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-white border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-sm font-semibold text-slate-900 placeholder:text-slate-400"
         />
       </div>
 
       {/* Users List */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600"></div>
+        <div className="flex items-center justify-center py-12 bg-white rounded-2xl border border-slate-200">
+          <div className="text-center">
+            <RiLoader4Line className="w-8 h-8 animate-spin text-rose-600 mx-auto mb-2" />
+            <p className="text-slate-600 text-xs font-bold">Carregando assinaturas...</p>
+          </div>
         </div>
       ) : (
         <div className="space-y-3">
@@ -133,35 +144,34 @@ export default function PlanosAdminPage() {
             const hasPlan = user.subscription?.status === 'ACTIVE'
             
             return (
-              <div key={user.id} className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:shadow-md transition-all">
+              <div key={user.id} className="bg-white rounded-2xl border-2 border-slate-200 p-4 shadow-xs hover:border-rose-300 transition-all">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   {/* User Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-2">
-                      <div className="w-10 h-10 bg-pink-100 rounded-full flex items-center justify-center flex-shrink-0">
-                        <span className="text-pink-600 font-bold">
-                          {user.name.charAt(0).toUpperCase()}
-                        </span>
+                      <div className="w-10 h-10 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center font-extrabold text-sm border border-rose-200 shrink-0 shadow-xs">
+                        {user.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-gray-900 text-base truncate">{user.name}</h3>
-                        <p className="text-sm text-gray-600 truncate">{user.email}</p>
+                        <h3 className="font-extrabold text-slate-900 text-sm sm:text-base truncate">{user.name}</h3>
+                        <p className="text-xs font-semibold text-slate-500 truncate">{user.email}</p>
                       </div>
                     </div>
                     
                     {/* Plan Status */}
-                    <div className="ml-13">
+                    <div className="sm:ml-13">
                       {hasPlan ? (
                         <div className="space-y-1">
-                          <span className="inline-flex items-center px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
-                            ✓ Plano {user.subscription.plan.name}
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-violet-100 text-violet-800 rounded-full text-xs font-bold border border-violet-200">
+                            <RiVipCrownFill className="w-3.5 h-3.5 text-amber-500" />
+                            Plano {user.subscription.plan.name}
                           </span>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-[11px] font-semibold text-slate-500">
                             Válido até {new Date(user.subscription.endDate).toLocaleDateString('pt-BR')}
                           </p>
                         </div>
                       ) : (
-                        <span className="inline-flex px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
+                        <span className="inline-flex px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">
                           Sem plano ativo
                         </span>
                       )}
@@ -169,15 +179,15 @@ export default function PlanosAdminPage() {
                   </div>
                   
                   {/* Actions */}
-                  <div className="flex gap-2 sm:flex-shrink-0">
+                  <div className="flex gap-2 sm:shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-slate-100">
                     {hasPlan ? (
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleCancelPlan(user.id, user.subscription.id)}
-                        className="text-red-600 border-red-300 hover:bg-red-50 flex-1 sm:flex-initial"
+                        className="text-rose-600 border-rose-200 hover:bg-rose-50 flex-1 sm:flex-initial text-xs font-bold"
                       >
-                        <X className="w-4 h-4 sm:mr-2" />
+                        <RiCloseLine className="w-4 h-4 sm:mr-1" />
                         <span className="hidden sm:inline">Cancelar Plano</span>
                         <span className="sm:hidden">Cancelar</span>
                       </Button>
@@ -186,9 +196,9 @@ export default function PlanosAdminPage() {
                         variant="primary"
                         size="sm"
                         onClick={() => handleActivatePlan(user)}
-                        className="flex-1 sm:flex-initial"
+                        className="flex-1 sm:flex-initial text-xs font-bold shadow-xs"
                       >
-                        <Star className="w-4 h-4 mr-2" />
+                        <RiVipCrownFill className="w-4 h-4 mr-1 text-amber-300" />
                         Ativar Plano
                       </Button>
                     )}
@@ -202,23 +212,23 @@ export default function PlanosAdminPage() {
 
       {/* Modal Ativar Plano */}
       {showModal && selectedUser && (
-        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 pb-24 sm:pb-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-gray-900">Ativar Plano</h3>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-full">
-                <X className="w-5 h-5" />
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 pb-24 sm:pb-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-extrabold text-slate-900">Ativar Plano VIP</h3>
+              <button onClick={() => setShowModal(false)} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-500">
+                <RiCloseLine className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="mb-6">
-              <p className="text-sm text-gray-600 mb-1">Cliente:</p>
-              <p className="font-semibold text-gray-900">{selectedUser.name}</p>
-              <p className="text-sm text-gray-600">{selectedUser.email}</p>
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100">
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Cliente</p>
+              <p className="font-extrabold text-slate-900 text-sm">{selectedUser.name}</p>
+              <p className="text-xs font-semibold text-slate-600">{selectedUser.email}</p>
             </div>
 
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-2">
                 Selecione o Plano:
               </label>
               <div className="space-y-2">
@@ -226,19 +236,22 @@ export default function PlanosAdminPage() {
                   <button
                     key={plan.id}
                     onClick={() => setSelectedPlan(plan.id)}
-                    className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                    className={`w-full p-3.5 rounded-2xl border-2 text-left transition-all ${
                       selectedPlan === plan.id
-                        ? 'border-pink-500 bg-pink-50'
-                        : 'border-gray-200 hover:border-pink-300'
+                        ? 'border-rose-500 bg-rose-50/50 shadow-xs'
+                        : 'border-slate-200 hover:border-rose-200 bg-white'
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="font-semibold text-gray-900">{plan.name}</p>
-                        <p className="text-sm text-gray-600">{plan.tier}</p>
+                        <p className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
+                          <RiVipCrownFill className="w-4 h-4 text-amber-500" />
+                          {plan.name}
+                        </p>
+                        <p className="text-xs font-semibold text-slate-500">{plan.tier}</p>
                       </div>
-                      <p className="text-lg font-bold text-pink-600">
-                        R$ {plan.price.toFixed(2)}
+                      <p className="text-base font-extrabold text-rose-600">
+                        R$ {plan.price.toFixed(2).replace('.', ',')}
                       </p>
                     </div>
                   </button>
@@ -246,17 +259,17 @@ export default function PlanosAdminPage() {
               </div>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-              <p className="text-xs text-blue-800">
-                <Calendar className="w-3 h-3 inline mr-1" />
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+              <p className="text-xs text-blue-800 font-semibold">
+                <RiCalendar2Fill className="w-3.5 h-3.5 inline mr-1 text-blue-600" />
                 A cliente poderá cancelar a qualquer momento e continua usando o plano até o fim do período já pago.
               </p>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex gap-2.5 pt-2">
               <Button
                 variant="outline"
-                className="flex-1"
+                className="flex-1 text-xs font-bold"
                 onClick={() => setShowModal(false)}
                 disabled={activating}
               >
@@ -264,7 +277,7 @@ export default function PlanosAdminPage() {
               </Button>
               <Button
                 variant="primary"
-                className="flex-1"
+                className="flex-1 text-xs font-bold shadow-xs"
                 onClick={handleConfirm}
                 isLoading={activating}
                 disabled={!selectedPlan}

@@ -1,12 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Upload, X, Plus, Trash2, Loader2, GripVertical } from 'lucide-react'
+import {
+  RiUploadCloud2Fill,
+  RiCloseLine,
+  RiAddLine,
+  RiDeleteBin5Fill,
+  RiLoader4Line,
+  RiDraggable,
+} from 'react-icons/ri'
 import { Button } from '@/components/Button'
 import Image from 'next/image'
 import toast from 'react-hot-toast'
 import * as api from '@/lib/api'
-import type { Banner, BannerLocation } from '@/lib/api'
+import type { Banner } from '@/lib/api'
 import { HOME_BANNER, fileToHomeBannerDataUrl } from '@/lib/homeBanner'
 import { MachineRentalsSection } from '@/components/admin/MachineRentalsSection'
 
@@ -28,23 +35,20 @@ function sortBanners(list: Banner[]) {
 }
 
 export default function PromocoesPage() {
-  const [landingBanners, setLandingBanners] = useState<Banner[]>([])
-  const [clientBanners, setClientBanners] = useState<Banner[]>([])
+  const [banners, setBanners] = useState<Banner[]>([])
   const [loading, setLoading] = useState(true)
-  const [savingLocation, setSavingLocation] = useState<BannerLocation | null>(null)
-  const [reordering, setReordering] = useState<BannerLocation | null>(null)
-  const [landingDraft, setLandingDraft] = useState<Draft>(emptyDraft)
-  const [clientDraft, setClientDraft] = useState<Draft>(emptyDraft)
+  const [saving, setSaving] = useState(false)
+  const [reordering, setReordering] = useState(false)
+  const [draft, setDraft] = useState<Draft>(emptyDraft)
 
   const loadBanners = useCallback(async () => {
     setLoading(true)
     try {
-      const [landing, client] = await Promise.all([
-        api.getBanners({ location: 'LANDING' }),
-        api.getBanners({ location: 'CLIENT' }),
-      ])
-      setLandingBanners(sortBanners(Array.isArray(landing) ? landing : []))
-      setClientBanners(sortBanners(Array.isArray(client) ? client : []))
+      const client = await api.getBanners({ location: 'CLIENT' })
+      const list = Array.isArray(client) && client.length > 0
+        ? client
+        : await api.getBanners({ location: 'LANDING' })
+      setBanners(sortBanners(Array.isArray(list) ? list : []))
     } catch (error) {
       console.error(error)
       toast.error('Erro ao carregar banners')
@@ -57,9 +61,7 @@ export default function PromocoesPage() {
     void loadBanners()
   }, [loadBanners])
 
-  const handleSave = async (location: BannerLocation) => {
-    const draft = location === 'LANDING' ? landingDraft : clientDraft
-    const existing = location === 'LANDING' ? landingBanners : clientBanners
+  const handleSave = async () => {
     if (!draft.title.trim()) {
       toast.error('Informe o título do banner')
       return
@@ -69,32 +71,31 @@ export default function PromocoesPage() {
       return
     }
 
-    setSavingLocation(location)
+    setSaving(true)
     try {
-      // Novo banner entra no fim da pilha (02, 03, 04…)
       const nextOrder =
-        existing.length === 0
+        banners.length === 0
           ? 0
-          : Math.max(...existing.map((b) => b.sortOrder)) + 1
+          : Math.max(...banners.map((b) => b.sortOrder)) + 1
 
+      // Salva para CLIENT (que é usado tanto na landing quanto na área do cliente)
       await api.createBanner({
         title: draft.title.trim(),
         imageUrl: draft.imageUrl,
-        location,
+        location: 'CLIENT',
         sortOrder: nextOrder,
         imageWidth: draft.imageWidth,
         imageHeight: draft.imageHeight,
         isActive: true,
       })
-      toast.success(`Banner ${positionLabel(existing.length)} adicionado`)
-      if (location === 'LANDING') setLandingDraft(emptyDraft())
-      else setClientDraft(emptyDraft())
+      toast.success(`Banner ${positionLabel(banners.length)} adicionado com sucesso`)
+      setDraft(emptyDraft())
       await loadBanners()
     } catch (error: any) {
       console.error(error)
       toast.error(error?.message || 'Erro ao salvar banner')
     } finally {
-      setSavingLocation(null)
+      setSaving(false)
     }
   }
 
@@ -120,86 +121,67 @@ export default function PromocoesPage() {
     }
   }
 
-  const handleReorder = async (location: BannerLocation, next: Banner[]) => {
-    const previous = location === 'LANDING' ? landingBanners : clientBanners
-    if (location === 'LANDING') setLandingBanners(next)
-    else setClientBanners(next)
-
-    setReordering(location)
+  const handleReorder = async (next: Banner[]) => {
+    const previous = banners
+    setBanners(next)
+    setReordering(true)
     try {
       const saved = await api.reorderBanners(
-        location,
+        'CLIENT',
         next.map((b) => b.id),
       )
       const sorted = sortBanners(Array.isArray(saved) ? saved : next)
-      if (location === 'LANDING') setLandingBanners(sorted)
-      else setClientBanners(sorted)
+      setBanners(sorted)
     } catch (error) {
       console.error(error)
       toast.error('Erro ao reordenar banners')
-      if (location === 'LANDING') setLandingBanners(previous)
-      else setClientBanners(previous)
+      setBanners(previous)
     } finally {
-      setReordering(null)
+      setReordering(false)
     }
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Promoções e Banners</h2>
-        <p className="text-gray-600 mt-1">
-          Gerencie o slider da landing e da área do cliente (app + web)
+        <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Promoções e Banners</h2>
+        <p className="text-xs sm:text-sm font-semibold text-slate-500 mt-0.5">
+          Gerencie máquinas alugadas e o carrossel promocional do site e aplicativo
         </p>
       </div>
 
       <MachineRentalsSection />
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-sm text-blue-800 font-medium mb-2">Dimensões e ordem</p>
-        <div className="text-sm text-blue-700 space-y-1">
+      <div className="bg-sky-50/80 border-2 border-sky-200/70 rounded-2xl p-4">
+        <p className="text-xs sm:text-sm text-sky-900 font-extrabold mb-1">Dicas para os Banners Promocionais</p>
+        <div className="text-xs font-semibold text-sky-800 space-y-0.5">
           <p>
-            • <strong>Master:</strong> {HOME_BANNER.sizeHint}px (proporção {HOME_BANNER.aspectLabel})
+            • <strong>Tamanho ideal:</strong> {HOME_BANNER.sizeHint}px (proporção {HOME_BANNER.aspectLabel})
           </p>
           <p>• Arraste pelo ícone ⋮⋮ para definir a posição (01, 02, 03…)</p>
-          <p>• Novos banners entram no fim da pilha</p>
+          <p>• O carrossel é exibido automaticamente na Landing Page e na Área do Cliente / App</p>
         </div>
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-gray-500">
-          <Loader2 className="w-6 h-6 animate-spin mr-2" />
-          Carregando banners…
+        <div className="flex items-center justify-center py-16 text-slate-500">
+          <RiLoader4Line className="w-8 h-8 animate-spin text-rose-600 mr-2" />
+          <span className="text-xs font-bold">Carregando banners…</span>
         </div>
       ) : (
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="max-w-4xl">
           <BannerSection
-            title="Banner — Landing Page"
-            description='Exibido acima da seção "Nossos Tratamentos"'
-            location="LANDING"
-            banners={landingBanners}
-            draft={landingDraft}
-            setDraft={setLandingDraft}
-            saving={savingLocation === 'LANDING'}
-            reordering={reordering === 'LANDING'}
-            onSave={() => handleSave('LANDING')}
+            title="Banners Promocionais (Carrossel)"
+            description="Exibido na Landing Page, no Dashboard Web e no App Mobile"
+            banners={banners}
+            draft={draft}
+            setDraft={setDraft}
+            saving={saving}
+            reordering={reordering}
+            onSave={handleSave}
             onToggle={handleToggle}
             onDelete={handleDelete}
-            onReorder={(next) => handleReorder('LANDING', next)}
-          />
-          <BannerSection
-            title="Banner — Área do Cliente"
-            description="Exibido no dashboard do cliente (web) e na home do app"
-            location="CLIENT"
-            banners={clientBanners}
-            draft={clientDraft}
-            setDraft={setClientDraft}
-            saving={savingLocation === 'CLIENT'}
-            reordering={reordering === 'CLIENT'}
-            onSave={() => handleSave('CLIENT')}
-            onToggle={handleToggle}
-            onDelete={handleDelete}
-            onReorder={(next) => handleReorder('CLIENT', next)}
+            onReorder={handleReorder}
           />
         </div>
       )}
@@ -210,7 +192,6 @@ export default function PromocoesPage() {
 function BannerSection({
   title,
   description,
-  location,
   banners,
   draft,
   setDraft,
@@ -223,7 +204,6 @@ function BannerSection({
 }: {
   title: string
   description: string
-  location: BannerLocation
   banners: Banner[]
   draft: Draft
   setDraft: (draft: Draft) => void
@@ -246,10 +226,10 @@ function BannerSection({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+    <div className="bg-white rounded-2xl border-2 border-slate-200 p-4 sm:p-6 space-y-4 shadow-xs">
       <div>
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        <p className="text-sm text-gray-600 mt-1">{description}</p>
+        <h3 className="text-base font-extrabold text-slate-900">{title}</h3>
+        <p className="text-xs font-semibold text-slate-500 mt-0.5">{description}</p>
       </div>
 
       <BannerDropzone
@@ -265,37 +245,37 @@ function BannerSection({
         value={draft.title}
         onChange={(e) => setDraft({ ...draft, title: e.target.value })}
         placeholder="Título do banner (ex: Promoção de Outubro)"
-        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-gray-900 placeholder:text-gray-500"
+        className="w-full px-3.5 py-2.5 border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 text-xs sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white"
       />
 
-      <Button variant="primary" className="w-full" onClick={onSave} disabled={saving}>
+      <Button variant="primary" className="w-full text-xs sm:text-sm font-bold shadow-xs" onClick={onSave} disabled={saving}>
         {saving ? (
           <>
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            <RiLoader4Line className="w-4 h-4 mr-1.5 animate-spin" />
             Salvando…
           </>
         ) : (
           <>
-            <Plus className="w-4 h-4 mr-2" />
-            Adicionar banner
+            <RiAddLine className="w-4 h-4 mr-1.5" />
+            Adicionar Banner
           </>
         )}
       </Button>
 
-      <div className="border-t border-gray-100 pt-4 space-y-3">
+      <div className="border-t border-slate-100 pt-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <h4 className="text-sm font-semibold text-gray-800">
+          <h4 className="text-xs font-bold text-slate-800">
             Ordem do carrossel ({banners.length})
           </h4>
           {reordering ? (
-            <span className="text-xs text-pink-600 flex items-center gap-1">
-              <Loader2 className="w-3 h-3 animate-spin" />
+            <span className="text-xs text-rose-600 font-semibold flex items-center gap-1">
+              <RiLoader4Line className="w-3.5 h-3.5 animate-spin" />
               Salvando ordem…
             </span>
           ) : null}
         </div>
         {banners.length === 0 ? (
-          <p className="text-sm text-gray-500">Nenhum banner ainda. Adicione o primeiro acima.</p>
+          <p className="text-xs font-semibold text-slate-400">Nenhum banner cadastrado. Adicione acima.</p>
         ) : (
           <div className="space-y-2">
             {banners.map((banner, index) => (
@@ -324,18 +304,18 @@ function BannerSection({
                   dragIndex.current = null
                   setOverIndex(null)
                 }}
-                className={`flex items-center gap-3 p-3 border rounded-lg bg-white transition-colors ${
-                  overIndex === index ? 'border-pink-400 bg-pink-50' : 'border-gray-200'
+                className={`flex items-center gap-3 p-2.5 sm:p-3 border-2 rounded-xl bg-white transition-colors ${
+                  overIndex === index ? 'border-rose-400 bg-rose-50' : 'border-slate-100'
                 }`}
               >
                 <div
-                  className="flex flex-col items-center gap-1 text-gray-400 cursor-grab active:cursor-grabbing shrink-0"
+                  className="flex flex-col items-center gap-0.5 text-slate-400 cursor-grab active:cursor-grabbing shrink-0"
                   title="Arraste para reordenar"
                 >
-                  <GripVertical className="w-5 h-5" />
-                  <span className="text-[10px] font-bold text-pink-600">{positionLabel(index)}</span>
+                  <RiDraggable className="w-4 h-4" />
+                  <span className="text-[10px] font-extrabold text-rose-600">{positionLabel(index)}</span>
                 </div>
-                <div className="relative w-28 aspect-[2/1] rounded overflow-hidden bg-gray-100 flex-shrink-0">
+                <div className="relative w-24 sm:w-28 aspect-[2/1] rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
                   {banner.imageUrl.startsWith('data:') ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={banner.imageUrl} alt={banner.title} className="absolute inset-0 w-full h-full object-cover" />
@@ -344,14 +324,14 @@ function BannerSection({
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-gray-900 truncate">{banner.title}</div>
+                  <div className="font-bold text-slate-900 text-xs sm:text-sm truncate">{banner.title}</div>
                   <button
                     type="button"
                     onClick={() => onToggle(banner)}
-                    className={`mt-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                    className={`mt-1 text-[10px] px-2 py-0.5 rounded-full font-bold border ${
                       banner.isActive
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-600'
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
                     }`}
                   >
                     {banner.isActive ? 'Ativo' : 'Inativo'}
@@ -360,16 +340,16 @@ function BannerSection({
                 <button
                   type="button"
                   onClick={() => onDelete(banner)}
-                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                  className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                   aria-label="Remover"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <RiDeleteBin5Fill className="w-4 h-4" />
                 </button>
               </div>
             ))}
           </div>
         )}
-        <p className="text-xs text-gray-500">
+        <p className="text-[11px] font-semibold text-slate-400">
           Posição 01 = primeiro slide do carrossel ({location === 'CLIENT' ? 'antes do plano' : 'na landing'}).
         </p>
       </div>
@@ -431,10 +411,10 @@ function BannerDropzone({
           setDragging(false)
           void processFile(e.dataTransfer.files?.[0])
         }}
-        className={`relative aspect-[2/1] border-2 border-dashed rounded-xl cursor-pointer overflow-hidden transition-colors ${
+        className={`relative aspect-[2/1] border-2 border-dashed rounded-2xl cursor-pointer overflow-hidden transition-colors ${
           dragging
-            ? 'border-pink-500 bg-pink-50'
-            : 'border-gray-300 hover:border-pink-400 bg-gray-50'
+            ? 'border-rose-500 bg-rose-50/50'
+            : 'border-slate-300 hover:border-rose-400 bg-slate-50'
         }`}
       >
         {imageUrl ? (
@@ -447,23 +427,23 @@ function BannerDropzone({
                 e.stopPropagation()
                 onClear()
               }}
-              className="absolute top-2 right-2 w-8 h-8 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600 z-10"
+              className="absolute top-2.5 right-2.5 w-8 h-8 bg-rose-600 rounded-full flex items-center justify-center hover:bg-rose-700 z-10 text-white shadow-md"
             >
-              <X className="w-5 h-5 text-white" />
+              <RiCloseLine className="w-5 h-5" />
             </button>
           </>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center">
             {processing ? (
               <>
-                <Loader2 className="w-10 h-10 text-pink-500 animate-spin mb-2" />
-                <p className="text-sm text-gray-600">Processando imagem…</p>
+                <RiLoader4Line className="w-8 h-8 text-rose-500 animate-spin mb-1.5" />
+                <p className="text-xs font-bold text-slate-600">Processando imagem…</p>
               </>
             ) : (
               <>
-                <Upload className="w-10 h-10 text-gray-400 mb-2" />
-                <p className="text-sm text-gray-700 font-medium">Arraste a imagem ou clique</p>
-                <p className="text-xs text-gray-500 mt-1">
+                <RiUploadCloud2Fill className="w-8 h-8 text-slate-400 mb-1.5" />
+                <p className="text-xs sm:text-sm text-slate-800 font-bold">Arraste a imagem ou toque para escolher</p>
+                <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
                   {HOME_BANNER.sizeHint} ({HOME_BANNER.aspectLabel})
                 </p>
               </>

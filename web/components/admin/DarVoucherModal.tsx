@@ -1,9 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
-import { Gift, User, DollarSign, Calendar, Search, Sparkles } from 'lucide-react'
+import {
+  RiGiftFill,
+  RiUser3Fill,
+  RiMoneyDollarCircleFill,
+  RiCalendar2Fill,
+  RiSearchLine,
+  RiSparklingFill,
+  RiCloseLine,
+  RiCheckFill,
+} from 'react-icons/ri'
 import toast from 'react-hot-toast'
 import DatePicker from '../DatePicker'
 import * as api from '@/lib/api'
@@ -40,14 +49,17 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
   const [buscaServico, setBuscaServico] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Motivos pré-definidos
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Motivos pré-definidos com opção "outro"
   const motivosPreset = [
-    { value: 'aniversario', label: 'Aniversário', message: '🎂 Parabéns pelo seu aniversário! Este voucher é um presente especial para você.' },
-    { value: 'fidelidade', label: 'Fidelidade', message: '💝 Obrigada pela sua fidelidade! Este voucher é uma forma de agradecermos por ser uma cliente especial.' },
-    { value: 'primeira_vez', label: 'Primeira Vez', message: '✨ Seja bem-vinda! Este voucher é um presente de boas-vindas para sua primeira experiência conosco.' },
-    { value: 'indicacao', label: 'Indicação', message: '🤝 Obrigada por nos indicar! Este voucher é um agradecimento especial.' },
-    { value: 'desculpas', label: 'Desculpas', message: '🙏 Pedimos desculpas pelo inconveniente. Este voucher é uma forma de compensar.' },
-    { value: 'promocao', label: 'Promoção', message: '🎁 Você ganhou! Este voucher faz parte de nossa promoção especial.' },
+    { value: 'aniversario', label: '🎂 Aniversário', message: '🎂 Parabéns pelo seu aniversário! Este voucher é um presente especial para você.' },
+    { value: 'fidelidade', label: '💝 Fidelidade', message: '💝 Obrigada pela sua fidelidade! Este voucher é uma forma de agradecermos por ser uma cliente especial.' },
+    { value: 'primeira_vez', label: '✨ Primeira Vez', message: '✨ Seja bem-vinda! Este voucher é um presente de boas-vindas para sua primeira experiência conosco.' },
+    { value: 'indicacao', label: '🤝 Indicação', message: '🤝 Obrigada por nos indicar! Este voucher é um agradecimento especial.' },
+    { value: 'desculpas', label: '🙏 Desculpas', message: '🙏 Pedimos desculpas pelo inconveniente. Este voucher é uma forma de compensar.' },
+    { value: 'promocao', label: '🎁 Promoção', message: '🎁 Você ganhou! Este voucher faz parte de nossa promoção especial.' },
+    { value: 'outro', label: '✍️ Outro (Personalizado)', message: '' },
   ]
 
   useEffect(() => {
@@ -93,12 +105,6 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
   const loadClienteDetails = async (userId: string) => {
     try {
       const user = await api.getUser(userId)
-      console.log('👤 Detalhes do cliente carregados:', {
-        name: user.name,
-        hasSubscription: !!user.subscription,
-        subscriptionStatus: user.subscription?.status,
-        plan: user.subscription?.plan?.name
-      })
       setClienteDetails(user)
     } catch (error) {
       console.error('Erro ao carregar detalhes do cliente:', error)
@@ -134,143 +140,10 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
     s.name.toLowerCase().includes(buscaServico.toLowerCase())
   )
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!formData.clienteId) {
-      toast.error('Selecione um cliente')
-      return
-    }
-
-    if (formData.tipo === 'DISCOUNT' && !formData.valor) {
-      toast.error('Informe o valor do desconto')
-      return
-    }
-
-    if (formData.tipo === 'FREE_TREATMENT' && !formData.servicoId) {
-      toast.error('Selecione o serviço')
-      return
-    }
-
-    if (formData.tipo === 'FREE_MONTH' && !formData.planoId) {
-      toast.error('Selecione o plano')
-      return
-    }
-
-    setLoading(true)
-    try {
-      const motivo = formData.motivoPreset 
-        ? motivosPreset.find(m => m.value === formData.motivoPreset)?.message 
-        : formData.motivoCustom
-
-      // Preparar dados do voucher
-      const voucherData: any = {
-        userId: formData.clienteId,
-        type: formData.tipo,
-        description: motivo || 'Voucher especial',
-        expiresAt: formData.validade.toISOString(),
-        grantedBy: 'admin', // TODO: Pegar do usuário logado
-        grantedReason: motivo || undefined
-      }
-
-      // Adicionar campos específicos por tipo
-      if (formData.tipo === 'DISCOUNT') {
-        voucherData.discountPercent = parseInt(formData.valor)
-        voucherData.anyService = true // Desconto vale para qualquer serviço
-      } else if (formData.tipo === 'FREE_TREATMENT') {
-        voucherData.serviceId = formData.servicoId
-        voucherData.anyService = false
-      } else if (formData.tipo === 'FREE_MONTH') {
-        voucherData.planId = formData.planoId
-        voucherData.anyService = false
-      }
-
-      console.log('📤 Criando voucher:', voucherData)
-
-      const voucher = await api.createVoucher(voucherData)
-      
-      console.log('✅ Voucher criado:', voucher)
-      
-      toast.success('Voucher criado com sucesso! 🎁')
-      
-      // Callback opcional (pode redirecionar para página de vouchers)
-      if (onVoucherCreated) {
-        onVoucherCreated()
-      }
-      
-      /* 
-      ═══════════════════════════════════════════════════════════
-      TODO: NOTIFICAÇÃO PARA O CLIENTE
-      ═══════════════════════════════════════════════════════════
-      
-      Quando implementar a notificação na página do cliente:
-      
-      1. Criar um componente NotificacaoVoucher que mostra:
-         - Tipo do voucher (desconto, tratamento grátis, mês grátis)
-         - Valor/descrição
-         - Data de validade
-         - Botão "Ver detalhes" ou "Usar agora"
-      
-      2. Se for tratamento grátis:
-         - Redirecionar para /cliente/servicos?service={serviceId}
-         - Abrir modal de agendamento automaticamente
-         - Mostrar badge "GRÁTIS" no serviço
-      
-      3. Se for mês grátis:
-         - Redirecionar para /cliente/plano
-         - Mostrar modal de ativação do plano
-         - Aplicar o voucher automaticamente
-      
-      4. Se for desconto:
-         - Mostrar na lista de vouchers disponíveis
-         - Aplicar automaticamente no checkout
-         - Mostrar economia em tempo real
-      
-      Exemplo de notificação:
-      
-      <div className="bg-gradient-to-r from-pink-50 to-purple-50 border-2 border-pink-300 rounded-xl p-4">
-        <div className="flex items-center gap-3">
-          <Gift className="w-8 h-8 text-pink-600" />
-          <div className="flex-1">
-            <h4 className="font-bold text-pink-900">
-              🎁 Você ganhou um voucher!
-            </h4>
-            <p className="text-sm text-gray-700">
-              {voucher.description}
-            </p>
-            <div className="flex items-center gap-2 mt-2">
-              <span className="text-xs px-2 py-1 bg-pink-200 text-pink-800 rounded">
-                Válido até {new Date(voucher.expiresAt).toLocaleDateString('pt-BR')}
-              </span>
-            </div>
-          </div>
-          <Button onClick={() => handleUseVoucher(voucher)}>
-            Usar agora →
-          </Button>
-        </div>
-      </div>
-      
-      ═══════════════════════════════════════════════════════════
-      */
-      
-      onClose()
-      resetForm()
-    } catch (error: any) {
-      console.error('❌ Erro ao criar voucher:', error)
-      toast.error(error.message || 'Erro ao criar voucher')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const handlePercentageInput = (value: string) => {
-    // Remove tudo que não é número
     const numbers = value.replace(/\D/g, '')
-    
-    // Limita a 100
     let num = parseInt(numbers) || 0
     if (num > 100) num = 100
-    
     setFormData({ ...formData, valor: num > 0 ? num.toString() : '' })
   }
 
@@ -295,197 +168,226 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
     setShowServicosList(false)
   }
 
-  const getTipoLabel = () => {
-    if (formData.tipo === 'DISCOUNT') return '💰 Desconto em %'
-    if (formData.tipo === 'FREE_TREATMENT') return '✨ Tratamento Grátis'
-    if (formData.tipo === 'FREE_MONTH') return '🎁 Mês de Plano Grátis'
-    return 'Voucher'
+  const isFormValid = Boolean(
+    formData.clienteId &&
+    (formData.tipo === 'DISCOUNT' ? (parseInt(formData.valor) > 0 && parseInt(formData.valor) <= 100) : true) &&
+    (formData.tipo === 'FREE_TREATMENT' ? Boolean(formData.servicoId) : true) &&
+    (formData.tipo === 'FREE_MONTH' ? Boolean(formData.planoId) : true) &&
+    Boolean(formData.motivoPreset) &&
+    Boolean(formData.motivoCustom.trim().length > 0)
+  )
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!formData.clienteId) {
+      toast.error('Selecione um cliente')
+      return
+    }
+
+    if (formData.tipo === 'DISCOUNT' && !formData.valor) {
+      toast.error('Informe a porcentagem de desconto')
+      return
+    }
+
+    if (formData.tipo === 'FREE_TREATMENT' && !formData.servicoId) {
+      toast.error('Selecione o serviço')
+      return
+    }
+
+    if (formData.tipo === 'FREE_MONTH' && !formData.planoId) {
+      toast.error('Selecione o plano')
+      return
+    }
+
+    if (!formData.motivoPreset) {
+      toast.error('Selecione o motivo do voucher')
+      return
+    }
+
+    if (!formData.motivoCustom.trim()) {
+      toast.error('Informe a mensagem personalizada')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const voucherData: any = {
+        userId: formData.clienteId,
+        type: formData.tipo,
+        description: formData.motivoCustom.trim(),
+        expiresAt: formData.validade.toISOString(),
+        grantedBy: 'admin',
+        grantedReason: formData.motivoCustom.trim()
+      }
+
+      if (formData.tipo === 'DISCOUNT') {
+        voucherData.discountPercent = parseInt(formData.valor)
+        voucherData.anyService = true
+      } else if (formData.tipo === 'FREE_TREATMENT') {
+        voucherData.serviceId = formData.servicoId
+        voucherData.anyService = false
+      } else if (formData.tipo === 'FREE_MONTH') {
+        voucherData.planId = formData.planoId
+        voucherData.anyService = false
+      }
+
+      await api.createVoucher(voucherData)
+      toast.success('Voucher concedido com sucesso! 🎁')
+      
+      if (onVoucherCreated) {
+        onVoucherCreated()
+      }
+      
+      onClose()
+      resetForm()
+    } catch (error: any) {
+      console.error('Erro ao criar voucher:', error)
+      toast.error(error.message || 'Erro ao criar voucher')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const isSearchingCliente = showClientesList && !formData.clienteId
-  const isSearchingServico = showServicosList && !formData.servicoId
-  const isExpanded = isSearchingCliente || isSearchingServico
+  const getTipoLabel = () => {
+    if (formData.tipo === 'DISCOUNT') return 'Desconto em %'
+    if (formData.tipo === 'FREE_TREATMENT') return 'Tratamento Grátis'
+    if (formData.tipo === 'FREE_MONTH') return 'Mês de Plano Grátis'
+    return 'Voucher'
+  }
 
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={() => { onClose(); resetForm(); }}
       title={`Dar Voucher: ${getTipoLabel()}`}
-      size="xl"
-      expanded={isExpanded}
-      contentClassName={isExpanded ? 'flex flex-col' : ''}
+      size="lg"
       footer={
-        <div className="flex flex-col-reverse sm:flex-row gap-3">
-          <Button type="button" variant="outline" onClick={() => { onClose(); resetForm(); }} className="flex-1">
+        <div className="flex flex-col-reverse sm:flex-row gap-2.5">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => { onClose(); resetForm(); }}
+            className="flex-1 text-xs font-bold"
+            disabled={loading}
+          >
             Cancelar
           </Button>
-          <Button type="submit" form="dar-voucher-form" variant="primary" className="flex-1" isLoading={loading}>
-            <Gift className="w-4 h-4 mr-2" />
+          <Button
+            type="submit"
+            form="dar-voucher-form"
+            variant="primary"
+            className="flex-1 text-xs font-bold shadow-xs"
+            isLoading={loading}
+            disabled={!isFormValid || loading}
+          >
+            <RiGiftFill className="w-4 h-4 mr-1.5" />
             Criar Voucher
           </Button>
         </div>
       }
     >
-      <form id="dar-voucher-form" onSubmit={handleSubmit} className={isExpanded ? 'flex flex-col flex-1 min-h-0 min-w-0 overflow-x-hidden' : 'space-y-4 min-w-0 overflow-x-hidden'}>
-        {/* Cliente - Dropdown com busca */}
-        <div className={isSearchingCliente ? 'flex flex-col flex-1 min-h-0 min-w-0' : 'min-w-0'}>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <User className="w-4 h-4 inline mr-1" />
+      <form id="dar-voucher-form" onSubmit={handleSubmit} className="space-y-4">
+        {/* Cliente - Seleção / Busca */}
+        <div>
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <RiUser3Fill className="w-3.5 h-3.5 inline mr-1 text-rose-600" />
             Cliente *
           </label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-              name="busca-cliente"
-              inputMode="search"
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              value={buscaCliente || formData.clienteNome}
-              onChange={(e) => {
-                setBuscaCliente(e.target.value)
-                setShowClientesList(true)
-                setFormData({ ...formData, clienteId: '', clienteNome: '' })
-              }}
-              onFocus={() => setShowClientesList(true)}
-              placeholder="Digite para buscar cliente..."
-              className="w-full max-w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-base text-gray-900 placeholder:text-gray-400"
-            />
-          </div>
 
-          {isSearchingCliente && (
-            <div className="flex-1 min-h-0 min-w-0 mt-2 border-2 border-pink-200 rounded-xl overflow-y-auto overflow-x-hidden">
-              {clientesFiltrados.length > 0 ? (
-                clientesFiltrados.map(cliente => (
-                  <button
-                    key={cliente.id}
-                    type="button"
-                    onClick={() => {
-                      setFormData({ ...formData, clienteId: cliente.id, clienteNome: cliente.name })
-                      setBuscaCliente('')
-                      setShowClientesList(false)
-                    }}
-                    className="w-full max-w-full px-4 py-3 hover:bg-pink-50 transition-colors text-left border-b border-gray-100 last:border-0"
-                  >
-                    <div className="flex items-center justify-between gap-2 min-w-0">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm text-gray-900 truncate">{cliente.name}</div>
-                        <div className="text-xs text-gray-500 truncate">{cliente.email}</div>
-                      </div>
-                      {cliente.hasSubscription && (
-                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full font-medium shrink-0">
-                          Plano
-                        </span>
-                      )}
+          {formData.clienteId ? (
+            <div className="flex items-center justify-between p-3 bg-rose-50/70 border-2 border-rose-200 rounded-2xl">
+              <div className="min-w-0 flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                  {formData.clienteNome.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-900 text-xs sm:text-sm truncate">
+                    {formData.clienteNome}
+                  </div>
+                  {clienteDetails?.subscription?.status === 'ACTIVE' && (
+                    <div className="text-[11px] font-bold text-violet-700">
+                      ★ {clienteDetails.subscription.plan.name}
                     </div>
-                  </button>
-                ))
-              ) : (
-                <div className="px-4 py-3 text-sm text-gray-500">Nenhum cliente encontrado</div>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({ ...formData, clienteId: '', clienteNome: '' })
+                  setClienteDetails(null)
+                  setBuscaCliente('')
+                }}
+                className="p-1.5 hover:bg-rose-100 rounded-lg text-rose-600 transition-colors shrink-0"
+                title="Trocar cliente"
+              >
+                <RiCloseLine className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="relative">
+                <RiSearchLine className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={buscaCliente}
+                  onChange={(e) => {
+                    setBuscaCliente(e.target.value)
+                    setShowClientesList(true)
+                  }}
+                  onFocus={() => setShowClientesList(true)}
+                  placeholder="Buscar cliente por nome ou email..."
+                  className="w-full pl-10 pr-4 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-base sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white touch-manipulation"
+                />
+              </div>
+
+              {showClientesList && (
+                <div className="max-h-44 overflow-y-auto border-2 border-slate-200 rounded-xl divide-y divide-slate-100 bg-white shadow-lg">
+                  {clientesFiltrados.length > 0 ? (
+                    clientesFiltrados.map((cliente) => (
+                      <button
+                        key={cliente.id}
+                        type="button"
+                        onClick={() => {
+                          setFormData({ ...formData, clienteId: cliente.id, clienteNome: cliente.name })
+                          setBuscaCliente('')
+                          setShowClientesList(false)
+                        }}
+                        className="w-full px-3.5 py-2.5 hover:bg-rose-50 transition-colors text-left flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs sm:text-sm text-slate-900 truncate">{cliente.name}</div>
+                          <div className="text-[11px] text-slate-500 truncate">{cliente.email}</div>
+                        </div>
+                        {cliente.hasSubscription && (
+                          <span className="px-2 py-0.5 bg-violet-100 text-violet-700 text-[10px] rounded-md font-bold shrink-0">
+                            Plano VIP
+                          </span>
+                        )}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-3 text-xs font-semibold text-slate-400 text-center">
+                      Nenhum cliente encontrado
+                    </div>
+                  )}
+                </div>
               )}
             </div>
-          )}
-
-          {formData.clienteId && (
-            <>
-              <div className="mt-2 flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-2 rounded-lg">
-                <User className="w-4 h-4" />
-                Cliente selecionado: <strong>{formData.clienteNome}</strong>
-              </div>
-              
-              {/* Mostrar plano do cliente */}
-              {clienteDetails?.subscription?.status === 'ACTIVE' ? (
-                <div className="mt-2 p-3 bg-purple-50 border-l-4 border-purple-500 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-purple-600" />
-                    <div>
-                      <p className="text-xs font-semibold text-purple-900">
-                        Cliente possui: {clienteDetails.subscription.plan.name}
-                      </p>
-                      <p className="text-xs text-purple-700 mt-0.5">
-                        {clienteDetails.subscription.remaining?.thisMonth || 0}/{clienteDetails.subscription.limits?.maxPerMonth || 0} sessões este mês
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-2 p-3 bg-gray-50 border-l-4 border-gray-300 rounded-lg">
-                  <p className="text-xs text-gray-600">
-                    Cliente não possui plano ativo
-                  </p>
-                </div>
-              )}
-            </>
           )}
         </div>
 
-        {isSearchingServico && formData.tipo === 'FREE_TREATMENT' && (
-          <div className="flex flex-col flex-1 min-h-0 min-w-0 mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Sparkles className="w-4 h-4 inline mr-1" />
-              Serviço / Tratamento *
-            </label>
-            <div className="relative shrink-0">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                name="busca-servico"
-                inputMode="search"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                value={buscaServico || formData.servicoNome}
-                onChange={(e) => {
-                  setBuscaServico(e.target.value)
-                  setShowServicosList(true)
-                  setFormData({ ...formData, servicoId: '', servicoNome: '' })
-                }}
-                onFocus={() => setShowServicosList(true)}
-                placeholder="Digite para buscar serviço..."
-                className="w-full max-w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-base text-gray-900 placeholder:text-gray-400"
-              />
-            </div>
-            <div className="flex-1 min-h-0 min-w-0 mt-2 border-2 border-pink-200 rounded-xl overflow-y-auto overflow-x-hidden">
-              {servicosFiltrados.length > 0 ? (
-                servicosFiltrados.map(servico => (
-                  <button
-                    key={servico.id}
-                    type="button"
-                    onClick={() => {
-                      setFormData({ ...formData, servicoId: servico.id, servicoNome: servico.name })
-                      setBuscaServico('')
-                      setShowServicosList(false)
-                    }}
-                    className="w-full max-w-full px-4 py-3 hover:bg-pink-50 transition-colors text-left border-b border-gray-100 last:border-0"
-                  >
-                    <div className="font-semibold text-gray-900 truncate">{servico.name}</div>
-                    <div className="text-sm text-gray-500">
-                      {servico.duration} min • R$ {servico.price.toFixed(2)}
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <div className="px-4 py-3 text-sm text-gray-500">Nenhum serviço encontrado</div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {!isSearchingCliente && !isSearchingServico && (
-        <>
         {/* Tipo de Voucher */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <Gift className="w-4 h-4 inline mr-1" />
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <RiGiftFill className="w-3.5 h-3.5 inline mr-1 text-rose-600" />
             Tipo de Voucher *
           </label>
           <select
             value={formData.tipo}
             onChange={(e) => setFormData({ ...formData, tipo: e.target.value as any })}
-            className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-gray-900 font-medium"
+            className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-base sm:text-sm font-bold text-slate-900 bg-white touch-manipulation"
           >
             <option value="DISCOUNT">💰 Desconto em Porcentagem</option>
             <option value="FREE_TREATMENT">✨ Tratamento Grátis</option>
@@ -496,8 +398,8 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
         {/* Valor (para desconto) */}
         {formData.tipo === 'DISCOUNT' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <DollarSign className="w-4 h-4 inline mr-1" />
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <RiMoneyDollarCircleFill className="w-3.5 h-3.5 inline mr-1 text-emerald-600" />
               Desconto (%) *
             </label>
             <div className="relative">
@@ -506,19 +408,18 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
                 inputMode="numeric"
                 value={formData.valor}
                 onChange={(e) => handlePercentageInput(e.target.value)}
-                placeholder="20"
+                placeholder="Ex: 20"
                 maxLength={3}
-                className="w-full px-4 py-3 pr-10 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-gray-900 placeholder:text-gray-400 text-lg font-semibold"
+                className="w-full px-3.5 py-2.5 sm:py-3 pr-10 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-slate-900 placeholder:text-slate-400 text-base sm:text-sm font-bold bg-white touch-manipulation"
               />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-lg font-semibold">
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">
                 %
               </span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Digite apenas números de 1 a 100</p>
             {formData.valor && (
-              <div className="mt-2 p-2 bg-blue-50 rounded-lg">
-                <p className="text-xs text-blue-800">
-                  💰 Cliente ganhará <strong>{formData.valor}% de desconto</strong> em qualquer serviço
+              <div className="mt-1.5 p-2 bg-emerald-50 rounded-xl border border-emerald-200">
+                <p className="text-xs font-bold text-emerald-800">
+                  💰 Cliente receberá {formData.valor}% de desconto em qualquer serviço
                 </p>
               </div>
             )}
@@ -527,101 +428,126 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
 
         {/* Serviço (para tratamento grátis) */}
         {formData.tipo === 'FREE_TREATMENT' && (
-          <div className="min-w-0">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Sparkles className="w-4 h-4 inline mr-1" />
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <RiSparklingFill className="w-3.5 h-3.5 inline mr-1 text-purple-600" />
               Serviço / Tratamento *
             </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-                name="busca-servico"
-                inputMode="search"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                value={buscaServico || formData.servicoNome}
-                onChange={(e) => {
-                  setBuscaServico(e.target.value)
-                  setShowServicosList(true)
-                  setFormData({ ...formData, servicoId: '', servicoNome: '' })
-                }}
-                onFocus={() => setShowServicosList(true)}
-                placeholder="Digite para buscar serviço..."
-                className="w-full max-w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-base text-gray-900 placeholder:text-gray-400"
-              />
-            </div>
 
-            {formData.servicoId && (() => {
-              const servico = servicos.find(s => s.id === formData.servicoId)
-              return (
-                <div className="mt-2 space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-2 rounded-lg min-w-0">
-                    <Sparkles className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Serviço selecionado: <strong>{formData.servicoNome}</strong></span>
+            {formData.servicoId ? (
+              <div className="flex items-center justify-between p-3 bg-emerald-50 border-2 border-emerald-200 rounded-2xl">
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-900 text-xs sm:text-sm truncate">
+                    🎁 {formData.servicoNome}
                   </div>
-                  {servico && (
-                    <div className="p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
-                      <p className="text-xs text-green-800">
-                        🎁 Cliente ganhará <strong>{servico.name}</strong> grátis (valor: R$ {servico.price.toFixed(2)})
-                      </p>
-                    </div>
-                  )}
+                  {(() => {
+                    const serv = servicos.find(s => s.id === formData.servicoId)
+                    return serv ? (
+                      <div className="text-[11px] font-semibold text-emerald-700">
+                        {serv.duration} min • Valor original: R$ {serv.price.toFixed(2)}
+                      </div>
+                    ) : null
+                  })()}
                 </div>
-              )
-            })()}
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, servicoId: '', servicoNome: '' })}
+                  className="p-1.5 hover:bg-emerald-100 rounded-lg text-emerald-700 transition-colors shrink-0"
+                  title="Trocar serviço"
+                >
+                  <RiCloseLine className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="relative">
+                  <RiSearchLine className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={buscaServico}
+                    onChange={(e) => {
+                      setBuscaServico(e.target.value)
+                      setShowServicosList(true)
+                    }}
+                    onFocus={() => setShowServicosList(true)}
+                    placeholder="Buscar serviço..."
+                    className="w-full pl-10 pr-4 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-base sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white touch-manipulation"
+                  />
+                </div>
+
+                {showServicosList && (
+                  <div className="max-h-44 overflow-y-auto border-2 border-slate-200 rounded-xl divide-y divide-slate-100 bg-white shadow-lg">
+                    {servicosFiltrados.length > 0 ? (
+                      servicosFiltrados.map((servico) => (
+                        <button
+                          key={servico.id}
+                          type="button"
+                          onClick={() => {
+                            setFormData({ ...formData, servicoId: servico.id, servicoNome: servico.name })
+                            setBuscaServico('')
+                            setShowServicosList(false)
+                          }}
+                          className="w-full px-3.5 py-2.5 hover:bg-rose-50 transition-colors text-left flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs sm:text-sm text-slate-900 truncate">{servico.name}</div>
+                            <div className="text-[11px] text-slate-500">{servico.duration} min</div>
+                          </div>
+                          <span className="text-xs font-extrabold text-rose-600 shrink-0">
+                            R$ {servico.price.toFixed(2)}
+                          </span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-4 py-3 text-xs font-semibold text-slate-400 text-center">
+                        Nenhum serviço encontrado
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
         {/* Plano (para mês grátis) */}
         {formData.tipo === 'FREE_MONTH' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Gift className="w-4 h-4 inline mr-1" />
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <RiGiftFill className="w-3.5 h-3.5 inline mr-1 text-rose-600" />
               Plano *
             </label>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {planos.map(plano => (
                 <button
                   key={plano.id}
                   type="button"
                   onClick={() => setFormData({ ...formData, planoId: plano.id, planoNome: plano.name })}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${
+                  className={`p-3 rounded-xl border-2 text-left transition-all ${
                     formData.planoId === plano.id
-                      ? 'border-pink-500 bg-pink-50 shadow-md'
-                      : 'border-gray-200 hover:border-pink-300 hover:bg-gray-50'
+                      ? 'border-rose-600 bg-rose-50 shadow-xs'
+                      : 'border-slate-200 hover:border-rose-300 bg-white'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-bold text-gray-900">{plano.name}</h3>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="font-bold text-slate-900 text-xs">{plano.name}</span>
                     {formData.planoId === plano.id && (
-                      <div className="w-5 h-5 bg-pink-600 rounded-full flex items-center justify-center">
-                        <span className="text-white text-xs">✓</span>
-                      </div>
+                      <RiCheckFill className="w-4 h-4 text-rose-600" />
                     )}
                   </div>
-                  <p className="text-sm text-gray-600 mb-2">{plano.maxTreatmentsPerMonth} sessões/mês</p>
-                  <p className="text-lg font-bold text-pink-600">R$ {plano.price.toFixed(2)}</p>
+                  <p className="text-[11px] text-slate-500">{plano.maxTreatmentsPerMonth} sessões/mês</p>
+                  <p className="text-xs font-extrabold text-rose-600 mt-0.5">R$ {plano.price.toFixed(2)}</p>
                 </button>
               ))}
             </div>
-            {formData.planoId && (
-              <div className="mt-2 p-2 bg-green-50 rounded-lg">
-                <p className="text-xs text-green-800">
-                  🎁 Cliente ganhará <strong>1 mês grátis do {formData.planoNome}</strong>
-                </p>
-              </div>
-            )}
           </div>
         )}
 
         {/* Validade */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <Calendar className="w-4 h-4 inline mr-1" />
-            Validade
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <RiCalendar2Fill className="w-3.5 h-3.5 inline mr-1 text-rose-600" />
+            Validade do Voucher *
           </label>
           <DatePicker
             value={formData.validade}
@@ -631,45 +557,59 @@ export function DarVoucherModal({ isOpen, onClose, preSelectedClient, onVoucherC
           />
         </div>
 
-        {/* Motivo Preset */}
+        {/* Motivo Preset - Obrigatório sem (opcional) */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            💝 Motivo (Preset)
+          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            💝 Motivo do Voucher *
           </label>
           <select
             value={formData.motivoPreset}
             onChange={(e) => {
-              setFormData({ ...formData, motivoPreset: e.target.value })
-              if (e.target.value) {
-                const preset = motivosPreset.find(m => m.value === e.target.value)
-                if (preset) {
-                  setFormData(prev => ({ ...prev, motivoCustom: preset.message }))
-                }
+              const selectedValue = e.target.value
+              const preset = motivosPreset.find(m => m.value === selectedValue)
+              setFormData({
+                ...formData,
+                motivoPreset: selectedValue,
+                motivoCustom: preset ? preset.message : ''
+              })
+              if (selectedValue) {
+                setTimeout(() => {
+                  textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  textareaRef.current?.focus()
+                }, 100)
               }
             }}
-            className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 text-gray-900 font-medium"
+            className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 text-base sm:text-sm font-semibold text-slate-900 bg-white touch-manipulation"
+            required
           >
-            <option value="">Selecione um motivo (opcional)</option>
+            <option value="">Selecione o motivo...</option>
             {motivosPreset.map(motivo => (
               <option key={motivo.value} value={motivo.value}>{motivo.label}</option>
             ))}
           </select>
         </div>
 
-        {/* Motivo/Observação Custom */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Mensagem Personalizada
-          </label>
-          <textarea
-            value={formData.motivoCustom}
-            onChange={(e) => setFormData({ ...formData, motivoCustom: e.target.value, motivoPreset: '' })}
-            placeholder="Escreva uma mensagem personalizada (opcional)"
-            rows={3}
-            className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-400 resize-none text-gray-900 placeholder:text-gray-400"
-          />
-        </div>
-        </>
+        {/* Mensagem Personalizada - Aparece após selecionar preset */}
+        {formData.motivoPreset && (
+          <div className="pt-1">
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              ✍️ Mensagem Personalizada (Enviada à cliente) *
+            </label>
+            <textarea
+              ref={textareaRef}
+              value={formData.motivoCustom}
+              onChange={(e) => setFormData({ ...formData, motivoCustom: e.target.value })}
+              onFocus={(e) => {
+                setTimeout(() => {
+                  e.target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }, 300)
+              }}
+              placeholder="Digite a mensagem que a cliente receberá..."
+              rows={3}
+              className="w-full px-3.5 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-400 resize-none text-base sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 bg-white touch-manipulation"
+              required
+            />
+          </div>
         )}
       </form>
     </Modal>
